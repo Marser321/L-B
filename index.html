@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>L&B Elite Wash & Detail — Premium Mobile Detailing</title>
+  <meta name="description" content="Premium Care. Elite Results. Mobile car wash & detailing in SWFL — Cars, Trucks, Boats, Jet Skis, ATVs, Golf Carts & Heavy Trucks. We come to you!" />
+  <meta name="theme-color" content="#06080D" />
+  <link rel="icon" type="image/png" href="assets/logo-circle-clean.png" />
+
+  <!-- Social sharing (Open Graph + Twitter). Set absolute URLs at deploy time. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="L&B Elite Wash & Detail" />
+  <meta property="og:title" content="L&B Elite Wash & Detail — Premium Mobile Detailing" />
+  <meta property="og:description" content="Premium mobile car wash & detailing across Southwest Florida — vehicles, boats, jet skis, ATVs, golf carts, heavy trucks, mobile homes & driveways. We come to you." />
+  <meta property="og:image" content="assets/hero-van-real.jpg" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:locale:alternate" content="es_ES" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="L&B Elite Wash & Detail — Premium Mobile Detailing" />
+  <meta name="twitter:description" content="Premium mobile car wash & detailing across Southwest Florida. We come to you." />
+  <meta name="twitter:image" content="assets/hero-van-real.jpg" />
+  <!-- Set theme + language before paint to avoid a flash of the wrong state -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('lyb-theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+      try {
+        var l = localStorage.getItem('lyb-lang');
+        if (l !== 'es' && l !== 'en') {
+          l = (navigator.language || 'en').toLowerCase().indexOf('es') === 0 ? 'es' : 'en';
+        }
+        document.documentElement.setAttribute('data-lang', l);
+        document.documentElement.setAttribute('lang', l);
+      } catch (e) {
+        document.documentElement.setAttribute('data-lang', 'en');
+      }
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=2" />
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="navbar" id="navbar">
+    <div class="container">
+      <a href="#hero" class="nav-logo">
+        <img src="assets/logo-circle-clean.png" alt="L&B Elite Wash & Detail logo" />
+        <div class="nav-logo-text">
+          <span class="brand-name">L<span>&</span>B Elite</span>
+          <span class="brand-tagline">Wash & Detail</span>
+        </div>
+      </a>
+      <div class="nav-actions">
+        <a href="#services" class="nav-link" data-i18n="nav.paths">Service Paths</a>
+        <a href="#quoter" class="nav-link" data-i18n="nav.quote">Quote</a>
+        <a href="#policies" class="nav-link" data-i18n="nav.policies">Policies</a>
+        <a href="tel:+12395270770" class="nav-link">(239) 527-0770</a>
+        <button type="button" class="lang-toggle" id="langToggle" aria-label="Cambiar idioma a español">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span class="lang-toggle-label">ES</span>
+        </button>
+        <button type="button" class="theme-toggle" id="themeToggle" aria-label="Switch color theme" aria-pressed="false">
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+        <a href="#quoter" class="btn btn-primary nav-cta" data-i18n="nav.cta">Build My Quote</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ===== HERO ===== -->
+  <section class="hero" id="hero">
+    <img class="hero-bg-image" src="assets/hero-van-real.jpg" alt="L&B Elite mobile detailing van" />
+    <video class="hero-bg-video" muted loop playsinline preload="none"
+           poster="assets/hero-van-real.jpg" aria-hidden="true"
+           data-src-desktop="assets/video/hero-desktop.mp4"
+           data-src-mobile="assets/video/hero-mobile.mp4"></video>
+    <div class="hero-particles" aria-hidden="true">
+      <div class="p"></div><div class="p"></div><div class="p"></div><div class="p"></div><div class="p"></div>
+      <div class="p"></div><div class="p"></div><div class="p"></div><div class="p"></div><div class="p"></div>
+    </div>
+    <div class="hero-content">
+      <div class="hero-top">
+        <span class="hero-kicker" data-i18n="hero.kicker">Premium Mobile Detailing · SWFL</span>
+        <h1 class="hero-title"><span data-i18n="hero.titleA">Mobile detailing that </span><span class="hl" data-i18n="hero.titleB">comes to you.</span></h1>
+      </div>
+      <div class="hero-bottom">
+        <div class="hero-ctas">
+          <a href="#quoter" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+            <span data-i18n="hero.ctaQuote">Build My Quote</span>
+          </a>
+          <a href="tel:+12395270770" class="btn btn-secondary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+            <span data-i18n="hero.ctaCall">Call Now</span>
+          </a>
+        </div>
+      </div>
+    </div>
+    <div class="scroll-hint">
+      <div class="scroll-dot"></div>
+      <span data-i18n="hero.scroll">Scroll</span>
+    </div>
+  </section>
+
+  <!-- ===== SERVICE PATHS ===== -->
+  <section class="services-sec" id="services">
+    <div class="container">
+      <div class="sec-header reveal">
+        <span class="section-label" data-i18n="paths.label">Choose Your Path</span>
+        <h2 class="section-title"><span data-i18n="paths.titleA">One mobile team. </span><span data-i18n="paths.titleB">Clear service paths.</span></h2>
+        <p class="section-subtitle" data-i18n="paths.subtitle">Start with the path that matches what you need today, then build a precise quote in the service builder.</p>
+      </div>
+
+      <div class="service-routes">
+        <article class="route-card reveal">
+          <div class="route-media">
+            <img src="assets/route-vehicle-detailing.jpg" alt="Mobile vehicle detailing in a Southwest Florida driveway" />
+            <span class="route-badge"><span data-i18n="from">From</span> $45</span>
+          </div>
+          <div class="route-body">
+            <span class="route-kicker" data-i18n="path.a.kicker">Path A</span>
+            <h3 data-i18n="path.a.title">Vehicle Detailing</h3>
+            <p data-i18n="path.a.desc">Maintenance washes, deep interior care, and paint-safe detailing for daily drivers, SUVs, trucks, and vans.</p>
+            <div class="route-tags" aria-label="Vehicle detailing services">
+              <button type="button" class="route-chip build-service-btn" data-cat="cars" data-i18n="chip.cars">Cars &amp; SUVs</button>
+            </div>
+            <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="vehicles" data-i18n="path.a.cta">Start Vehicle Quote</a>
+          </div>
+        </article>
+
+        <article class="route-card reveal">
+          <div class="route-media">
+            <img src="assets/service-paint-protection.jpg" alt="Paint correction and protection service preview" />
+            <span class="route-badge"><span data-i18n="from">From</span> $299</span>
+          </div>
+          <div class="route-body">
+            <span class="route-kicker" data-i18n="path.b.kicker">Path B</span>
+            <h3 data-i18n="path.b.title">Paint Protection</h3>
+            <p data-i18n="path.b.desc">Gloss enhancement, paint correction, sealants, ceramic protection, and surface prep for a deeper finish.</p>
+            <div class="route-tags" aria-label="Paint protection services">
+              <button type="button" class="route-chip build-service-btn" data-cat="paint_correction" data-i18n="chip.correction">Correction</button>
+            </div>
+            <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="paint_protection" data-i18n="path.b.cta">Start Paint Quote</a>
+          </div>
+        </article>
+
+        <article class="route-card reveal">
+          <div class="route-media">
+            <img src="assets/route-marine-recreation.jpg" alt="Boat and jet ski wash at a marina" />
+            <span class="route-badge"><span data-i18n="from">From</span> $80</span>
+          </div>
+          <div class="route-body">
+            <span class="route-kicker" data-i18n="path.c.kicker">Path C</span>
+            <h3 data-i18n="path.c.title">Marine</h3>
+            <p data-i18n="path.c.desc">Boat and jet ski washing, salt removal, marine-safe surface care, and cleanups after Southwest Florida water days.</p>
+            <div class="route-tags" aria-label="Marine services">
+              <button type="button" class="route-chip build-service-btn" data-cat="boats" data-i18n="chip.boats">Boats</button>
+              <button type="button" class="route-chip build-service-btn" data-cat="jetski" data-i18n="chip.jetski">Jet Ski</button>
+            </div>
+            <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="marine" data-i18n="path.c.cta">Start Marine Quote</a>
+          </div>
+        </article>
+
+        <article class="route-card reveal">
+          <div class="route-media">
+            <img src="assets/service-golf-cart-detail.jpg" alt="Golf cart detailing service preview" />
+            <span class="route-badge"><span data-i18n="from">From</span> $80</span>
+          </div>
+          <div class="route-body">
+            <span class="route-kicker" data-i18n="path.d.kicker">Path D</span>
+            <h3 data-i18n="path.d.title">Recreation</h3>
+            <p data-i18n="path.d.desc">Golf cart and ATV cleaning for communities, weekend toys, trails, mud, dust, and outdoor storage buildup.</p>
+            <div class="route-tags" aria-label="Recreation services">
+              <button type="button" class="route-chip build-service-btn" data-cat="golf_cart" data-i18n="chip.golf">Golf Cart</button>
+              <button type="button" class="route-chip build-service-btn" data-cat="atv" data-i18n="chip.atv">ATV</button>
+            </div>
+            <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="recreation" data-i18n="path.d.cta">Start Recreation Quote</a>
+          </div>
+        </article>
+
+        <article class="route-card reveal">
+          <div class="route-media">
+            <img src="assets/route-fleet-property.jpg" alt="Mobile fleet and property washing service" />
+            <span class="route-badge"><span data-i18n="from">From</span> $80</span>
+          </div>
+          <div class="route-body">
+            <span class="route-kicker" data-i18n="path.e.kicker">Path E</span>
+            <h3 data-i18n="path.e.title">Fleet &amp; Property</h3>
+            <p data-i18n="path.e.desc">Commercial trucks, recurring fleet care, mobile home soft washing, driveways, patios, and pressure washing.</p>
+            <div class="route-tags" aria-label="Fleet and property services">
+              <button type="button" class="route-chip build-service-btn" data-cat="heavy_trucks" data-i18n="chip.heavy">Heavy Trucks</button>
+              <button type="button" class="route-chip build-service-btn" data-cat="mobile_home" data-i18n="chip.mobilehome">Mobile Homes</button>
+              <button type="button" class="route-chip build-service-btn" data-cat="driveway" data-i18n="chip.driveway">Driveways</button>
+            </div>
+            <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="fleet_property" data-i18n="path.e.cta">Start Fleet Quote</a>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== QUOTER ===== -->
+  <section class="quoter" id="quoter">
+    <div class="container">
+      <div class="quoter-header reveal">
+        <span class="section-label" data-i18n="quoter.label">Build Your Service</span>
+        <h2 class="section-title"><span data-i18n="quoter.titleA">Build Your </span><span data-i18n="quoter.titleB">Quote</span></h2>
+        <p class="section-subtitle" data-i18n="quoter.subtitle">Choose a path, select the exact service, and send the finished request directly to WhatsApp.</p>
+        <div class="quote-proof" aria-label="Quote builder steps">
+          <span data-i18n="quoter.proof1">1. Pick a path</span>
+          <span data-i18n="quoter.proof2">2. See your estimate</span>
+          <span data-i18n="quoter.proof3">3. Confirm availability</span>
+        </div>
+      </div>
+
+      <!-- Stepper -->
+      <div class="stepper reveal" id="stepper">
+        <div class="stepper-item"><div class="step-circle active">1</div><span class="step-label" data-i18n="step.service">Service</span></div>
+        <div class="step-line"></div>
+        <div class="stepper-item"><div class="step-circle">2</div><span class="step-label" data-i18n="step.package">Package</span></div>
+        <div class="step-line"></div>
+        <div class="stepper-item"><div class="step-circle">3</div><span class="step-label" data-i18n="step.extras">Extras</span></div>
+        <div class="step-line"></div>
+        <div class="stepper-item"><div class="step-circle">4</div><span class="step-label" data-i18n="step.schedule">Schedule</span></div>
+        <div class="step-line"></div>
+        <div class="stepper-item"><div class="step-circle">5</div><span class="step-label" data-i18n="step.book">Book</span></div>
+      </div>
+
+      <!-- Live estimate bar -->
+      <div class="quote-bar" id="quoteBar" aria-live="polite">
+        <div class="qbar-info">
+          <span class="qbar-label" data-i18n="qbar.label">Live estimate</span>
+          <span class="qbar-context" data-i18n="qbar.build">Build your service to see a live estimate</span>
+        </div>
+        <span class="qbar-price" data-val="">—</span>
+      </div>
+
+      <!-- WIZARD -->
+      <div class="wizard" id="wizard">
+
+        <!-- STEP 1: Category -->
+        <div class="wizard-step active" id="ws1">
+          <h3 class="step-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            <span data-i18n="ws.chooseService">Choose a Service</span>
+          </h3>
+          <div class="cat-filter" id="catFilter" role="tablist" aria-label="Filter service paths">
+            <!-- Filter chips rendered by JS -->
+          </div>
+          <div class="category-grid" id="catGrid" role="radiogroup" aria-label="Service options">
+            <!-- Categories rendered by JS -->
+          </div>
+        </div>
+
+        <!-- STEP 2: Vehicle / Size -->
+        <div class="wizard-step" id="ws2">
+          <h3 class="step-title" id="step2Title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>
+            <span data-i18n="ws.selectOption">Select Your Option</span>
+          </h3>
+          <div class="pkg-controls">
+            <div class="seg-toggle" id="pkgTypeToggle" role="group" aria-label="Service type"></div>
+            <div class="chip-row" id="heavyGroupSelect" role="group" aria-label="Vehicle subtype"></div>
+          </div>
+          <div class="option-grid" id="optGrid" role="radiogroup" aria-label="Service package">
+            <!-- Options rendered by JS -->
+          </div>
+        </div>
+
+        <!-- STEP 3: Extras & Details -->
+        <div class="wizard-step" id="ws3">
+          <!-- Size Selector Section -->
+          <div id="sizeSection" class="wizard-block">
+            <h3 class="step-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              <span data-i18n="ws.selectSize">Select Size / Quantity</span>
+            </h3>
+            <div class="option-grid" id="sizeGrid" role="radiogroup" aria-label="Size or quantity">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+
+          <!-- Add-ons Section -->
+          <div id="addonSection" class="wizard-block">
+            <h3 class="step-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
+              <span data-i18n="ws.addExtras">Add Extras</span>
+            </h3>
+            <div class="reco-bar" id="recoBar"><!-- Recommend button + hint (JS) --></div>
+            <div class="quiz-panel" id="quizPanel"><!-- Quiz (JS) --></div>
+            <div class="bundle-row" id="bundleRow"><!-- Curated bundles (JS) --></div>
+            <div class="addon-grid" id="addonGrid" role="group" aria-label="Optional add-ons">
+              <!-- Rendered by JS based on category -->
+            </div>
+            <p class="quoter-note" data-i18n="ws.extrasNote">Extras are optional — skip if you don't need any.</p>
+          </div>
+        </div>
+
+        <!-- STEP 4: Schedule & Details -->
+        <div class="wizard-step" id="ws4">
+          <h3 class="step-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            <span data-i18n="ws.scheduleTitle">Schedule &amp; Details</span>
+          </h3>
+          <p class="quoter-note schedule-intro" data-i18n="ws.scheduleIntro">We're a mobile service — tell us where and when, and we'll confirm on WhatsApp.</p>
+          <div class="schedule-form">
+            <div class="field">
+              <label for="schedName"><span data-i18n="form.name">Full name</span> <span class="req">*</span></label>
+              <input type="text" id="schedName" autocomplete="name" placeholder="Your name" data-i18n-ph="form.namePh" />
+            </div>
+            <div class="field">
+              <label for="schedPhone" data-i18n="form.phone">Phone</label>
+              <input type="tel" id="schedPhone" autocomplete="tel" placeholder="(239) 000-0000" />
+            </div>
+            <div class="field">
+              <label for="schedZip" data-i18n="form.zip">Service area / ZIP</label>
+              <input type="text" id="schedZip" inputmode="numeric" maxlength="5" autocomplete="postal-code" placeholder="e.g. 33901" data-i18n-ph="form.zipPh" />
+              <span class="coverage-msg" id="coverageMsg" aria-live="polite"></span>
+            </div>
+            <div class="field">
+              <label for="schedDate"><span data-i18n="form.date">Preferred date</span> <span class="req">*</span></label>
+              <input type="date" id="schedDate" />
+              <span class="field-hint" data-i18n="form.dateHint">Please book at least 24 hours ahead.</span>
+            </div>
+            <div class="field field-full">
+              <label><span data-i18n="form.time">Preferred time</span> <span class="req">*</span></label>
+              <div class="time-row" role="group" aria-label="Preferred time window">
+                <button type="button" class="time-chip" data-window="morning" data-i18n="time.morning">Morning</button>
+                <button type="button" class="time-chip" data-window="afternoon" data-i18n="time.afternoon">Afternoon</button>
+                <button type="button" class="time-chip" data-window="evening" data-i18n="time.evening">Evening</button>
+              </div>
+            </div>
+            <div class="field field-full">
+              <label for="schedNotes"><span data-i18n="form.notes">Notes</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
+              <textarea id="schedNotes" rows="3" placeholder="Gate code, vehicle condition, special requests…" data-i18n-ph="form.notesPh"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 5: Review & Book -->
+        <div class="wizard-step" id="ws5">
+          <h3 class="step-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            <span data-i18n="ws.reviewTitle">Review &amp; Book</span>
+          </h3>
+          <div class="summary-box" id="summaryBox">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Nav buttons -->
+      <div class="wizard-nav reveal">
+        <button class="btn btn-ghost" id="btnReset" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path d="M3 2v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8"/></svg>
+          <span data-i18n="btn.startOver">Start over</span>
+        </button>
+        <button class="btn btn-secondary" id="btnBack" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+          <span data-i18n="btn.back">Back</span>
+        </button>
+        <button class="btn btn-primary" id="btnNext" disabled>
+          Next
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== POLICIES & TERMS ===== -->
+  <section class="policies-sec" id="policies">
+    <div class="container">
+      <div class="sec-header reveal">
+        <span class="section-label" data-i18n="policies.label">Important Information</span>
+        <h2 class="section-title"><span data-i18n="policies.titleA">Service </span><span data-i18n="policies.titleB">Policies</span></h2>
+        <p class="section-subtitle" data-i18n="policies.subtitle">Clear operating terms designed to keep every appointment safe, on time, and held to a premium standard.</p>
+      </div>
+
+      <div class="policies-accordion reveal">
+        <!-- Item 1: Quality and Claims -->
+        <details class="accordion-item" open>
+          <summary class="accordion-header">
+            <span data-i18n="pol.1.h">Quality Guarantee and Claims</span>
+            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="accordion-content">
+            <p class="i18n-en">We are committed to professional, punctual, high-quality service using premium products and proven detailing methods.</p>
+            <p class="i18n-en">If you believe the service does not meet our quality standards, please notify us within <strong>24 hours</strong> after completion. Claims must include clear photos or videos. Our team will review the case and, when appropriate, schedule a touch-up at no additional cost.</p>
+            <p class="i18n-es">Nos comprometemos con un servicio profesional, puntual y de alta calidad, usando productos premium y métodos de detailing probados.</p>
+            <p class="i18n-es">Si consideras que el servicio no cumple nuestros estándares de calidad, avísanos dentro de las <strong>24 horas</strong> posteriores a su finalización. Los reclamos deben incluir fotos o videos claros. Nuestro equipo revisará el caso y, cuando corresponda, agendará un retoque sin costo adicional.</p>
+          </div>
+        </details>
+
+        <!-- Item 2: Access and Availability -->
+        <details class="accordion-item">
+          <summary class="accordion-header">
+            <span data-i18n="pol.2.h">Property Access and Availability</span>
+            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="accordion-content">
+            <p class="i18n-en">The customer is responsible for ensuring safe access to the service location and making the vehicle or property available at the agreed date, time, and address.</p>
+            <p class="i18n-en">Please provide any gate codes, access details, or special instructions before the appointment. If our team cannot access the property or perform the service for reasons outside our control, the appointment may be rescheduled and may be subject to a penalty fee.</p>
+            <p class="i18n-es">El cliente es responsable de garantizar el acceso seguro al lugar del servicio y de tener el vehículo o la propiedad disponibles en la fecha, hora y dirección acordadas.</p>
+            <p class="i18n-es">Por favor, proporciona códigos de portón, detalles de acceso o instrucciones especiales antes de la cita. Si nuestro equipo no puede acceder a la propiedad o realizar el servicio por causas ajenas a nuestra empresa, la cita podrá reprogramarse y estar sujeta a un cargo por penalización.</p>
+          </div>
+        </details>
+
+        <!-- Item 3: Cancellations and No-Shows -->
+        <details class="accordion-item">
+          <summary class="accordion-header">
+            <span data-i18n="pol.3.h">Cancellation and No-Show Policy</span>
+            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="accordion-content">
+            <p class="i18n-en">Cancellations or appointment changes must be made with at least <strong>24 hours of notice</strong>.</p>
+            <p class="i18n-en">Late cancellations or no-shows, including cases where our team arrives and cannot perform the service, may be charged a penalty equal to <strong>50% of the booked service total</strong>. In severe weather or force majeure situations, we will work with you to reschedule without penalty.</p>
+            <p class="i18n-es">Las cancelaciones o cambios de cita deben notificarse con al menos <strong>24 horas de anticipación</strong>.</p>
+            <p class="i18n-es">Las cancelaciones tardías o ausencias, incluyendo los casos en que nuestro equipo se presenta y no puede realizar el servicio, podrán generar un cargo de penalización equivalente al <strong>50% del valor total del servicio agendado</strong>. En casos de mal clima extraordinario o fuerza mayor, coordinaremos una reprogramación sin penalización.</p>
+          </div>
+        </details>
+
+        <!-- Item 4: Payments and Deposits -->
+        <details class="accordion-item">
+          <summary class="accordion-header">
+            <span data-i18n="pol.4.h">Payment and Billing Policy</span>
+            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="accordion-content">
+            <p class="i18n-en">Payment is due immediately after service completion unless a prior written agreement is in place.</p>
+            <p class="i18n-en">Accepted payment methods include:</p>
+            <ul class="i18n-en">
+              <li>Cash</li>
+              <li>Credit and debit cards</li>
+              <li>Zelle and Cash App</li>
+              <li>Other digital payment methods approved by the company</li>
+            </ul>
+            <p class="i18n-en">We reserve the right to request a deposit to confirm certain bookings.</p>
+            <p class="i18n-es">El pago debe realizarse de inmediato al finalizar el servicio, salvo que exista un acuerdo previo por escrito.</p>
+            <p class="i18n-es">Los medios de pago aceptados incluyen:</p>
+            <ul class="i18n-es">
+              <li>Efectivo</li>
+              <li>Tarjetas de crédito y débito</li>
+              <li>Zelle y Cash App</li>
+              <li>Otros métodos de pago digitales autorizados por la empresa</li>
+            </ul>
+            <p class="i18n-es">Nos reservamos el derecho de solicitar un depósito para confirmar ciertas reservas.</p>
+          </div>
+        </details>
+
+        <!-- Item 5: Monthly Memberships -->
+        <details class="accordion-item">
+          <summary class="accordion-header">
+            <span data-i18n="pol.5.h">Monthly Membership Terms</span>
+            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="accordion-content">
+            <p class="i18n-en">Monthly membership plans are billed automatically to the payment method on file.</p>
+            <p class="i18n-en"><strong>Scheduling:</strong> Membership visits must be scheduled at least 24 hours in advance and are subject to availability. Unused services from the current month do not roll over and are not transferable.</p>
+            <p class="i18n-en"><strong>Cancellation:</strong> You may request cancellation before the next billing cycle begins. Refunds are not issued for billing periods already in progress.</p>
+            <p class="i18n-es">Los planes de membresía mensual se facturan automáticamente al medio de pago registrado.</p>
+            <p class="i18n-es"><strong>Programación:</strong> Las visitas de la membresía deben agendarse con al menos 24 horas de anticipación y están sujetas a disponibilidad. Los servicios no utilizados del mes en curso no se acumulan ni son transferibles.</p>
+            <p class="i18n-es"><strong>Cancelación:</strong> Puedes solicitar la baja antes de que comience el siguiente ciclo de facturación. No se emiten reembolsos por periodos de facturación ya en curso.</p>
+          </div>
+        </details>
+
+        <!-- Item 6: Personal Items and Liability -->
+        <details class="accordion-item">
+          <summary class="accordion-header">
+            <span data-i18n="pol.6.h">Personal Items and Liability</span>
+            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="accordion-content">
+            <p class="i18n-en">Please remove cash, identification documents, electronics, jewelry, and other valuables from the vehicle before service. The company is not responsible for lost personal belongings left inside the vehicle.</p>
+            <p class="i18n-en">The company is also not responsible for pre-existing damage, deteriorated or peeling paint, loose parts, poorly installed accessories, or normal wear on the vehicle or property.</p>
+            <p class="i18n-es">Por favor, retira del vehículo el dinero en efectivo, documentos de identidad, electrónicos, joyas y otros objetos de valor antes del servicio. La empresa no se responsabiliza por la pérdida de objetos personales olvidados dentro del vehículo.</p>
+            <p class="i18n-es">La empresa tampoco se responsabiliza por daños preexistentes, pintura deteriorada o descascarada, piezas sueltas, accesorios mal instalados o el desgaste normal del vehículo o la propiedad.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand"><img src="assets/logo-circle-clean.png" alt="L&B Elite Wash & Detail logo" /><span>L&B Elite Wash & Detail</span></div>
+        <div class="footer-links">
+          <a href="tel:+12395270770">(239) 527-0770</a>
+          <a href="https://www.instagram.com/libelitewashdetail" target="_blank" rel="noopener noreferrer">Instagram</a>
+          <a href="https://www.facebook.com/profile.php?id=61577492636498" target="_blank" rel="noopener noreferrer">Facebook</a>
+        </div>
+        <p class="footer-copy" data-i18n="footer.copy">© 2026 L&B Elite Wash & Detail. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- WA Float -->
+  <a href="https://wa.me/12395270770?text=Hi%20L%26B%20Elite!%20I%27d%20like%20to%20book%20a%20service." class="wa-float" target="_blank" rel="noopener" aria-label="WhatsApp">
+    <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+  </a>
+
+  <script src="script.js?v=2"></script>
+</body>
+</html>

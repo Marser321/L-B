@@ -1,0 +1,2740 @@
+/* ===================================================
+   L&B Elite Wash & Detail — Interactive Logic V3
+   Dynamic Multi-Step Quoter + Core Page Animations
+   =================================================== */
+
+(function () {
+  'use strict';
+
+  // ──────────────────────────────────────────────
+  // LANGUAGE (bilingual ES / EN)
+  // ──────────────────────────────────────────────
+  function initialLang() {
+    try {
+      const saved = localStorage.getItem('lyb-lang');
+      if (saved === 'es' || saved === 'en') return saved;
+    } catch (e) { /* storage unavailable */ }
+    const docLang = document.documentElement.getAttribute('data-lang');
+    if (docLang === 'es' || docLang === 'en') return docLang;
+    return (navigator.language || 'en').toLowerCase().indexOf('es') === 0 ? 'es' : 'en';
+  }
+  let LANG = initialLang();
+
+  // Resolve a value that may be a {en, es} object, a plain string, or undefined.
+  function loc(v) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) return v[LANG] != null ? v[LANG] : v.en;
+    return v;
+  }
+  // UI string by key (filled in by the UI dictionary further below).
+  function t(key) {
+    const entry = UI_STRINGS[key];
+    if (!entry) return key;
+    return entry[LANG] != null ? entry[LANG] : entry.en;
+  }
+  // Single source of truth for the business phone number.
+  const PHONE_E164 = '12395270770';
+  // Localized label for a stored time-window key (morning/afternoon/evening).
+  function timeWindowLabel(key) { return key ? t('tw.' + key) : ''; }
+
+  // ──────────────────────────────────────────────
+  // SERVICES DATA (Extracted from Context & PDF)
+  // ──────────────────────────────────────────────
+  const SERVICES_DATA = {
+    categories: [
+      {
+        id: 'cars',
+        name: 'Cars & SUVs',
+        image: 'assets/service-cars.webp',
+        from: '$45',
+        packages: [
+          {
+            id: 'basico-exterior',
+            name: 'Basic Wash (Lavado Básico)',
+            description: 'Lavado exterior profesional realizado con productos de alta calidad y técnicas seguras para la pintura.',
+            includes: [
+              'Lavado exterior completo',
+              'Eliminación de insectos adheridos',
+              'Limpieza de cristales exteriores',
+              'Limpieza de la tapa del tanque de combustible',
+              'Limpieza de llantas y rines',
+              'Aplicación de brillo para neumáticos',
+              'Secado manual con toallas de microfibra',
+              'Limpieza de guardabarros interiores',
+              'Inspección final de calidad'
+            ],
+            prices: {
+              sedan: 45,
+              suv: 65,
+              truck: 85,
+              van_pequena: 55,
+              van_xl: 75
+            }
+          },
+          {
+            id: 'basico-premium',
+            name: 'Basic Wash Premium',
+            description: 'Combina un lavado exterior profesional con una limpieza interior completa para mantener el vehículo limpio, fresco y protegido.',
+            includes: [
+              'Aspirado intensivo del interior',
+              'Limpieza de tablero y superficies interiores',
+              'Limpieza de cristales interiores',
+              'Desempolvado completo',
+              'Aplicación de ambientador',
+              'Lavado exterior completo',
+              'Eliminación de insectos adheridos',
+              'Limpieza de rines y llantas',
+              'Aplicación de brillo para neumáticos',
+              'Limpieza de guardabarros interiores',
+              'Secado manual con toallas de microfibra'
+            ],
+            prices: {
+              sedan: 75,
+              suv: 95,
+              truck: 115,
+              van_pequena: 100,
+              van_xl: 140
+            }
+          },
+          {
+            id: 'premium-detail',
+            name: 'Premium Detail',
+            description: 'Restauración profunda tanto del interior como del exterior del vehículo, brindando una apariencia renovada y una protección superior.',
+            includes: [
+              'Aspirado intensivo interior',
+              'Desempolvado completo interior',
+              'Limpieza profunda del tablero',
+              'Limpieza de paneles de puertas',
+              'Eliminación localizada de olores',
+              'Aplicación de máquina de ozono',
+              'Limpieza de cristales interiores',
+              'Ambientador premium',
+              'Lavado exterior completo y eliminación de insectos',
+              'Limpieza de rines, llantas y guardabarros',
+              'Limpieza del motor',
+              'Aplicación de cera manual o sellador en spray',
+              'Protección de pintura hasta por 4 meses'
+            ],
+            prices: {
+              sedan: 125,
+              suv: 155,
+              truck: 195
+            }
+          },
+          {
+            id: 'vip',
+            name: 'VIP Detail',
+            description: 'Nuestro servicio más completo, diseñado para clientes que buscan el máximo nivel de limpieza, restauración y protección.',
+            includes: [
+              'Limpieza profunda de asientos de cuero, tela o Alcántara',
+              'Aspirado intensivo y limpieza del maletero (debe estar vacío)',
+              'Limpieza profunda e hidratación de tablero y plásticos',
+              'Limpieza e hidratación de paneles de puertas',
+              'Tratamiento de olores con máquina de ozono y ambientador premium',
+              'Lavado exterior completamente a mano',
+              'Detallado profundo de rines y llantas con brillo para neumáticos',
+              'Limpieza de guardabarros y tapa de combustible',
+              'Limpieza e hidratación del motor',
+              'Hidratación de plásticos exteriores',
+              'Aplicación de cera manual o sellador premium',
+              'Protección de pintura hasta por 6 meses'
+            ],
+            prices: {
+              sedan: 220,
+              suv: 250,
+              truck: 270
+            }
+          },
+          {
+            id: 'membresia-2x',
+            name: 'Membresía (2x al mes)',
+            description: 'Mantén tu vehículo impecable con 2 visitas premium de mantenimiento mensual.',
+            includes: [
+              '2 visitas de lavado completo al mes',
+              'Aspirado intensivo y desempolvado interior',
+              'Limpieza de tablero y cristales',
+              'Lavado exterior premium detallado',
+              'Programar con al menos 24 horas de anticipación'
+            ],
+            prices: {
+              sedan: 130,
+              suv: 160,
+              truck: 190,
+              van_pequena: 170,
+              van_xl: 250
+            }
+          },
+          {
+            id: 'membresia-4x',
+            name: 'Membresía (4x al mes)',
+            description: 'Cuidado semanal absoluto. 4 lavados premium completos al mes.',
+            includes: [
+              '4 visitas de lavado completo al mes',
+              'Aspirado intensivo y desempolvado interior',
+              'Limpieza de tablero y cristales',
+              'Lavado exterior premium detallado',
+              'Programar con al menos 24 horas de anticipación'
+            ],
+            prices: {
+              sedan: 200,
+              suv: 260,
+              truck: 320,
+              van_pequena: 300,
+              van_xl: 460
+            }
+          }
+        ],
+        sizes: [
+          { id: 'sedan', name: 'Sedán / Coupé' },
+          { id: 'suv', name: 'SUV & Small Truck' },
+          { id: 'truck', name: 'Full-Size Truck' },
+          { id: 'van_pequena', name: 'Small Van' },
+          { id: 'van_xl', name: 'XL Van' }
+        ],
+        extras: [
+          { id: 'limpieza-motor', name: 'Limpieza de Motor', price: 30, range: 'Desde $30' },
+          { id: 'cera-rapida', name: 'Cera Rápida (Spray Wax)', price: 20, range: '$20 - $40' },
+          { id: 'sellador-pintura', name: 'Sellador de Pintura', price: 50, range: 'Desde $50' },
+          { id: 'pelos-animal', name: 'Eliminación de pelos de mascotas', price: 30, range: '$30 - $140' },
+          { id: 'eliminar-olores', name: 'Eliminación de Olores', price: 30, range: '$30 - $100' },
+          { id: 'tratamiento-ozono', name: 'Tratamiento con Ozono', price: 40, range: 'Desde $40' },
+          { id: 'limpieza-asientos', name: 'Limpieza Profunda de Asientos', price: 40, range: 'Desde $40/fila' },
+          { id: 'limpieza-alfombras', name: 'Limpieza de Alfombras y Tapetes', price: 30, range: 'Desde $30' },
+          { id: 'restauracion-plasticos', name: 'Restauración de Plásticos', price: 25, range: 'Desde $25' },
+          { id: 'pulido-faros', name: 'Pulido de Faros', price: 60, range: 'Desde $60/par' },
+          { id: 'descontaminacion-pintura', name: 'Descontaminación de Pintura', price: 60, range: 'Desde $60' },
+          { id: 'cargo-bed', name: 'Lavado Compartimiento Carga (Truck Bed)', price: 25, range: 'Desde $25' }
+        ]
+      },
+      {
+        id: 'paint_correction',
+        name: 'Paint Correction & Protection',
+        image: 'assets/service-paint-correction.webp',
+        from: '$299',
+        packages: [
+          {
+            id: 'paint-enhancement',
+            name: 'Package 1 – Paint Enhancement',
+            description: 'Mejora de brillo de un paso y eliminación de defectos leves con sellador protector.',
+            includes: [
+              'Lavado premium',
+              'Descontaminación química',
+              'Clay Bar',
+              'Pulido de un paso (mejora brillo y elimina defectos leves)',
+              'Aplicación de sellador de pintura (JetSeal)',
+              'Limpieza de cristales',
+              'Brillo para llantas'
+            ],
+            prices: {
+              sedan: 299,
+              suv: 349,
+              truck: 399,
+              van: 449
+            }
+          },
+          {
+            id: 'paint-correction',
+            name: 'Package 2 – Paint Correction',
+            description: 'Corrección de pintura de dos pasos (compound + polish) para eliminar entre 70-85% de rayones.',
+            includes: [
+              'Todo lo incluido en el Paquete 1 (Enhancement)',
+              'Corrección de pintura de dos pasos (compound + polish)',
+              'Eliminación de marcas circulares (swirls) y el 70–85% de rayones',
+              'Sellador premium de pintura'
+            ],
+            prices: {
+              sedan: 599,
+              suv: 699,
+              truck: 799,
+              van: 899
+            }
+          },
+          {
+            id: 'ceramic-protection',
+            name: 'Package 3 – Elite Ceramic Protection',
+            description: 'Protección cerámica marina/vial de alta resistencia para un acabado de espejo duradero.',
+            includes: [
+              'Lavado premium y descontaminación completa',
+              'Clay Bar y Corrección de pintura',
+              'Preparación con panel wipe',
+              'Aplicación de recubrimiento cerámico',
+              'Protección UV y alto brillo',
+              'Efecto hidrofóbico extremo (repelencia al agua)'
+            ],
+            prices: {
+              sedan: 999,
+              suv: 1199,
+              truck: 1399,
+              van: 1599
+            }
+          }
+        ],
+        sizes: [
+          { id: 'sedan', name: 'Sedán' },
+          { id: 'suv', name: 'SUV' },
+          { id: 'truck', name: 'Pickup / Truck' },
+          { id: 'van', name: 'Van' }
+        ],
+        extras: [
+          { id: 'faros-recup', name: 'Restauración de faros', price: 120 },
+          { id: 'tar-sap', name: 'Remoción de alquitrán y savia', price: 50, range: 'Desde $50' },
+          { id: 'water-spots', name: 'Eliminación de manchas de agua', price: 75, range: 'Desde $75' },
+          { id: 'engine-bay', name: 'Limpieza del compartimiento del motor', price: 75 },
+          { id: 'ext-plastics', name: 'Protección de plásticos exteriores', price: 50 },
+          { id: 'repelente-cristales', name: 'Tratamiento de cristales repelente', price: 50 }
+        ]
+      },
+      {
+        id: 'heavy_trucks',
+        name: 'Heavy Trucks',
+        image: 'assets/service-heavy-trucks.webp',
+        from: '$80',
+        packages: [
+          {
+            id: 'box-truck-wash',
+            name: 'Box Truck (Basic Wash)',
+            description: 'Lavado exterior manual completo para camiones de carga de diferentes medidas.',
+            includes: [
+              'Lavado exterior completo',
+              'Aplicación de jabón profesional',
+              'Lavado manual con cepillos y/o guantes de microfibra',
+              'Limpieza de espejos y cristales',
+              'Limpieza básica de rines y llantas',
+              'Desengrasado ligero y enjuague completo',
+              'Secado de superficies visibles'
+            ],
+            prices: {
+              size_10_16: 80,
+              size_17_20: 100,
+              size_21_26: 140
+            }
+          },
+          {
+            id: 'box-truck-2x',
+            name: 'Box Truck Membresía (2x al mes)',
+            description: 'Mantenimiento quincenal para mantener la imagen limpia de tu camión.',
+            includes: [
+              '2 visitas de lavado exterior completo al mes',
+              'Remoción de grasa y lavado manual',
+              'Limpieza de cristales y espejos'
+            ],
+            prices: {
+              size_10_16: 140,
+              size_17_20: 170,
+              size_21_26: 250
+            }
+          },
+          {
+            id: 'box-truck-4x',
+            name: 'Box Truck Membresía (4x al mes)',
+            description: 'Limpieza semanal intensiva para flotas de camiones de carga.',
+            includes: [
+              '4 visitas de lavado exterior completo al mes',
+              'Remoción de grasa y lavado manual',
+              'Limpieza de cristales y espejos'
+            ],
+            prices: {
+              size_10_16: 240,
+              size_17_20: 300,
+              size_21_26: 440
+            }
+          },
+          {
+            id: 'semi-truck-wash',
+            name: 'Semi Truck (Tractor) Wash',
+            description: 'Lavado completo exterior para cabezal de tractocamión.',
+            includes: [
+              'Lavado exterior completo',
+              'Limpieza de cabina exterior',
+              'Limpieza de cristales y espejos',
+              'Limpieza básica de rines y neumáticos',
+              'Desengrasado ligero y secado'
+            ],
+            prices: {
+              standard: 150
+            }
+          },
+          {
+            id: 'semi-truck-2x',
+            name: 'Semi Truck Membresía (2x al mes)',
+            description: 'Mantenimiento quincenal recurrente para tractores.',
+            includes: [
+              '2 visitas de lavado exterior completo de Semi Truck al mes',
+              'Limpieza exterior de cabina, cristales y rines'
+            ],
+            prices: {
+              standard: 270
+            }
+          },
+          {
+            id: 'semi-truck-4x',
+            name: 'Semi Truck Membresía (4x al mes)',
+            description: 'Limpieza semanal intensiva para cabezales de tractocamión.',
+            includes: [
+              '4 visitas de lavado exterior completo de Semi Truck al mes',
+              'Limpieza exterior de cabina, cristales y rines'
+            ],
+            prices: {
+              standard: 500
+            }
+          },
+          {
+            id: 'trailer-wash',
+            name: 'Trailer Wash (Reefer / Dry Van)',
+            description: 'Lavado completo a presión de paneles de trailer comercial de 48\' a 53\'.',
+            includes: [
+              'Lavado exterior completo',
+              'Eliminación de suciedad acumulada de carretera',
+              'Limpieza de paneles laterales, frontal y posterior',
+              'Enjuague completo y secado'
+            ],
+            prices: {
+              standard: 200
+            }
+          },
+          {
+            id: 'trailer-2x',
+            name: 'Trailer Membresía (2x al mes)',
+            description: '2 visitas mensuales de lavado exterior de trailer.',
+            includes: [
+              '2 lavados exteriores completos al mes',
+              'Limpieza de paneles, frontal y posterior'
+            ],
+            prices: {
+              standard: 370
+            }
+          },
+          {
+            id: 'trailer-4x',
+            name: 'Trailer Membresía (4x al mes)',
+            description: 'Lavado exterior semanal recurrente para trailers comerciales.',
+            includes: [
+              '4 lavados exteriores completos al mes',
+              'Limpieza de paneles, frontal y posterior'
+            ],
+            prices: {
+              standard: 700
+            }
+          },
+          {
+            id: 'dump-truck-wash',
+            name: 'Dump Truck (Camión de Volteo)',
+            description: 'Lavado exterior para camiones de volteo incluyendo chasis visible y tolva.',
+            includes: [
+              'Lavado exterior completo',
+              'Eliminación de barro y suciedad de chasis visible',
+              'Limpieza de rines y neumáticos',
+              'Desengrasado ligero'
+            ],
+            prices: {
+              standard: 180
+            }
+          },
+          {
+            id: 'dump-truck-2x',
+            name: 'Dump Truck Membresía (2x al mes)',
+            description: '2 visitas mensuales de lavado exterior de camión de volteo.',
+            includes: [
+              '2 lavados completos exteriores y de chasis al mes'
+            ],
+            prices: {
+              standard: 320
+            }
+          },
+          {
+            id: 'dump-truck-4x',
+            name: 'Dump Truck Membresía (4x al mes)',
+            description: 'Lavado exterior semanal recurrente para camiones de volteo.',
+            includes: [
+              '4 lavados completos exteriores y de chasis al mes'
+            ],
+            prices: {
+              standard: 620
+            }
+          },
+          {
+            id: 'garbage-truck-wash',
+            name: 'Garbage Truck (Camión de Basura)',
+            description: 'Lavado y desengrasado exterior de alta resistencia.',
+            includes: [
+              'Lavado exterior',
+              'Desengrasado básico',
+              'Eliminación de suciedad pesada',
+              'Limpieza de cabina y cristales',
+              'Enjuague completo'
+            ],
+            prices: {
+              standard: 200
+            }
+          },
+          {
+            id: 'garbage-truck-2x',
+            name: 'Garbage Truck Membresía (2x al mes)',
+            description: '2 visitas mensuales de lavado exterior de camión de basura.',
+            includes: [
+              '2 lavados exteriores y desengrasados de chasis/caja al mes'
+            ],
+            prices: {
+              standard: 370
+            }
+          },
+          {
+            id: 'garbage-truck-4x',
+            name: 'Garbage Truck Membresía (4x al mes)',
+            description: 'Lavado exterior semanal recurrente para camiones de basura.',
+            includes: [
+              '4 lavados exteriores y desengrasados de chasis/caja al mes'
+            ],
+            prices: {
+              standard: 700
+            }
+          }
+        ],
+        sizes: [
+          { id: 'size_10_16', name: 'Caja de 10\' a 16\'' },
+          { id: 'size_17_20', name: 'Caja de 17\' a 20\'' },
+          { id: 'size_21_26', name: 'Caja de 21\' a 26\'' },
+          { id: 'standard', name: 'Medida Estándar' }
+        ],
+        extras: [
+          { id: 'limpieza-cabina', name: 'Limpieza Interior de Cabina', price: 25, range: '$25 - $60' },
+          { id: 'cera-rapida', name: 'Cera Rápida', price: 20, range: '$20 - $40' },
+          { id: 'desengrasado-profundo', name: 'Desengrasado Profundo', price: 30, range: '$30 - $60' },
+          { id: 'motor-pesado', name: 'Limpieza de Motor', price: 30 },
+          { id: 'volteo-aluminio', name: 'Caja de Aluminio (+ $120)', price: 120, onlyFor: ['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x'] },
+          { id: 'rines-aluminio', name: 'Ácido para Rines de Aluminio', price: 25 },
+          { id: 'pulido-tanques', name: 'Pulido Tanques de Aluminio (Cotiz.)', price: 0, range: 'Cotización personalizada' }
+        ]
+      },
+      {
+        id: 'boats',
+        name: 'Boats & Watercraft',
+        image: 'assets/service-boats.webp',
+        from: '$120',
+        packages: [
+          {
+            id: 'boat-basico',
+            name: 'Basic Boat Wash',
+            description: 'Servicio de lavado básico diseñado para mantener la embarcación limpia después de cada uso.',
+            includes: [
+              'Lavado completo del exterior',
+              'Enjuague con agua dulce',
+              'Eliminación de sal, arena y suciedad',
+              'Limpieza básica del casco',
+              'Limpieza de superficies visibles',
+              'Secado básico'
+            ],
+            prices: {
+              boat_16_20: 120,
+              boat_21_30: 170,
+              boat_31_40: 220,
+              boat_41_60: 300
+            }
+          },
+          {
+            id: 'boat-premium',
+            name: 'Premium Boat Wash',
+            description: 'Limpieza más completa tanto del exterior como del interior detallado.',
+            includes: [
+              'Lavado completo exterior y enjuague dulce',
+              'Eliminación de sal y suciedad',
+              'Limpieza detallada del casco',
+              'Limpieza detallada de asientos interior',
+              'Limpieza de consola y ventanas',
+              'Limpieza de compartimientos y superficies visibles'
+            ],
+            prices: {
+              boat_16_20: 180,
+              boat_21_30: 250,
+              boat_31_40: 400,
+              boat_41_60: 600
+            },
+            priceRanges: {
+              boat_16_20: '$180 - $250',
+              boat_21_30: '$250 - $400',
+              boat_31_40: '$400 - $600',
+              boat_41_60: '$600 - $900'
+            }
+          },
+          {
+            id: 'boat-detail',
+            name: 'Premium Boat Detail',
+            description: 'Nuestro servicio más completo para restaurar y proteger su embarcación marina.',
+            includes: [
+              'Limpieza interior completa',
+              'Limpieza exterior completa',
+              'Pulido del casco y restauración del brillo',
+              'Aplicación de protectores para superficies',
+              'Limpieza de detalles y acabado profesional'
+            ],
+            prices: {
+              boat_16_20: 250,
+              boat_21_30: 400,
+              boat_31_40: 600,
+              boat_41_60: 900
+            },
+            priceRanges: {
+              boat_16_20: '$250 - $400',
+              boat_21_30: '$400 - $600',
+              boat_31_40: '$600 - $900',
+              boat_41_60: '$900 - $1,200'
+            }
+          }
+        ],
+        sizes: [
+          { id: 'boat_16_20', name: '16 FT a 20 FT' },
+          { id: 'boat_21_30', name: '21 FT a 30 FT' },
+          { id: 'boat_31_40', name: '31 FT a 40 FT' },
+          { id: 'boat_41_60', name: '41 FT a 60 FT' }
+        ],
+        extras: []
+      },
+      {
+        id: 'jetski',
+        name: 'Jet Ski',
+        image: 'assets/service-jetski.webp',
+        from: '$80',
+        packages: [
+          {
+            id: 'jetski-premium',
+            name: 'Premium Wash Jet Ski',
+            description: 'Lavado completo del Jet Ski, tráiler y remoción total de salitre.',
+            includes: [
+              'Lavado completo del Jet Ski y del tráiler',
+              'Enjuague con agua dulce',
+              'Eliminación de sal y arena',
+              'Limpieza de casco y asiento',
+              'Secado completo'
+            ],
+            prices: {
+              qty_1: 80,
+              qty_2: 150,
+              qty_3: 200
+            }
+          },
+          {
+            id: 'jetski-membresia',
+            name: 'Membresía (2x al mes)',
+            description: 'Mantenimiento quincenal continuo para mantener tu moto náutica lista.',
+            includes: [
+              '2 visitas de lavado completo premium al mes',
+              'Lavado del tráiler y enjuague dulce',
+              'Eliminación de salitre'
+            ],
+            prices: {
+              qty_1: 130,
+              qty_2: 220,
+              qty_3: 300
+            }
+          }
+        ],
+        sizes: [
+          { id: 'qty_1', name: '1 Jet Ski' },
+          { id: 'qty_2', name: '2 Jet Skis' },
+          { id: 'qty_3', name: '3 Jet Skis' }
+        ],
+        extras: [
+          { id: 'eliminacion-sal', name: 'Descontaminación por sal pesada', price: 20 },
+          { id: 'brillo-plasticos', name: 'Restauración de brillo en plásticos', price: 15 },
+          { id: 'limpieza-asiento', name: 'Limpieza profunda de asiento', price: 30 },
+          { id: 'ceramica-marina', name: 'Cerámica rápida marina', price: 35 }
+        ]
+      },
+      {
+        id: 'golf_cart',
+        name: 'Golf Cart',
+        image: 'assets/service-golf-cart.webp',
+        from: '$80',
+        packages: [
+          {
+            id: 'golf-premium',
+            name: 'Premium Wash Golf Cart',
+            description: 'Lavado detallado completo incluyendo asientos, volante, techo y ruedas.',
+            includes: [
+              'Lavado exterior completo y limpieza de techo',
+              'Limpieza de asientos, volante y tablero',
+              'Limpieza de ruedas y rines',
+              'Limpieza interior y secado detallado'
+            ],
+            prices: {
+              standard: 80
+            }
+          },
+          {
+            id: 'golf-membresia',
+            name: 'Membresía (2x al mes)',
+            description: 'Mantenimiento mensual recurrente (2 visitas por mes) de tu carrito de golf.',
+            includes: [
+              '2 visitas de lavado completo premium al mes',
+              'Limpieza de asientos, tablero, ruedas y volante',
+              'Secado detallado'
+            ],
+            prices: {
+              standard: 130
+            }
+          }
+        ],
+        sizes: [
+          { id: 'standard', name: 'Estándar' }
+        ],
+        extras: []
+      },
+      {
+        id: 'atv',
+        name: 'ATVs & Quad',
+        image: 'assets/service-atv.webp',
+        from: '$100',
+        packages: [
+          {
+            id: 'atv-premium',
+            name: 'Premium Wash ATV',
+            description: 'Eliminación a presión de barro, arena, polvo y grasa; detallado de partes mecánicas visibles.',
+            includes: [
+              'Lavado a presión',
+              'Eliminación de barro, arena y polvo',
+              'Limpieza de suspensión visible',
+              'Limpieza de ruedas y rines',
+              'Limpieza de asiento y guardabarros',
+              'Limpieza de luces y manillares',
+              'Secado detallado'
+            ],
+            prices: {
+              qty_1: 100,
+              qty_2: 170,
+              qty_3: 220
+            }
+          },
+          {
+            id: 'atv-membresia',
+            name: 'Membresía (2x al mes)',
+            description: '2 visitas al mes para mantener limpia tu cuatrimoto después de tus aventuras.',
+            includes: [
+              '2 visitas de lavado a presión detallado al mes',
+              'Limpieza de suspensión, guardabarros y plásticos'
+            ],
+            prices: {
+              qty_1: 170,
+              qty_2: 280,
+              qty_3: 400
+            }
+          }
+        ],
+        sizes: [
+          { id: 'qty_1', name: '1 ATV' },
+          { id: 'qty_2', name: '2 ATVs' },
+          { id: 'qty_3', name: '3 ATVs' }
+        ],
+        extras: []
+      },
+      {
+        id: 'mobile_home',
+        name: 'Mobile Homes',
+        image: 'assets/service-mobile-home.webp',
+        from: '$150',
+        packages: [
+          {
+            id: 'mobile-home-basico',
+            name: 'Basic Premium Wash',
+            description: 'Lavado profesional exterior soft-wash para casas móviles. Elimina moho y suciedad.',
+            includes: [
+              'Lavado exterior completo',
+              'Aplicación de técnica Soft Wash o baja presión (según el material)',
+              'Eliminación de moho, algas y hongos',
+              'Eliminación de suciedad acumulada y telarañas',
+              'Enjuague completo e inspección final de calidad'
+            ],
+            prices: {
+              single_wide: 150,
+              double_wide: 225,
+              triple_wide: 350
+            },
+            priceRanges: {
+              single_wide: '$150 - $225',
+              double_wide: '$225 - $350',
+              triple_wide: '$350 - $500'
+            }
+          }
+        ],
+        sizes: [
+          { id: 'single_wide', name: 'Single-Wide (1 Sección)' },
+          { id: 'double_wide', name: 'Double-Wide (2 Secciones)' },
+          { id: 'triple_wide', name: 'Triple-Wide o Mayor' }
+        ],
+        extras: []
+      },
+      {
+        id: 'driveway',
+        name: 'Driveways',
+        image: 'assets/service-driveway.webp',
+        from: '$100',
+        packages: [
+          {
+            id: 'driveway-basico',
+            name: 'Basic Pressure Wash',
+            description: 'El método más eficiente para la limpieza de superficies de concreto y pavimento.',
+            includes: [
+              'Lavado a presión profesional',
+              'Eliminación de suciedad, moho y algas',
+              'Eliminación de polvo y enjuague completo',
+              'Inspección final de calidad'
+            ],
+            prices: {
+              standard: 100
+            },
+            priceRanges: {
+              standard: '$100 - $300'
+            }
+          },
+          {
+            id: 'driveway-premium',
+            name: 'Premium Pressure Wash',
+            description: 'Recomendado para concreto con manchas difíciles, aceite de motor y fluidos.',
+            includes: [
+              'Todo lo incluido en el Basic Pressure Wash',
+              'Aplicación de desengrasantes profesionales',
+              'Tratamiento especializado para manchas de aceite',
+              'Eliminación de pintura superficial y fluidos automotrices',
+              'Productos especializados para restaurar la superficie'
+            ],
+            prices: {
+              standard: 150
+            },
+            priceRanges: {
+              standard: '$150 - $400'
+            }
+          }
+        ],
+        sizes: [
+          { id: 'standard', name: 'Estándar' }
+        ],
+        extras: []
+      }
+    ]
+  };
+
+  // English copy maps live inside this setup function; the original Spanish lives
+  // in SERVICES_DATA. We snapshot Spanish, keep English, and expose both so
+  // applyServiceLanguage() can swap the live fields on demand.
+  let SERVICE_COPY_EN = null, SERVICE_COPY_ES = null;
+  function setupBilingualServiceCopy() {
+    const categoryCopy = {
+      cars: {
+        name: 'Cars & SUVs',
+        sizes: {
+          sedan: 'Sedan / Coupe',
+          suv: 'SUV & Small Truck',
+          truck: 'Full-Size Truck',
+          van_pequena: 'Small Van',
+          van_xl: 'XL Van'
+        },
+        extras: {
+          'limpieza-motor': ['Engine Bay Cleaning', 'From $30'],
+          'cera-rapida': ['Quick Spray Wax', '$20 - $40'],
+          'sellador-pintura': ['Paint Sealant', 'From $50'],
+          'pelos-animal': ['Pet Hair Removal', '$30 - $140'],
+          'eliminar-olores': ['Odor Removal', '$30 - $100'],
+          'tratamiento-ozono': ['Ozone Treatment', 'From $40'],
+          'limpieza-asientos': ['Deep Seat Cleaning', 'From $40/row'],
+          'limpieza-alfombras': ['Carpet and Mat Cleaning', 'From $30'],
+          'restauracion-plasticos': ['Plastic Trim Restoration', 'From $25'],
+          'pulido-faros': ['Headlight Polishing', 'From $60/pair'],
+          'descontaminacion-pintura': ['Paint Decontamination', 'From $60'],
+          'cargo-bed': ['Truck Bed Wash', 'From $25']
+        }
+      },
+      paint_correction: {
+        name: 'Paint Correction & Protection',
+        sizes: {
+          sedan: 'Sedan',
+          suv: 'SUV',
+          truck: 'Pickup / Truck',
+          van: 'Van'
+        },
+        extras: {
+          'faros-recup': ['Headlight Restoration'],
+          'tar-sap': ['Tar and Sap Removal', 'From $50'],
+          'water-spots': ['Water Spot Removal', 'From $75'],
+          'engine-bay': ['Engine Bay Cleaning'],
+          'ext-plastics': ['Exterior Plastic Protection'],
+          'repelente-cristales': ['Glass Water-Repellent Treatment']
+        }
+      },
+      heavy_trucks: {
+        name: 'Heavy Trucks',
+        sizes: {
+          size_10_16: "10' to 16' Box",
+          size_17_20: "17' to 20' Box",
+          size_21_26: "21' to 26' Box",
+          standard: 'Standard Size'
+        },
+        extras: {
+          'limpieza-cabina': ['Interior Cab Cleaning', '$25 - $60'],
+          'cera-rapida': ['Quick Wax', '$20 - $40'],
+          'desengrasado-profundo': ['Deep Degreasing', '$30 - $60'],
+          'motor-pesado': ['Engine Cleaning'],
+          'volteo-aluminio': ['Aluminum Dump Bed (+ $120)'],
+          'rines-aluminio': ['Aluminum Wheel Acid Cleaning'],
+          'pulido-tanques': ['Aluminum Tank Polishing (Quote)', 'Custom quote']
+        }
+      },
+      boats: {
+        name: 'Boats & Watercraft',
+        sizes: {
+          boat_16_20: '16 FT to 20 FT',
+          boat_21_30: '21 FT to 30 FT',
+          boat_31_40: '31 FT to 40 FT',
+          boat_41_60: '41 FT to 60 FT'
+        }
+      },
+      jetski: {
+        name: 'Jet Ski',
+        sizes: {
+          qty_1: '1 Jet Ski',
+          qty_2: '2 Jet Skis',
+          qty_3: '3 Jet Skis'
+        },
+        extras: {
+          'eliminacion-sal': ['Heavy Salt Decontamination'],
+          'brillo-plasticos': ['Plastic Gloss Restoration'],
+          'limpieza-asiento': ['Deep Seat Cleaning'],
+          'ceramica-marina': ['Quick Marine Ceramic']
+        }
+      },
+      golf_cart: {
+        name: 'Golf Cart',
+        sizes: { standard: 'Standard' }
+      },
+      atv: {
+        name: 'ATVs & Quad',
+        sizes: {
+          qty_1: '1 ATV',
+          qty_2: '2 ATVs',
+          qty_3: '3 ATVs'
+        }
+      },
+      mobile_home: {
+        name: 'Mobile Homes',
+        sizes: {
+          single_wide: 'Single-Wide (1 Section)',
+          double_wide: 'Double-Wide (2 Sections)',
+          triple_wide: 'Triple-Wide or Larger'
+        }
+      },
+      driveway: {
+        name: 'Driveways & Patios',
+        sizes: { standard: 'Standard' }
+      }
+    };
+
+    const packageCopy = {
+      'basico-exterior': {
+        name: 'Basic Exterior Wash',
+        description: 'Professional exterior wash using paint-safe techniques and high-quality products.',
+        includes: ['Complete exterior wash', 'Bug removal', 'Exterior glass cleaning', 'Fuel door cleaning', 'Wheel and tire cleaning', 'Tire shine application', 'Microfiber towel dry', 'Inner fender cleaning', 'Final quality inspection']
+      },
+      'basico-premium': {
+        name: 'Basic Premium Wash',
+        description: 'Exterior wash plus a complete interior refresh to keep the vehicle clean, fresh, and protected.',
+        includes: ['Intensive interior vacuum', 'Dashboard and interior surface cleaning', 'Interior glass cleaning', 'Complete dust removal', 'Premium air freshener', 'Complete exterior wash', 'Bug removal', 'Wheel and tire cleaning', 'Tire shine application', 'Inner fender cleaning', 'Microfiber towel dry']
+      },
+      'premium-detail': {
+        name: 'Premium Detail',
+        description: 'Deep interior and exterior restoration for a refreshed look and stronger surface protection.',
+        includes: ['Intensive interior vacuum', 'Complete interior dust removal', 'Deep dashboard cleaning', 'Door panel cleaning', 'Localized odor removal', 'Ozone machine treatment', 'Interior glass cleaning', 'Premium air freshener', 'Complete exterior wash and bug removal', 'Wheel, tire, and fender cleaning', 'Engine bay cleaning', 'Hand wax or spray sealant', 'Paint protection up to 4 months']
+      },
+      vip: {
+        name: 'VIP Detail',
+        description: 'Our most complete service for customers who want the highest level of cleaning, restoration, and protection.',
+        includes: ['Deep cleaning for leather, fabric, or Alcantara seats', 'Intensive vacuum and empty trunk cleaning', 'Deep dashboard and plastic conditioning', 'Door panel cleaning and conditioning', 'Ozone odor treatment and premium air freshener', 'Full hand exterior wash', 'Deep wheel and tire detailing with tire shine', 'Fender and fuel door cleaning', 'Engine bay cleaning and conditioning', 'Exterior plastic conditioning', 'Hand wax or premium sealant', 'Paint protection up to 6 months']
+      },
+      'membresia-2x': {
+        name: 'Membership (2x per month)',
+        description: 'Two monthly premium maintenance visits to keep your vehicle consistently clean.',
+        includes: ['2 complete wash visits per month', 'Intensive vacuum and interior dust removal', 'Dashboard and glass cleaning', 'Premium detailed exterior wash', 'Schedule at least 24 hours in advance']
+      },
+      'membresia-4x': {
+        name: 'Membership (4x per month)',
+        description: 'Weekly premium care with four complete washes per month.',
+        includes: ['4 complete wash visits per month', 'Intensive vacuum and interior dust removal', 'Dashboard and glass cleaning', 'Premium detailed exterior wash', 'Schedule at least 24 hours in advance']
+      },
+      'paint-enhancement': {
+        name: 'Package 1 - Paint Enhancement',
+        description: 'One-step gloss enhancement with light defect removal and protective sealant.',
+        includes: ['Premium wash', 'Chemical decontamination', 'Clay bar treatment', 'One-step polish for gloss and light defects', 'Paint sealant application (JetSeal)', 'Glass cleaning', 'Tire shine']
+      },
+      'paint-correction': {
+        name: 'Package 2 - Paint Correction',
+        description: 'Two-step correction with compound and polish to remove 70-85% of swirls and scratches.',
+        includes: ['Everything in Package 1', 'Two-step paint correction with compound and polish', 'Swirl mark removal and 70-85% scratch reduction', 'Premium paint sealant']
+      },
+      'ceramic-protection': {
+        name: 'Package 3 - Elite Ceramic Protection',
+        description: 'High-gloss ceramic protection for long-lasting shine, UV defense, and hydrophobic performance.',
+        includes: ['Premium wash and full decontamination', 'Clay bar and paint correction', 'Panel wipe preparation', 'Ceramic coating application', 'UV protection and high gloss', 'Extreme hydrophobic water behavior']
+      },
+      'box-truck-wash': {
+        name: 'Box Truck Basic Wash',
+        description: 'Complete manual exterior wash for commercial box trucks in multiple sizes.',
+        includes: ['Complete exterior wash', 'Professional soap application', 'Manual wash with brushes or microfiber mitts', 'Mirror and glass cleaning', 'Basic wheel and tire cleaning', 'Light degreasing and complete rinse', 'Visible surface drying']
+      },
+      'box-truck-2x': {
+        name: 'Box Truck Membership (2x per month)',
+        description: 'Biweekly maintenance to keep your commercial truck clean and presentable.',
+        includes: ['2 complete exterior wash visits per month', 'Grease removal and manual washing', 'Glass and mirror cleaning']
+      },
+      'box-truck-4x': {
+        name: 'Box Truck Membership (4x per month)',
+        description: 'Weekly exterior cleaning for active commercial fleets.',
+        includes: ['4 complete exterior wash visits per month', 'Grease removal and manual washing', 'Glass and mirror cleaning']
+      },
+      'semi-truck-wash': {
+        name: 'Semi Truck Tractor Wash',
+        description: 'Complete exterior wash for tractor units.',
+        includes: ['Complete exterior wash', 'Exterior cab cleaning', 'Glass and mirror cleaning', 'Basic wheel and tire cleaning', 'Light degreasing and drying']
+      },
+      'semi-truck-2x': {
+        name: 'Semi Truck Membership (2x per month)',
+        description: 'Biweekly recurring maintenance for tractor units.',
+        includes: ['2 complete semi truck exterior washes per month', 'Exterior cab, glass, and wheel cleaning']
+      },
+      'semi-truck-4x': {
+        name: 'Semi Truck Membership (4x per month)',
+        description: 'Weekly recurring exterior cleaning for semi truck tractors.',
+        includes: ['4 complete semi truck exterior washes per month', 'Exterior cab, glass, and wheel cleaning']
+      },
+      'trailer-wash': {
+        name: 'Trailer Wash (Reefer / Dry Van)',
+        description: "Complete pressure wash for 48' to 53' commercial trailer panels.",
+        includes: ['Complete exterior wash', 'Road grime removal', 'Side, front, and rear panel cleaning', 'Complete rinse and drying']
+      },
+      'trailer-2x': {
+        name: 'Trailer Membership (2x per month)',
+        description: 'Two monthly exterior trailer washes.',
+        includes: ['2 complete exterior washes per month', 'Side, front, and rear panel cleaning']
+      },
+      'trailer-4x': {
+        name: 'Trailer Membership (4x per month)',
+        description: 'Weekly recurring exterior washing for commercial trailers.',
+        includes: ['4 complete exterior washes per month', 'Side, front, and rear panel cleaning']
+      },
+      'dump-truck-wash': {
+        name: 'Dump Truck Wash',
+        description: 'Exterior wash for dump trucks including visible chassis and dump bed areas.',
+        includes: ['Complete exterior wash', 'Mud and grime removal from visible chassis', 'Wheel and tire cleaning', 'Light degreasing']
+      },
+      'dump-truck-2x': {
+        name: 'Dump Truck Membership (2x per month)',
+        description: 'Two monthly exterior dump truck washes.',
+        includes: ['2 complete exterior and chassis washes per month']
+      },
+      'dump-truck-4x': {
+        name: 'Dump Truck Membership (4x per month)',
+        description: 'Weekly recurring exterior washing for dump trucks.',
+        includes: ['4 complete exterior and chassis washes per month']
+      },
+      'garbage-truck-wash': {
+        name: 'Garbage Truck Wash',
+        description: 'Heavy-duty exterior wash and degreasing.',
+        includes: ['Exterior wash', 'Basic degreasing', 'Heavy dirt removal', 'Cab and glass cleaning', 'Complete rinse']
+      },
+      'garbage-truck-2x': {
+        name: 'Garbage Truck Membership (2x per month)',
+        description: 'Two monthly garbage truck exterior washes.',
+        includes: ['2 exterior washes and chassis/body degreasing services per month']
+      },
+      'garbage-truck-4x': {
+        name: 'Garbage Truck Membership (4x per month)',
+        description: 'Weekly recurring exterior washing for garbage trucks.',
+        includes: ['4 exterior washes and chassis/body degreasing services per month']
+      },
+      'boat-basico': {
+        name: 'Basic Boat Wash',
+        description: 'Basic wash service designed to keep the boat clean after each use.',
+        includes: ['Complete exterior wash', 'Freshwater rinse', 'Salt, sand, and dirt removal', 'Basic hull cleaning', 'Visible surface cleaning', 'Basic drying']
+      },
+      'boat-premium': {
+        name: 'Premium Boat Wash',
+        description: 'A more complete exterior and interior marine cleaning service.',
+        includes: ['Complete exterior wash and freshwater rinse', 'Salt and grime removal', 'Detailed hull cleaning', 'Detailed interior seat cleaning', 'Console and window cleaning', 'Compartment and visible surface cleaning']
+      },
+      'boat-detail': {
+        name: 'Premium Boat Detail',
+        description: 'Our most complete marine service for restoring and protecting your boat.',
+        includes: ['Complete interior cleaning', 'Complete exterior cleaning', 'Hull polishing and gloss restoration', 'Surface protectant application', 'Detail cleaning and professional finish']
+      },
+      'jetski-premium': {
+        name: 'Premium Jet Ski Wash',
+        description: 'Complete jet ski and trailer wash with thorough salt removal.',
+        includes: ['Complete jet ski and trailer wash', 'Freshwater rinse', 'Salt and sand removal', 'Hull and seat cleaning', 'Complete drying']
+      },
+      'jetski-membresia': {
+        name: 'Membership (2x per month)',
+        description: 'Biweekly maintenance to keep your personal watercraft ready for the water.',
+        includes: ['2 premium wash visits per month', 'Trailer wash and freshwater rinse', 'Salt removal']
+      },
+      'golf-premium': {
+        name: 'Premium Golf Cart Wash',
+        description: 'Complete detailed wash including seats, steering wheel, roof, and wheels.',
+        includes: ['Complete exterior wash and roof cleaning', 'Seat, steering wheel, and dashboard cleaning', 'Wheel and rim cleaning', 'Interior cleaning and detailed drying']
+      },
+      'golf-membresia': {
+        name: 'Membership (2x per month)',
+        description: 'Recurring monthly maintenance with two golf cart visits per month.',
+        includes: ['2 premium wash visits per month', 'Seat, dashboard, wheel, and steering wheel cleaning', 'Detailed drying']
+      },
+      'atv-premium': {
+        name: 'Premium ATV Wash',
+        description: 'Pressure washing for mud, sand, dust, and grease with detailed cleaning of visible mechanical areas.',
+        includes: ['Pressure washing', 'Mud, sand, and dust removal', 'Visible suspension cleaning', 'Wheel and rim cleaning', 'Seat and fender cleaning', 'Light and handlebar cleaning', 'Detailed drying']
+      },
+      'atv-membresia': {
+        name: 'Membership (2x per month)',
+        description: 'Two monthly visits to keep your ATV clean after every ride.',
+        includes: ['2 detailed pressure wash visits per month', 'Suspension, fender, and plastic trim cleaning']
+      },
+      'mobile-home-basico': {
+        name: 'Basic Premium Wash',
+        description: 'Professional exterior soft-wash for mobile homes. Removes mold, algae, and dirt.',
+        includes: ['Complete exterior wash', 'Soft-wash or low-pressure technique based on surface material', 'Mold, algae, and mildew removal', 'Built-up dirt and cobweb removal', 'Complete rinse and final quality inspection']
+      },
+      'driveway-basico': {
+        name: 'Basic Pressure Wash',
+        description: 'Efficient cleaning for concrete, paved surfaces, driveways, and patios.',
+        includes: ['Professional pressure washing', 'Dirt, mold, and algae removal', 'Dust removal and complete rinse', 'Final quality inspection']
+      },
+      'driveway-premium': {
+        name: 'Premium Pressure Wash',
+        description: 'Recommended for concrete with tough stains, oil spots, and automotive fluids.',
+        includes: ['Everything in the Basic Pressure Wash', 'Professional degreaser application', 'Specialized oil stain treatment', 'Surface paint and automotive fluid removal', 'Specialized surface restoration products']
+      }
+    };
+
+    SERVICE_COPY_EN = { categories: categoryCopy, packages: packageCopy };
+    SERVICE_COPY_ES = snapshotServiceCopy();
+    // Category display names were authored in English in SERVICES_DATA; provide
+    // Spanish equivalents so category cards match the translated route cards.
+    const catNamesEs = {
+      cars: 'Autos y SUVs',
+      paint_correction: 'Corrección y Protección de Pintura',
+      heavy_trucks: 'Camiones Pesados',
+      boats: 'Botes y Embarcaciones',
+      jetski: 'Jet Ski',
+      golf_cart: 'Carrito de Golf',
+      atv: 'ATVs y Cuatrimotos',
+      mobile_home: 'Casas Móviles',
+      driveway: 'Entradas y Patios'
+    };
+    Object.keys(catNamesEs).forEach(id => {
+      if (SERVICE_COPY_ES.categories[id]) SERVICE_COPY_ES.categories[id].name = catNamesEs[id];
+    });
+  }
+
+  // Snapshot the Spanish strings currently in SERVICES_DATA into the same shape
+  // as the English maps. Must run BEFORE any language is applied.
+  function snapshotServiceCopy() {
+    const categories = {}, packages = {};
+    SERVICES_DATA.categories.forEach(category => {
+      const c = { name: category.name, sizes: {}, extras: {} };
+      (category.sizes || []).forEach(s => { c.sizes[s.id] = s.name; });
+      (category.extras || []).forEach(e => { c.extras[e.id] = [e.name, e.range]; });
+      categories[category.id] = c;
+      (category.packages || []).forEach(p => {
+        packages[p.id] = { name: p.name, description: p.description, includes: p.includes.slice() };
+      });
+    });
+    return { categories, packages };
+  }
+
+  // Swap the live SERVICES_DATA strings to the requested language.
+  function applyServiceLanguage(lang) {
+    const copy = (lang === 'es' ? SERVICE_COPY_ES : SERVICE_COPY_EN) || SERVICE_COPY_EN;
+    if (!copy) return;
+    SERVICES_DATA.categories.forEach(category => {
+      const catCopy = copy.categories[category.id];
+      if (catCopy && catCopy.name) category.name = catCopy.name;
+      (category.sizes || []).forEach(size => {
+        const label = catCopy && catCopy.sizes ? catCopy.sizes[size.id] : null;
+        if (label) size.name = label;
+      });
+      (category.extras || []).forEach(extra => {
+        const next = catCopy && catCopy.extras ? catCopy.extras[extra.id] : null;
+        if (next) {
+          if (next[0]) extra.name = next[0];
+          extra.range = next[1];
+        }
+      });
+      (category.packages || []).forEach(pkg => {
+        const next = copy.packages[pkg.id];
+        if (next) {
+          if (next.name) pkg.name = next.name;
+          if (next.description) pkg.description = next.description;
+          if (next.includes) pkg.includes = next.includes;
+        }
+      });
+    });
+  }
+
+  // Build the bilingual store, then apply the active language.
+  setupBilingualServiceCopy();
+  applyServiceLanguage(LANG);
+
+  // ──────────────────────────────────────────────
+  // ENRICHMENT — clusters, package types, groups,
+  // recommender metadata (no real prices touched)
+  // ──────────────────────────────────────────────
+  const CATEGORY_CLUSTERS = {
+    cars: 'vehicles',
+    paint_correction: 'paint_protection',
+    boats: 'marine',
+    jetski: 'marine',
+    golf_cart: 'recreation',
+    atv: 'recreation',
+    mobile_home: 'fleet_property',
+    driveway: 'fleet_property',
+    heavy_trucks: 'fleet_property'
+  };
+
+  const CLUSTER_FILTERS = [
+    { id: 'all', label: 'All' },
+    { id: 'vehicles', label: 'Vehicle Detailing' },
+    { id: 'paint_protection', label: 'Paint Protection' },
+    { id: 'marine', label: 'Marine' },
+    { id: 'recreation', label: 'Recreation' },
+    { id: 'fleet_property', label: 'Fleet & Property' }
+  ];
+
+  const CATEGORY_ORDER = [
+    'cars',
+    'paint_correction',
+    'boats',
+    'jetski',
+    'golf_cart',
+    'atv',
+    'heavy_trucks',
+    'mobile_home',
+    'driveway'
+  ];
+
+  const SERVICE_ROUTES = {
+    vehicles: { filter: 'vehicles' },
+    paint_protection: { filter: 'paint_protection' },
+    marine: { filter: 'marine' },
+    recreation: { filter: 'recreation' },
+    fleet_property: { filter: 'fleet_property' }
+  };
+
+  const CATEGORY_IMAGES = {
+    cars: 'assets/route-vehicle-detailing.jpg',
+    paint_correction: 'assets/service-paint-protection.jpg',
+    heavy_trucks: 'assets/route-fleet-property.jpg',
+    boats: 'assets/route-marine-recreation.jpg',
+    jetski: 'assets/service-jet-ski-detail.jpg',
+    golf_cart: 'assets/service-golf-cart-detail.jpg',
+    atv: 'assets/service-atv-detail.jpg',
+    mobile_home: 'assets/service-mobile-home-wash.jpg',
+    driveway: 'assets/service-driveway-pressure.jpg'
+  };
+
+  const PACKAGE_IMAGES = {
+    'basico-exterior': 'assets/route-vehicle-detailing.jpg',
+    'basico-premium': 'assets/service-interior-detail.jpg',
+    'premium-detail': 'assets/service-interior-detail.jpg',
+    vip: 'assets/service-interior-detail.jpg',
+    'membresia-2x': 'assets/route-vehicle-detailing.jpg',
+    'membresia-4x': 'assets/route-vehicle-detailing.jpg',
+    'paint-enhancement': 'assets/service-paint-protection.jpg',
+    'paint-correction': 'assets/service-paint-protection.jpg',
+    'ceramic-protection': 'assets/extra-paint-protection.jpg',
+    'box-truck-wash': 'assets/route-fleet-property.jpg',
+    'box-truck-2x': 'assets/route-fleet-property.jpg',
+    'box-truck-4x': 'assets/route-fleet-property.jpg',
+    'semi-truck-wash': 'assets/route-fleet-property.jpg',
+    'semi-truck-2x': 'assets/route-fleet-property.jpg',
+    'semi-truck-4x': 'assets/route-fleet-property.jpg',
+    'trailer-wash': 'assets/route-fleet-property.jpg',
+    'trailer-2x': 'assets/route-fleet-property.jpg',
+    'trailer-4x': 'assets/route-fleet-property.jpg',
+    'dump-truck-wash': 'assets/extra-degreasing.jpg',
+    'dump-truck-2x': 'assets/extra-degreasing.jpg',
+    'dump-truck-4x': 'assets/extra-degreasing.jpg',
+    'garbage-truck-wash': 'assets/extra-degreasing.jpg',
+    'garbage-truck-2x': 'assets/extra-degreasing.jpg',
+    'garbage-truck-4x': 'assets/extra-degreasing.jpg',
+    'boat-basico': 'assets/route-marine-recreation.jpg',
+    'boat-premium': 'assets/route-marine-recreation.jpg',
+    'boat-detail': 'assets/route-marine-recreation.jpg',
+    'jetski-premium': 'assets/service-jet-ski-detail.jpg',
+    'jetski-membresia': 'assets/service-jet-ski-detail.jpg',
+    'golf-premium': 'assets/service-golf-cart-detail.jpg',
+    'golf-membresia': 'assets/service-golf-cart-detail.jpg',
+    'atv-premium': 'assets/service-atv-detail.jpg',
+    'atv-membresia': 'assets/service-atv-detail.jpg',
+    'mobile-home-basico': 'assets/service-mobile-home-wash.jpg',
+    'driveway-basico': 'assets/service-driveway-pressure.jpg',
+    'driveway-premium': 'assets/service-driveway-pressure.jpg'
+  };
+
+  const EXTRA_IMAGES = {
+    'limpieza-motor': 'assets/extra-engine-bay.jpg',
+    'engine-bay': 'assets/extra-engine-bay.jpg',
+    'cera-rapida': 'assets/extra-paint-protection.jpg',
+    'sellador-pintura': 'assets/extra-paint-protection.jpg',
+    'descontaminacion-pintura': 'assets/extra-paint-protection.jpg',
+    'tar-sap': 'assets/extra-paint-protection.jpg',
+    'water-spots': 'assets/extra-paint-protection.jpg',
+    'repelente-cristales': 'assets/extra-paint-protection.jpg',
+    'pelos-animal': 'assets/extra-pet-hair.jpg',
+    'eliminar-olores': 'assets/extra-odor-ozone.jpg',
+    'tratamiento-ozono': 'assets/extra-odor-ozone.jpg',
+    'limpieza-asientos': 'assets/extra-seat-carpet.jpg',
+    'limpieza-alfombras': 'assets/extra-seat-carpet.jpg',
+    'limpieza-asiento': 'assets/extra-seat-carpet.jpg',
+    'restauracion-plasticos': 'assets/extra-headlight-trim.jpg',
+    'pulido-faros': 'assets/extra-headlight-trim.jpg',
+    'faros-recup': 'assets/extra-headlight-trim.jpg',
+    'ext-plastics': 'assets/extra-headlight-trim.jpg',
+    'cargo-bed': 'assets/extra-truck-bed.jpg',
+    'limpieza-cabina': 'assets/extra-cab-cleaning.jpg',
+    'desengrasado-profundo': 'assets/extra-degreasing.jpg',
+    'motor-pesado': 'assets/extra-degreasing.jpg',
+    'volteo-aluminio': 'assets/extra-truck-bed.jpg',
+    'rines-aluminio': 'assets/extra-aluminum-wheels.jpg',
+    'pulido-tanques': 'assets/extra-aluminum-wheels.jpg',
+    'eliminacion-sal': 'assets/extra-marine-salt.jpg',
+    'brillo-plasticos': 'assets/extra-marine-salt.jpg',
+    'ceramica-marina': 'assets/extra-marine-salt.jpg'
+  };
+
+  const HEAVY_GROUPS = [
+    { id: 'box-truck', label: 'Box Truck' },
+    { id: 'semi-truck', label: 'Semi Truck' },
+    { id: 'trailer', label: 'Trailer' },
+    { id: 'dump-truck', label: 'Dump Truck' },
+    { id: 'garbage-truck', label: 'Garbage Truck' }
+  ];
+
+  // Per-category recommender config — references add-on ids that already exist
+  const RECO = {
+    cars: {
+      recommended: ['sellador-pintura', 'limpieza-asientos', 'tratamiento-ozono'],
+      popular: ['cera-rapida', 'limpieza-motor'],
+      bundles: [
+        { id: 'pet-owner', name: { en: 'Pet Owner Pack', es: 'Pack para Mascotas' }, desc: { en: 'Hair, odors & sanitizing for pet parents.', es: 'Pelos, olores y sanitizado para dueños de mascotas.' }, addons: ['pelos-animal', 'eliminar-olores', 'tratamiento-ozono'] },
+        { id: 'showroom', name: { en: 'Showroom Shine', es: 'Brillo de Exhibición' }, desc: { en: 'Decontaminate, seal & gloss like new.', es: 'Descontamina, sella y abrillanta como nuevo.' }, addons: ['descontaminacion-pintura', 'sellador-pintura', 'cera-rapida', 'restauracion-plasticos'] },
+        { id: 'fresh-cabin', name: { en: 'Fresh Cabin', es: 'Cabina Fresca' }, desc: { en: 'A spotless, fresh-smelling interior.', es: 'Un interior impecable y con aroma fresco.' }, addons: ['limpieza-asientos', 'limpieza-alfombras', 'eliminar-olores'] }
+      ],
+      quiz: [
+        { id: 'pets', q: { en: 'Pets ride with you?', es: '¿Viajan mascotas contigo?' }, addons: ['pelos-animal'] },
+        { id: 'odors', q: { en: 'Lingering odors or smoke?', es: '¿Olores persistentes o humo?' }, addons: ['eliminar-olores', 'tratamiento-ozono'] },
+        { id: 'overdue', q: { en: 'Been 6+ months since a deep detail?', es: '¿Más de 6 meses sin un detallado profundo?' }, addons: ['descontaminacion-pintura', 'sellador-pintura'] },
+        { id: 'shine', q: { en: 'Want long-lasting shine & protection?', es: '¿Quieres brillo y protección duraderos?' }, addons: ['cera-rapida', 'restauracion-plasticos'] },
+        { id: 'headlights', q: { en: 'Foggy or yellow headlights?', es: '¿Faros opacos o amarillentos?' }, addons: ['pulido-faros'] }
+      ]
+    },
+    paint_correction: {
+      recommended: ['ext-plastics', 'repelente-cristales'],
+      popular: ['engine-bay'],
+      bundles: [
+        { id: 'prep-protect', name: { en: 'Prep & Protect', es: 'Preparar y Proteger' }, desc: { en: 'Strip contaminants, shield trim & glass.', es: 'Elimina contaminantes y protege plásticos y cristales.' }, addons: ['tar-sap', 'ext-plastics', 'repelente-cristales'] }
+      ],
+      quiz: [
+        { id: 'tar', q: { en: 'Tar, sap or overspray on the paint?', es: '¿Alquitrán, savia o sobrespray en la pintura?' }, addons: ['tar-sap'] },
+        { id: 'spots', q: { en: 'Hard water spots?', es: '¿Manchas de agua dura?' }, addons: ['water-spots'] },
+        { id: 'headlights', q: { en: 'Yellow or foggy headlights?', es: '¿Faros amarillentos u opacos?' }, addons: ['faros-recup'] },
+        { id: 'engine', q: { en: 'Want the engine bay detailed?', es: '¿Quieres detallar el compartimiento del motor?' }, addons: ['engine-bay'] }
+      ]
+    },
+    heavy_trucks: {
+      recommended: ['limpieza-cabina', 'rines-aluminio'],
+      popular: ['desengrasado-profundo'],
+      bundles: [
+        { id: 'heavy-degrease', name: { en: 'Heavy-Duty Degrease', es: 'Desengrase Pesado' }, desc: { en: 'Cut grease on engine, chassis & wheels.', es: 'Elimina grasa en motor, chasis y rines.' }, addons: ['desengrasado-profundo', 'motor-pesado', 'rines-aluminio'] }
+      ],
+      quiz: [
+        { id: 'cab', q: { en: 'Cab interior needs cleaning?', es: '¿La cabina necesita limpieza interior?' }, addons: ['limpieza-cabina'] },
+        { id: 'grease', q: { en: 'Heavy grease on engine or chassis?', es: '¿Grasa pesada en motor o chasis?' }, addons: ['desengrasado-profundo', 'motor-pesado'] },
+        { id: 'aluminum', q: { en: 'Aluminum wheels or tanks to shine?', es: '¿Rines o tanques de aluminio para pulir?' }, addons: ['rines-aluminio', 'pulido-tanques'] }
+      ]
+    },
+    jetski: {
+      recommended: ['eliminacion-sal', 'ceramica-marina'],
+      popular: ['brillo-plasticos'],
+      bundles: [
+        { id: 'marine-protect', name: { en: 'Marine Protect', es: 'Protección Marina' }, desc: { en: 'Beat salt & lock in a marine-grade shine.', es: 'Combate la sal y sella un brillo de nivel marino.' }, addons: ['eliminacion-sal', 'ceramica-marina', 'brillo-plasticos'] }
+      ],
+      quiz: [
+        { id: 'salt', q: { en: 'Used in salt water?', es: '¿Lo usas en agua salada?' }, addons: ['eliminacion-sal', 'ceramica-marina'] },
+        { id: 'plastics', q: { en: 'Faded plastics?', es: '¿Plásticos descoloridos?' }, addons: ['brillo-plasticos'] },
+        { id: 'seat', q: { en: 'Seat needs deep cleaning?', es: '¿El asiento necesita limpieza profunda?' }, addons: ['limpieza-asiento'] }
+      ]
+    }
+  };
+
+  // ──────────────────────────────────────────────
+  // UI STRING DICTIONARY (everything outside SERVICES_DATA / RECO)
+  // ──────────────────────────────────────────────
+  const UI_STRINGS = {
+    // Nav
+    'nav.paths': { en: 'Service Paths', es: 'Rutas de Servicio' },
+    'nav.quote': { en: 'Quote', es: 'Cotizar' },
+    'nav.policies': { en: 'Policies', es: 'Políticas' },
+    'nav.cta': { en: 'Build My Quote', es: 'Arma tu Cotización' },
+    // Hero
+    'hero.kicker': { en: 'Premium Mobile Detailing · SWFL', es: 'Detailing Móvil Premium · SWFL' },
+    'hero.titleA': { en: 'Mobile detailing that ', es: 'Detailing móvil que ' },
+    'hero.titleB': { en: 'comes to you.', es: 'llega a ti.' },
+    'hero.ctaQuote': { en: 'Build My Quote', es: 'Arma tu Cotización' },
+    'hero.ctaCall': { en: 'Call Now', es: 'Llamar Ahora' },
+    'hero.scroll': { en: 'Scroll', es: 'Desliza' },
+    // Service paths
+    'paths.label': { en: 'Choose Your Path', es: 'Elige tu Ruta' },
+    'paths.titleA': { en: 'One mobile team. ', es: 'Un solo equipo móvil. ' },
+    'paths.titleB': { en: 'Clear service paths.', es: 'Rutas de servicio claras.' },
+    'paths.subtitle': { en: 'Start with the path that matches what you need today, then build a precise quote in the service builder.', es: 'Comienza con la ruta que coincide con lo que necesitas hoy y arma una cotización precisa en el configurador.' },
+    'path.a.kicker': { en: 'Path A', es: 'Ruta A' },
+    'path.a.title': { en: 'Vehicle Detailing', es: 'Detailing de Vehículos' },
+    'path.a.desc': { en: 'Maintenance washes, deep interior care, and paint-safe detailing for daily drivers, SUVs, trucks, and vans.', es: 'Lavados de mantenimiento, cuidado profundo de interiores y detailing seguro para la pintura de autos, SUVs, camionetas y vans.' },
+    'path.a.cta': { en: 'Start Vehicle Quote', es: 'Cotizar Vehículo' },
+    'path.b.kicker': { en: 'Path B', es: 'Ruta B' },
+    'path.b.title': { en: 'Paint Protection', es: 'Protección de Pintura' },
+    'path.b.desc': { en: 'Gloss enhancement, paint correction, sealants, ceramic protection, and surface prep for a deeper finish.', es: 'Realce de brillo, corrección de pintura, selladores, protección cerámica y preparación de superficie para un acabado superior.' },
+    'path.b.cta': { en: 'Start Paint Quote', es: 'Cotizar Pintura' },
+    'path.c.kicker': { en: 'Path C', es: 'Ruta C' },
+    'path.c.title': { en: 'Marine', es: 'Náutica' },
+    'path.c.desc': { en: 'Boat and jet ski washing, salt removal, marine-safe surface care, and cleanups after Southwest Florida water days.', es: 'Lavado de botes y jet skis, remoción de sal, cuidado seguro para superficies marinas y limpieza después de tus días en el agua.' },
+    'path.c.cta': { en: 'Start Marine Quote', es: 'Cotizar Náutica' },
+    'path.d.kicker': { en: 'Path D', es: 'Ruta D' },
+    'path.d.title': { en: 'Recreation', es: 'Recreación' },
+    'path.d.desc': { en: 'Golf cart and ATV cleaning for communities, weekend toys, trails, mud, dust, and outdoor storage buildup.', es: 'Limpieza de carritos de golf y ATVs para comunidades, vehículos de fin de semana, senderos, barro, polvo y acumulación por almacenamiento.' },
+    'path.d.cta': { en: 'Start Recreation Quote', es: 'Cotizar Recreación' },
+    'path.e.kicker': { en: 'Path E', es: 'Ruta E' },
+    'path.e.title': { en: 'Fleet & Property', es: 'Flotas y Propiedades' },
+    'path.e.desc': { en: 'Commercial trucks, recurring fleet care, mobile home soft washing, driveways, patios, and pressure washing.', es: 'Camiones comerciales, cuidado recurrente de flotas, soft wash de casas móviles, entradas, patios y lavado a presión.' },
+    'path.e.cta': { en: 'Start Fleet Quote', es: 'Cotizar Flota' },
+    'chip.cars': { en: 'Cars & SUVs', es: 'Autos y SUVs' },
+    'chip.correction': { en: 'Correction', es: 'Corrección' },
+    'chip.boats': { en: 'Boats', es: 'Botes' },
+    'chip.jetski': { en: 'Jet Ski', es: 'Jet Ski' },
+    'chip.golf': { en: 'Golf Cart', es: 'Carrito de Golf' },
+    'chip.atv': { en: 'ATV', es: 'ATV' },
+    'chip.heavy': { en: 'Heavy Trucks', es: 'Camiones Pesados' },
+    'chip.mobilehome': { en: 'Mobile Homes', es: 'Casas Móviles' },
+    'chip.driveway': { en: 'Driveways', es: 'Entradas' },
+    // Quoter header + stepper
+    'quoter.label': { en: 'Build Your Service', es: 'Arma tu Servicio' },
+    'quoter.titleA': { en: 'Build Your ', es: 'Arma tu ' },
+    'quoter.titleB': { en: 'Quote', es: 'Cotización' },
+    'quoter.subtitle': { en: 'Choose a path, select the exact service, and send the finished request directly to WhatsApp.', es: 'Elige una ruta, selecciona el servicio exacto y envía la solicitud lista directamente a WhatsApp.' },
+    'quoter.proof1': { en: '1. Pick a path', es: '1. Elige una ruta' },
+    'quoter.proof2': { en: '2. See your estimate', es: '2. Mira tu estimado' },
+    'quoter.proof3': { en: '3. Confirm availability', es: '3. Confirma disponibilidad' },
+    'step.service': { en: 'Service', es: 'Servicio' },
+    'step.package': { en: 'Package', es: 'Paquete' },
+    'step.extras': { en: 'Extras', es: 'Extras' },
+    'step.schedule': { en: 'Schedule', es: 'Agenda' },
+    'step.book': { en: 'Book', es: 'Reservar' },
+    'qbar.label': { en: 'Live estimate', es: 'Estimado en vivo' },
+    'filter.all': { en: 'All', es: 'Todos' },
+    'filter.vehicles': { en: 'Vehicle Detailing', es: 'Detailing de Vehículos' },
+    'filter.paint_protection': { en: 'Paint Protection', es: 'Protección de Pintura' },
+    'filter.marine': { en: 'Marine', es: 'Náutica' },
+    'filter.recreation': { en: 'Recreation', es: 'Recreación' },
+    'filter.fleet_property': { en: 'Fleet & Property', es: 'Flotas y Propiedades' },
+    // Wizard step titles
+    'ws.chooseService': { en: 'Choose a Service', es: 'Elige un Servicio' },
+    'ws.selectOption': { en: 'Select Your Option', es: 'Selecciona tu Opción' },
+    'ws.selectSize': { en: 'Select Size / Quantity', es: 'Selecciona Tamaño / Cantidad' },
+    'ws.addExtras': { en: 'Add Extras', es: 'Agrega Extras' },
+    'ws.extrasNote': { en: "Extras are optional — skip if you don't need any.", es: 'Los extras son opcionales — omítelos si no los necesitas.' },
+    'ws.scheduleTitle': { en: 'Schedule & Details', es: 'Agenda y Detalles' },
+    'ws.scheduleIntro': { en: "We're a mobile service — tell us where and when, and we'll confirm on WhatsApp.", es: 'Somos un servicio móvil — dinos dónde y cuándo, y confirmamos por WhatsApp.' },
+    'ws.reviewTitle': { en: 'Review & Book', es: 'Revisa y Reserva' },
+    // Schedule form
+    'form.name': { en: 'Full name', es: 'Nombre completo' },
+    'form.namePh': { en: 'Your name', es: 'Tu nombre' },
+    'form.phone': { en: 'Phone', es: 'Teléfono' },
+    'form.zip': { en: 'Service area / ZIP', es: 'Zona / Código Postal' },
+    'form.zipPh': { en: 'e.g. 33901', es: 'ej. 33901' },
+    'form.date': { en: 'Preferred date', es: 'Fecha preferida' },
+    'form.dateHint': { en: 'Please book at least 24 hours ahead.', es: 'Reserva con al menos 24 horas de anticipación.' },
+    'form.time': { en: 'Preferred time', es: 'Horario preferido' },
+    'time.morning': { en: 'Morning', es: 'Mañana' },
+    'time.afternoon': { en: 'Afternoon', es: 'Tarde' },
+    'time.evening': { en: 'Evening', es: 'Noche' },
+    'tw.morning': { en: 'Morning (8am–12pm)', es: 'Mañana (8am–12pm)' },
+    'tw.afternoon': { en: 'Afternoon (12pm–4pm)', es: 'Tarde (12pm–4pm)' },
+    'tw.evening': { en: 'Evening (4pm–7pm)', es: 'Noche (4pm–7pm)' },
+    'form.notes': { en: 'Notes', es: 'Notas' },
+    'form.notesOpt': { en: '(optional)', es: '(opcional)' },
+    'form.notesPh': { en: 'Gate code, vehicle condition, special requests…', es: 'Código de portón, estado del vehículo, pedidos especiales…' },
+    // Nav buttons
+    'btn.startOver': { en: 'Start over', es: 'Empezar de nuevo' },
+    'btn.back': { en: 'Back', es: 'Atrás' },
+    'btn.next': { en: 'Next', es: 'Siguiente' },
+    'btn.review': { en: 'Review', es: 'Revisar' },
+    'btn.book': { en: 'Book on WhatsApp', es: 'Reservar por WhatsApp' },
+    // Policies header
+    'policies.label': { en: 'Important Information', es: 'Información Importante' },
+    'policies.titleA': { en: 'Service ', es: 'Políticas de ' },
+    'policies.titleB': { en: 'Policies', es: 'Servicio' },
+    'policies.subtitle': { en: 'Clear operating terms designed to keep every appointment safe, on time, and held to a premium standard.', es: 'Términos operativos claros para que cada cita sea segura, puntual y con estándar premium.' },
+    'pol.1.h': { en: 'Quality Guarantee and Claims', es: 'Garantía de Calidad y Reclamos' },
+    'pol.2.h': { en: 'Property Access and Availability', es: 'Acceso a la Propiedad y Disponibilidad' },
+    'pol.3.h': { en: 'Cancellation and No-Show Policy', es: 'Política de Cancelación y Ausencias' },
+    'pol.4.h': { en: 'Payment and Billing Policy', es: 'Política de Pagos y Facturación' },
+    'pol.5.h': { en: 'Monthly Membership Terms', es: 'Términos de la Membresía Mensual' },
+    'pol.6.h': { en: 'Personal Items and Liability', es: 'Objetos Personales y Responsabilidad' },
+    // Footer
+    'footer.copy': { en: '© 2026 L&B Elite Wash & Detail. All rights reserved.', es: '© 2026 L&B Elite Wash & Detail. Todos los derechos reservados.' },
+    // Dynamic wizard labels
+    'from': { en: 'From', es: 'Desde' },
+    'selected': { en: 'Selected', es: 'Seleccionado' },
+    'choosePlan': { en: 'Choose plan', es: 'Elegir plan' },
+    'mostPopular': { en: 'Most popular', es: 'Más popular' },
+    'oneTime': { en: 'One-time', es: 'Único' },
+    'membership': { en: 'Membership', es: 'Membresía' },
+    'recommendExtras': { en: 'Recommend my extras', es: 'Recomiéndame extras' },
+    'recoHint': { en: "Answer a few quick questions — we'll suggest the ideal add-ons.", es: 'Responde unas preguntas rápidas — te sugerimos los extras ideales.' },
+    'bundleAdd': { en: '+ Add bundle', es: '+ Agregar combo' },
+    'bundleRemove': { en: '✓ Added — tap to remove', es: '✓ Agregado — toca para quitar' },
+    'quizTitle': { en: 'Tap everything that applies to you:', es: 'Toca todo lo que aplique a tu caso:' },
+    'quizApply': { en: 'Apply suggestions', es: 'Aplicar sugerencias' },
+    'quizClear': { en: 'Clear', es: 'Limpiar' },
+    'badgeRecYou': { en: 'Recommended for you', es: 'Recomendado para ti' },
+    'badgeRec': { en: 'Recommended', es: 'Recomendado' },
+    'badgeChosen': { en: 'Most chosen', es: 'Más elegido' },
+    'emptyStep3': { en: 'No extra configuration or add-ons are required for this service.', es: 'Este servicio no requiere configuración adicional ni extras.' },
+    'standard': { en: 'Standard', es: 'Estándar' },
+    'sum.category': { en: 'Category', es: 'Categoría' },
+    'sum.service': { en: 'Service', es: 'Servicio' },
+    'sum.size': { en: 'Size / Option', es: 'Tamaño / Opción' },
+    'sum.addons': { en: 'Add-ons', es: 'Extras' },
+    'sum.name': { en: 'Name', es: 'Nombre' },
+    'sum.area': { en: 'Service area', es: 'Zona de servicio' },
+    'sum.time': { en: 'Preferred time', es: 'Horario preferido' },
+    'sum.notes': { en: 'Notes', es: 'Notas' },
+    'sum.total': { en: 'Estimated Total', es: 'Total Estimado' },
+    'sum.disclaimer': { en: '*Reference estimate. Final pricing may vary based on the real condition of the vehicle or surface.', es: '*Estimado de referencia. El precio final puede variar según el estado real del vehículo o la superficie.' },
+    'sum.included': { en: 'Included Services:', es: 'Servicios Incluidos:' },
+    'sum.empty': { en: 'Complete the previous steps to see your estimate.', es: 'Completa los pasos anteriores para ver tu estimado.' },
+    'cov.enterZip': { en: 'Enter a 5-digit ZIP code.', es: 'Ingresa un código postal de 5 dígitos.' },
+    'cov.inRange': { en: 'In range — within our Southwest Florida service area.', es: 'En cobertura — dentro de nuestra zona del Suroeste de Florida.' },
+    'cov.confirm': { en: "We'll confirm coverage for this ZIP when we reach out.", es: 'Confirmaremos la cobertura de este código postal al contactarte.' },
+    'qbar.build': { en: 'Build your service to see a live estimate', es: 'Arma tu servicio para ver un estimado en vivo' },
+    'customQuote': { en: '+ Custom Quote', es: '+ Cotización personalizada' },
+    // WhatsApp message
+    'wa.title': { en: 'New Booking — L&B Elite Wash & Detail', es: 'Nueva Reserva — L&B Elite Wash & Detail' },
+    'wa.category': { en: 'Category', es: 'Categoría' },
+    'wa.service': { en: 'Service', es: 'Servicio' },
+    'wa.size': { en: 'Size/Option', es: 'Tamaño/Opción' },
+    'wa.addons': { en: 'Add-ons', es: 'Extras' },
+    'wa.total': { en: 'Estimated Total', es: 'Total Estimado' },
+    'wa.contact': { en: 'Contact', es: 'Contacto' },
+    'wa.phone': { en: 'Phone', es: 'Teléfono' },
+    'wa.area': { en: 'Service area / ZIP', es: 'Zona / Código Postal' },
+    'wa.date': { en: 'Preferred date', es: 'Fecha preferida' },
+    'wa.time': { en: 'Preferred time', es: 'Horario preferido' },
+    'wa.notes': { en: 'Notes', es: 'Notas' },
+    'wa.closing': { en: "Hi, I'd like to book this mobile service. Please confirm availability for my preferred time. Thank you!", es: 'Hola, me gustaría reservar este servicio móvil. Por favor confirmen disponibilidad para mi horario preferido. ¡Gracias!' }
+  };
+
+  // Apply the active language to all static [data-i18n*] nodes.
+  function applyUILanguage() {
+    document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.getAttribute('data-i18n')); });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
+    document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria'))); });
+  }
+
+  function enrichServicesData() {
+    SERVICES_DATA.categories.forEach(cat => {
+      cat.cluster = CATEGORY_CLUSTERS[cat.id] || 'vehicles';
+      if (CATEGORY_IMAGES[cat.id]) cat.image = CATEGORY_IMAGES[cat.id];
+      if (cat.id === 'paint_correction') cat.compareView = true;
+      if (cat.id === 'heavy_trucks') cat.groupBy = true;
+
+      cat.packages.forEach(pkg => {
+        pkg.type = /membresia|membership|-2x$|-4x$/.test(pkg.id) ? 'membership' : 'onetime';
+        if (cat.id === 'heavy_trucks') {
+          const g = HEAVY_GROUPS.find(grp => pkg.id.startsWith(grp.id));
+          pkg.group = g ? g.id : 'other';
+        }
+      });
+
+      const reco = RECO[cat.id] || {};
+      cat.recommended = reco.recommended || [];
+      cat.popular = reco.popular || [];
+      cat.bundles = reco.bundles || [];
+      cat.quiz = reco.quiz || [];
+    });
+  }
+  enrichServicesData();
+
+  // ──────────────────────────────────────────────
+  // SHARED HELPERS
+  // ──────────────────────────────────────────────
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="14" height="14" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
+  const fmt = (n) => '$' + Math.round(n).toLocaleString('en-US');
+
+  function rangeParts(str) {
+    const cleaned = String(str).replace(/[^0-9-]/g, '');
+    const parts = cleaned.split('-').filter(Boolean).map(n => parseInt(n, 10));
+    const min = parts[0] || 0;
+    const max = parts.length > 1 ? parts[1] : min;
+    return { min, max };
+  }
+
+  function currentValidAddons() {
+    const cat = state.selectedCategory;
+    const pkg = state.selectedPackage;
+    if (!cat) return [];
+    return (cat.extras || []).filter(ext => !(ext.onlyFor && !ext.onlyFor.includes(pkg && pkg.id)));
+  }
+
+  function packageFromLabel(pkg) {
+    if (pkg.priceRanges) {
+      const key = Object.keys(pkg.priceRanges)[0];
+      return t('from') + ' ' + fmt(rangeParts(pkg.priceRanges[key]).min);
+    }
+    return t('from') + ' ' + fmt(Math.min(...Object.values(pkg.prices)));
+  }
+
+  function categoryImage(cat) {
+    return (cat && (CATEGORY_IMAGES[cat.id] || cat.image)) || 'assets/route-vehicle-detailing.jpg';
+  }
+
+  function packageImage(pkg, cat = state.selectedCategory) {
+    return PACKAGE_IMAGES[pkg.id] || categoryImage(cat);
+  }
+
+  function addonImage(addon, cat = state.selectedCategory) {
+    return EXTRA_IMAGES[addon.id] || categoryImage(cat);
+  }
+
+  // Single source of truth for pricing (summary, live bar & WhatsApp all use this)
+  function computeEstimate() {
+    const pkg = state.selectedPackage;
+    const size = state.selectedSize;
+    if (!pkg || !size) return null;
+
+    let min, max, isRange = false, custom = false;
+    const baseRange = pkg.priceRanges ? pkg.priceRanges[size.id] : null;
+
+    if (baseRange) {
+      const p = rangeParts(baseRange);
+      min = p.min; max = p.max; isRange = true;
+    } else {
+      const base = pkg.prices[size.id] || 0;
+      min = base; max = base;
+    }
+
+    state.selectedAddons.forEach(addon => {
+      if (addon.range && addon.price === 0) {
+        custom = true; // e.g. aluminum tank polishing — custom quote
+      } else if (addon.range) {
+        const p = rangeParts(addon.range);
+        min += p.min; max += p.max;
+        if (p.max !== p.min) isRange = true;
+      } else {
+        min += addon.price; max += addon.price;
+      }
+    });
+
+    const showRange = isRange && max > min;
+    let label = showRange ? `${fmt(min)} - ${fmt(max)}` : fmt(min);
+    if (custom) label += ' ' + t('customQuote');
+    return { min, max, isRange: showRange, custom, label };
+  }
+
+  // ── Live sticky price bar ──
+  function setPriceText(el, text, val) {
+    if (!el) return;
+    el.dataset.val = (val == null) ? '' : String(val);
+    el.textContent = text;
+  }
+
+  function animatePrice(el, est) {
+    if (!el) return;
+    const target = est.min;
+    const prev = parseInt(el.dataset.val || '0', 10) || 0;
+    el.dataset.val = String(target);
+    if (prefersReduced || prev === target) { el.textContent = est.label; return; }
+    const dur = 520, start = performance.now();
+    function tick(now) {
+      const t = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const cur = Math.round(prev + (target - prev) * eased);
+      if (t < 1) { el.textContent = fmt(cur); requestAnimationFrame(tick); }
+      else { el.textContent = est.label; }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function updateQuoteBar() {
+    const bar = document.getElementById('quoteBar');
+    if (!bar) return;
+    // Hide on Schedule/Review steps so it never overlaps the form or summary
+    bar.classList.toggle('qbar-hidden', state.currentStep >= 4);
+    const valEl = bar.querySelector('.qbar-price');
+    const ctxEl = bar.querySelector('.qbar-context');
+    const cat = state.selectedCategory;
+    const pkg = state.selectedPackage;
+
+    if (!cat) {
+      bar.classList.remove('active');
+      if (ctxEl) ctxEl.textContent = t('qbar.build');
+      setPriceText(valEl, '—', null);
+      return;
+    }
+    bar.classList.add('active');
+    if (ctxEl) ctxEl.textContent = pkg ? `${cat.name} · ${pkg.name}` : cat.name;
+
+    const est = computeEstimate();
+    if (est) animatePrice(valEl, est);
+    else if (pkg) setPriceText(valEl, packageFromLabel(pkg), null);
+    else setPriceText(valEl, t('from') + ' ' + cat.from, null);
+  }
+
+  // ── Add-on bundle pricing ──
+  function bundlePrice(bundle) {
+    const cat = state.selectedCategory;
+    let sum = 0, hasRange = false;
+    bundle.addons.forEach(id => {
+      const a = (cat.extras || []).find(e => e.id === id);
+      if (!a) return;
+      sum += a.price;
+      if (a.range) hasRange = true;
+    });
+    return (hasRange ? t('from') + ' ' : '') + fmt(sum);
+  }
+
+  function addonBadge(addon) {
+    const cat = state.selectedCategory;
+    if (state.quizPicks.includes(addon.id)) return `<span class="addon-badge rec-you">${t('badgeRecYou')}</span>`;
+    if ((cat.recommended || []).includes(addon.id)) return `<span class="addon-badge rec">${t('badgeRec')}</span>`;
+    if ((cat.popular || []).includes(addon.id)) return `<span class="addon-badge pop">${t('badgeChosen')}</span>`;
+    return '';
+  }
+
+  // ── Scheduling helpers ──
+  function tomorrowISO() {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }
+  function prettyDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString(LANG === 'es' ? 'es-ES' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function checkCoverage(zip) {
+    if (!zip) return { msg: '' };
+    if (!/^\d{5}$/.test(zip)) return { msg: t('cov.enterZip') };
+    return /^(33|34)\d{3}$/.test(zip)
+      ? { msg: t('cov.inRange') }
+      : { msg: t('cov.confirm') };
+  }
+  function validName(name) {
+    const n = (name || '').trim();
+    return n.length >= 2 && /[\p{L}]/u.test(n);
+  }
+  function scheduleValid() {
+    const s = state.schedule;
+    return !!(validName(s.name) && s.date && s.date >= tomorrowISO() && s.timeWindow);
+  }
+
+  // ── Persistence ──
+  function saveState() {
+    try {
+      localStorage.setItem('lyb-quote', JSON.stringify({
+        catId: state.selectedCategory ? state.selectedCategory.id : null,
+        pkgType: state.pkgType,
+        heavyGroup: state.heavyGroup,
+        pkgId: state.selectedPackage ? state.selectedPackage.id : null,
+        sizeId: state.selectedSize ? state.selectedSize.id : null,
+        addonIds: state.selectedAddons.map(a => a.id),
+        schedule: state.schedule
+      }));
+    } catch (e) { /* storage unavailable */ }
+  }
+  function restoreState() {
+    let s;
+    try { s = JSON.parse(localStorage.getItem('lyb-quote') || 'null'); } catch (e) { return; }
+    if (!s) return;
+    if (s.schedule) Object.assign(state.schedule, s.schedule);
+    if (!s.catId) return;
+    const cat = SERVICES_DATA.categories.find(c => c.id === s.catId);
+    if (!cat) return;
+    state.selectedCategory = cat;
+    state.pkgType = s.pkgType || 'onetime';
+    state.heavyGroup = s.heavyGroup || null;
+    if (s.pkgId) state.selectedPackage = cat.packages.find(p => p.id === s.pkgId) || null;
+    if (s.sizeId && state.selectedPackage) {
+      const vs = cat.sizes.filter(sz => state.selectedPackage.prices[sz.id] !== undefined);
+      state.selectedSize = vs.find(sz => sz.id === s.sizeId) || null;
+    }
+    if (Array.isArray(s.addonIds)) {
+      const valid = currentValidAddons();
+      state.selectedAddons = s.addonIds.map(id => valid.find(a => a.id === id)).filter(Boolean);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // STATE MANAGEMENT
+  // ──────────────────────────────────────────────
+  const state = {
+    currentStep: 1,
+    totalSteps: 5,
+    catFilter: 'all',
+    pkgType: 'onetime',
+    heavyGroup: null,
+    selectedCategory: null,
+    selectedPackage: null,
+    selectedSize: null,
+    selectedAddons: [],
+    quizYes: [],
+    quizPicks: [],
+    quizOpen: false,
+    schedule: { name: '', phone: '', zip: '', date: '', timeWindow: '', notes: '' }
+  };
+
+  // ──────────────────────────────────────────────
+  // DOM ELEMENTS
+  // ──────────────────────────────────────────────
+  const navbar = document.getElementById('navbar');
+  const ws1 = document.getElementById('ws1');
+  const ws2 = document.getElementById('ws2');
+  const ws3 = document.getElementById('ws3');
+  const ws4 = document.getElementById('ws4');
+
+  const catGrid = document.getElementById('catGrid');
+  const optGrid = document.getElementById('optGrid');
+  const sizeGrid = document.getElementById('sizeGrid');
+  const addonGrid = document.getElementById('addonGrid');
+  const summaryBox = document.getElementById('summaryBox');
+
+  const sizeSection = document.getElementById('sizeSection');
+  const addonSection = document.getElementById('addonSection');
+
+  const btnBack = document.getElementById('btnBack');
+  const btnNext = document.getElementById('btnNext');
+  const stepCircles = document.querySelectorAll('.step-circle');
+  const stepLines = document.querySelectorAll('.step-line');
+
+  // ──────────────────────────────────────────────
+  // NAVIGATION & SCROLL EVENTS
+  // ──────────────────────────────────────────────
+  function handleNavScroll() {
+    if (window.scrollY > 60) {
+      navbar.classList.add('scrolled');
+    } else {
+      navbar.classList.remove('scrolled');
+    }
+  }
+  window.addEventListener('scroll', handleNavScroll, { passive: true });
+
+  document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function (e) {
+      const href = this.getAttribute('href');
+      if (!href || href.length < 2) return; // ignore bare "#"
+      const target = document.querySelector(href);
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+
+  // Click + keyboard (Enter / Space) activation for custom interactive cards
+  function bindActivation(el, handler) {
+    el.addEventListener('click', handler);
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        handler();
+      }
+    });
+  }
+
+  // ──────────────────────────────────────────────
+  // THEME TOGGLE (light / dark)
+  // ──────────────────────────────────────────────
+  function setupThemeToggle() {
+    const root = document.documentElement;
+    const btn = document.getElementById('themeToggle');
+    if (!btn) return;
+
+    const apply = (theme) => {
+      root.setAttribute('data-theme', theme);
+      btn.setAttribute('aria-pressed', String(theme === 'light'));
+      btn.setAttribute('aria-label', theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
+    };
+
+    apply(root.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
+
+    btn.addEventListener('click', () => {
+      const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+      try { localStorage.setItem('lyb-theme', next); } catch (e) { /* storage unavailable */ }
+      apply(next);
+    });
+  }
+
+  // ──────────────────────────────────────────────
+  // SCROLL REVEAL ANIMATION
+  // ──────────────────────────────────────────────
+  const revealElements = document.querySelectorAll('.reveal');
+  const revealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    },
+    { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
+  );
+  revealElements.forEach(el => revealObserver.observe(el));
+
+  // ──────────────────────────────────────────────
+  // DYNAMIC COMPONENT RENDERING
+  // ──────────────────────────────────────────────
+
+  // Step 1: Intent filter chips
+  function renderCatFilter() {
+    const wrap = document.getElementById('catFilter');
+    if (!wrap) return;
+    wrap.innerHTML = CLUSTER_FILTERS.map(f =>
+      `<button type="button" class="chip ${state.catFilter === f.id ? 'active' : ''}" data-filter="${f.id}">${t('filter.' + f.id)}</button>`
+    ).join('');
+    wrap.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        state.catFilter = chip.dataset.filter;
+        renderCatFilter();
+        renderCategories();
+      });
+    });
+  }
+
+  function resetFromCategory(category) {
+    state.selectedCategory = category;
+    state.selectedPackage = null;
+    state.selectedSize = null;
+    state.selectedAddons = [];
+    state.heavyGroup = null;
+    state.pkgType = 'onetime';
+    state.quizYes = [];
+    state.quizPicks = [];
+    state.quizOpen = false;
+  }
+
+  function clearServiceSelection() {
+    state.selectedCategory = null;
+    state.selectedPackage = null;
+    state.selectedSize = null;
+    state.selectedAddons = [];
+    state.heavyGroup = null;
+    state.pkgType = 'onetime';
+    state.quizYes = [];
+    state.quizPicks = [];
+    state.quizOpen = false;
+  }
+
+  // Step 1: Render Categories (filtered by intent)
+  function renderCategories() {
+    const cats = SERVICES_DATA.categories
+      .filter(c => state.catFilter === 'all' || c.cluster === state.catFilter)
+      .sort((a, b) => CATEGORY_ORDER.indexOf(a.id) - CATEGORY_ORDER.indexOf(b.id));
+    const isSel = (cat) => state.selectedCategory && state.selectedCategory.id === cat.id;
+
+    catGrid.innerHTML = cats.map(cat => `
+      <div class="cat-card ${isSel(cat) ? 'selected' : ''}" data-id="${cat.id}" role="radio" tabindex="0" aria-checked="${isSel(cat)}" aria-label="${cat.name}, ${t('from').toLowerCase()} ${cat.from}">
+        <div class="check-badge">${CHECK_SVG}</div>
+        <img src="${cat.image}" alt="${cat.name}" loading="lazy" decoding="async" />
+        <div class="cat-card-label">
+          <span class="cat-card-name">${cat.name}</span>
+          <span class="cat-card-from">${t('from')} ${cat.from}</span>
+        </div>
+      </div>
+    `).join('');
+
+    catGrid.querySelectorAll('.cat-card').forEach(card => {
+      bindActivation(card, () => {
+        const category = SERVICES_DATA.categories.find(c => c.id === card.dataset.id);
+        if (!state.selectedCategory || state.selectedCategory.id !== category.id) {
+          resetFromCategory(category);
+        }
+        renderCategories();
+        validateStep();
+        updateQuoteBar();
+      });
+      attachSpotlight(card);
+    });
+  }
+
+  function selectPackage(pkgId) {
+    const pkg = state.selectedCategory.packages.find(p => p.id === pkgId);
+    if (!pkg) return;
+    if (!state.selectedPackage || state.selectedPackage.id !== pkg.id) {
+      state.selectedPackage = pkg;
+      state.selectedSize = null;
+      state.selectedAddons = [];
+      state.quizYes = [];
+      state.quizPicks = [];
+      state.quizOpen = false;
+    }
+    renderPackages();
+    validateStep();
+    updateQuoteBar();
+  }
+
+  function optCardHTML(pkg) {
+    const isSel = state.selectedPackage && state.selectedPackage.id === pkg.id;
+    const img = packageImage(pkg);
+    return `
+      <div class="opt-card has-media ${isSel ? 'selected' : ''}" data-id="${pkg.id}" role="radio" tabindex="0" aria-checked="${isSel}">
+        <div class="opt-radio"></div>
+        <img class="opt-img" src="${img}" alt="" loading="lazy" />
+        <div class="opt-text">
+          <span class="opt-name">${pkg.name}</span>
+          <span class="opt-desc">${pkg.description}</span>
+        </div>
+        <span class="opt-price">${packageFromLabel(pkg)}</span>
+      </div>`;
+  }
+
+  function compareCardsHTML(pkgs) {
+    return pkgs.map((pkg, i) => {
+      const featured = pkgs.length === 3 && i === 1;
+      const isSel = state.selectedPackage && state.selectedPackage.id === pkg.id;
+      const incs = pkg.includes.map(x => `<li>${CHECK_SVG}<span>${x}</span></li>`).join('');
+      return `
+        <div class="compare-card ${featured ? 'featured' : ''} ${isSel ? 'selected' : ''}" data-id="${pkg.id}" role="radio" tabindex="0" aria-checked="${isSel}">
+          ${featured ? `<span class="compare-flag">${t('mostPopular')}</span>` : ''}
+          <img class="compare-img" src="${packageImage(pkg)}" alt="" loading="lazy" />
+          <span class="compare-name">${pkg.name}</span>
+          <span class="compare-price">${packageFromLabel(pkg)}</span>
+          <p class="compare-desc">${pkg.description}</p>
+          <ul class="compare-list">${incs}</ul>
+          <span class="compare-cta">${isSel ? t('selected') : t('choosePlan')}</span>
+        </div>`;
+    }).join('');
+  }
+
+  // Step 2: Render Packages (type toggle, heavy-truck subtype, compare view)
+  function renderPackages() {
+    if (!state.selectedCategory) return;
+    const cat = state.selectedCategory;
+
+    // A. One-time / Membership toggle
+    const typeToggle = document.getElementById('pkgTypeToggle');
+    const hasOnetime = cat.packages.some(p => p.type === 'onetime');
+    const hasMembership = cat.packages.some(p => p.type === 'membership');
+    if (typeToggle) {
+      if (hasOnetime && hasMembership) {
+        typeToggle.style.display = '';
+        typeToggle.innerHTML = `
+          <button type="button" class="seg ${state.pkgType === 'onetime' ? 'active' : ''}" data-type="onetime">${t('oneTime')}</button>
+          <button type="button" class="seg ${state.pkgType === 'membership' ? 'active' : ''}" data-type="membership">${t('membership')}</button>`;
+        typeToggle.querySelectorAll('.seg').forEach(b => b.addEventListener('click', () => {
+          if (state.pkgType === b.dataset.type) return;
+          state.pkgType = b.dataset.type;
+          state.selectedPackage = null;
+          state.selectedSize = null;
+          state.selectedAddons = [];
+          renderPackages();
+          validateStep();
+          updateQuoteBar();
+        }));
+      } else {
+        typeToggle.style.display = 'none';
+        state.pkgType = hasOnetime ? 'onetime' : 'membership';
+      }
+    }
+
+    let pkgs = cat.packages.filter(p => p.type === state.pkgType);
+
+    // B. Heavy-truck subtype selector
+    const groupSel = document.getElementById('heavyGroupSelect');
+    if (groupSel) {
+      if (cat.groupBy) {
+        const groups = HEAVY_GROUPS.filter(g => cat.packages.some(p => p.group === g.id));
+        if (!state.heavyGroup || !groups.some(g => g.id === state.heavyGroup)) state.heavyGroup = groups[0].id;
+        groupSel.style.display = '';
+        groupSel.innerHTML = groups.map(g =>
+          `<button type="button" class="chip ${state.heavyGroup === g.id ? 'active' : ''}" data-group="${g.id}">${g.label}</button>`
+        ).join('');
+        groupSel.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+          state.heavyGroup = b.dataset.group;
+          renderPackages();
+          validateStep();
+        }));
+        pkgs = pkgs.filter(p => p.group === state.heavyGroup);
+      } else {
+        groupSel.style.display = 'none';
+      }
+    }
+
+    // C. Render — compare view for tiered categories, else option cards
+    const useCompare = cat.compareView && state.pkgType === 'onetime' && pkgs.length >= 2;
+    optGrid.className = useCompare ? 'compare-grid' : 'option-grid';
+    optGrid.innerHTML = useCompare ? compareCardsHTML(pkgs) : pkgs.map(optCardHTML).join('');
+
+    optGrid.querySelectorAll('[data-id]').forEach(card => {
+      bindActivation(card, () => selectPackage(card.dataset.id));
+      if (useCompare) attachSpotlight(card);
+    });
+
+    updateQuoteBar();
+  }
+
+  function toggleAddon(addonId) {
+    const addon = currentValidAddons().find(a => a.id === addonId);
+    if (!addon) return;
+    const i = state.selectedAddons.findIndex(a => a.id === addonId);
+    if (i > -1) state.selectedAddons.splice(i, 1);
+    else state.selectedAddons.push(addon);
+  }
+
+  // Recommender UI — recommend button, bundles, quiz panel
+  function renderRecoUI() {
+    const cat = state.selectedCategory;
+    const validAddons = currentValidAddons();
+    const validIds = new Set(validAddons.map(a => a.id));
+
+    const recoBar = document.getElementById('recoBar');
+    const bundleRow = document.getElementById('bundleRow');
+    const quizPanel = document.getElementById('quizPanel');
+
+    const hasQuiz = (cat.quiz || []).length > 0;
+    const bundles = (cat.bundles || []).filter(b => b.addons.every(id => validIds.has(id)));
+
+    // Recommend button
+    if (recoBar) {
+      if (hasQuiz) {
+        recoBar.style.display = '';
+        recoBar.innerHTML = `
+          <button type="button" class="reco-btn ${state.quizOpen ? 'open' : ''}" id="recoToggle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 3l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 14.6 6 18.2l1.9-5.8L3 8.8h6.1z"/></svg>
+            ${t('recommendExtras')}
+          </button>
+          <span class="reco-hint">${t('recoHint')}</span>`;
+        document.getElementById('recoToggle').addEventListener('click', () => {
+          state.quizOpen = !state.quizOpen;
+          renderRecoUI();
+        });
+      } else {
+        recoBar.style.display = 'none';
+        recoBar.innerHTML = '';
+      }
+    }
+
+    // Bundles
+    if (bundleRow) {
+      if (bundles.length) {
+        bundleRow.style.display = '';
+        bundleRow.innerHTML = bundles.map(b => {
+          const allSel = b.addons.every(id => state.selectedAddons.some(a => a.id === id));
+          return `
+            <div class="bundle-card ${allSel ? 'added' : ''}" data-bundle="${b.id}" role="button" tabindex="0">
+              <div class="bundle-top">
+                <span class="bundle-name">${loc(b.name)}</span>
+                <span class="bundle-price">${bundlePrice(b)}</span>
+              </div>
+              <p class="bundle-desc">${loc(b.desc)}</p>
+              <span class="bundle-action">${allSel ? t('bundleRemove') : t('bundleAdd')}</span>
+            </div>`;
+        }).join('');
+        bundleRow.querySelectorAll('.bundle-card').forEach(card => {
+          bindActivation(card, () => {
+            const b = cat.bundles.find(x => x.id === card.dataset.bundle);
+            const allSel = b.addons.every(id => state.selectedAddons.some(a => a.id === id));
+            b.addons.forEach(id => {
+              const has = state.selectedAddons.some(a => a.id === id);
+              if (allSel && has) toggleAddon(id);
+              else if (!allSel && !has) toggleAddon(id);
+            });
+            renderSizesAndAddons();
+            validateStep();
+          });
+        });
+      } else {
+        bundleRow.style.display = 'none';
+        bundleRow.innerHTML = '';
+      }
+    }
+
+    // Quiz panel
+    if (quizPanel) {
+      if (hasQuiz && state.quizOpen) {
+        quizPanel.style.display = '';
+        quizPanel.innerHTML = `
+          <p class="quiz-title">${t('quizTitle')}</p>
+          <div class="quiz-qs">
+            ${cat.quiz.map(q => `<button type="button" class="quiz-chip ${state.quizYes.includes(q.id) ? 'yes' : ''}" data-q="${q.id}">${loc(q.q)}</button>`).join('')}
+          </div>
+          <div class="quiz-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="quizApply">${t('quizApply')}</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="quizClear">${t('quizClear')}</button>
+          </div>`;
+        quizPanel.querySelectorAll('.quiz-chip').forEach(c => c.addEventListener('click', () => {
+          const id = c.dataset.q;
+          const i = state.quizYes.indexOf(id);
+          if (i > -1) state.quizYes.splice(i, 1); else state.quizYes.push(id);
+          renderRecoUI();
+        }));
+        document.getElementById('quizApply').addEventListener('click', applyQuiz);
+        document.getElementById('quizClear').addEventListener('click', () => {
+          state.quizYes = [];
+          state.quizPicks = [];
+          renderSizesAndAddons();
+          validateStep();
+        });
+      } else {
+        quizPanel.style.display = 'none';
+        quizPanel.innerHTML = '';
+      }
+    }
+  }
+
+  function applyQuiz() {
+    const cat = state.selectedCategory;
+    const picks = new Set();
+    cat.quiz.forEach(q => { if (state.quizYes.includes(q.id)) q.addons.forEach(a => picks.add(a)); });
+    state.quizPicks = [...picks];
+
+    const valid = currentValidAddons();
+    state.quizPicks.forEach(id => {
+      const addon = valid.find(a => a.id === id);
+      if (addon && !state.selectedAddons.some(a => a.id === id)) state.selectedAddons.push(addon);
+    });
+    state.quizOpen = false;
+    renderSizesAndAddons();
+    validateStep();
+    const grid = document.getElementById('addonGrid');
+    if (grid) grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  // Step 3: Render Sizes, Recommender & Add-ons
+  function renderSizesAndAddons() {
+    if (!state.selectedCategory || !state.selectedPackage) return;
+
+    const cat = state.selectedCategory;
+    const pkg = state.selectedPackage;
+
+    // A. Sizes
+    const validSizes = cat.sizes.filter(size => pkg.prices[size.id] !== undefined);
+    if (validSizes.length > 1) {
+      sizeSection.style.display = 'block';
+      sizeGrid.innerHTML = validSizes.map(size => {
+        const displayPrice = pkg.priceRanges && pkg.priceRanges[size.id]
+          ? pkg.priceRanges[size.id]
+          : fmt(pkg.prices[size.id]);
+        const isSel = state.selectedSize && state.selectedSize.id === size.id;
+        return `
+          <div class="opt-card ${isSel ? 'selected' : ''}" data-id="${size.id}" role="radio" tabindex="0" aria-checked="${isSel}">
+            <div class="opt-radio"></div>
+            <span class="opt-name">${size.name}</span>
+            <span class="opt-price">${displayPrice}</span>
+          </div>`;
+      }).join('');
+      sizeGrid.querySelectorAll('.opt-card').forEach(card => {
+        bindActivation(card, () => {
+          state.selectedSize = validSizes.find(s => s.id === card.dataset.id);
+          renderSizesAndAddons();
+          validateStep();
+          updateQuoteBar();
+        });
+      });
+    } else {
+      state.selectedSize = validSizes[0] || { id: 'standard', name: t('standard') };
+      sizeSection.style.display = 'none';
+      sizeGrid.innerHTML = '';
+    }
+
+    // B. Add-ons (with recommender)
+    const validAddons = currentValidAddons();
+    if (validAddons.length > 0) {
+      addonSection.style.display = 'block';
+      renderRecoUI();
+      addonGrid.innerHTML = validAddons.map(addon => {
+        const isSel = state.selectedAddons.some(a => a.id === addon.id);
+        const priceLabel = addon.range ? `+ ${addon.range}` : `+ ${fmt(addon.price)}`;
+        const badge = addonBadge(addon);
+        return `
+          <div class="addon-card ${isSel ? 'selected' : ''} ${state.quizPicks.includes(addon.id) ? 'rec-you' : ''}" data-id="${addon.id}" role="checkbox" tabindex="0" aria-checked="${isSel}">
+            <div class="addon-check">${CHECK_SVG}</div>
+            <img class="addon-img" src="${addonImage(addon)}" alt="" loading="lazy" />
+            <div class="addon-text">
+              <span class="addon-name">${addon.name}</span>
+              ${badge}
+            </div>
+            <span class="addon-price">${priceLabel}</span>
+          </div>`;
+      }).join('');
+      addonGrid.querySelectorAll('.addon-card').forEach(card => {
+        bindActivation(card, () => {
+          toggleAddon(card.dataset.id);
+          renderSizesAndAddons();
+          validateStep();
+          updateQuoteBar();
+        });
+      });
+    } else {
+      addonSection.style.display = 'none';
+      addonGrid.innerHTML = '';
+    }
+
+    // Empty-state notice when there is nothing to configure
+    const hasVisibleSizes = validSizes.length > 1;
+    const hasVisibleAddons = validAddons.length > 0;
+    let noticeEl = document.getElementById('step3Notice');
+    if (!hasVisibleSizes && !hasVisibleAddons) {
+      if (!noticeEl) {
+        noticeEl = document.createElement('div');
+        noticeEl.id = 'step3Notice';
+        noticeEl.className = 'empty-state';
+        noticeEl.textContent = t('emptyStep3');
+        ws3.appendChild(noticeEl);
+      }
+    } else if (noticeEl) {
+      noticeEl.remove();
+    }
+
+    updateQuoteBar();
+  }
+
+  // Step 4: Schedule & details form wiring (bound once)
+  function setupSchedule() {
+    const dateEl = document.getElementById('schedDate');
+    if (dateEl) dateEl.min = tomorrowISO();
+
+    const bind = (id, key) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input', () => {
+        state.schedule[key] = el.value;
+        if (key === 'zip') updateCoverage();
+        validateStep();
+      });
+    };
+    bind('schedName', 'name');
+    bind('schedPhone', 'phone');
+    bind('schedZip', 'zip');
+    bind('schedDate', 'date');
+    bind('schedNotes', 'notes');
+
+    document.querySelectorAll('.time-chip').forEach(c => {
+      c.addEventListener('click', () => {
+        state.schedule.timeWindow = c.dataset.window;
+        document.querySelectorAll('.time-chip').forEach(x => x.classList.toggle('active', x === c));
+        validateStep();
+      });
+    });
+  }
+
+  function updateCoverage() {
+    const el = document.getElementById('coverageMsg');
+    if (!el) return;
+    const r = checkCoverage(state.schedule.zip);
+    el.textContent = r.msg;
+    el.className = 'coverage-msg' + (r.msg ? ' show' : '');
+  }
+
+  function restoreScheduleInputs() {
+    const s = state.schedule;
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v || ''; };
+    set('schedName', s.name);
+    set('schedPhone', s.phone);
+    set('schedZip', s.zip);
+    set('schedDate', s.date);
+    set('schedNotes', s.notes);
+    document.querySelectorAll('.time-chip').forEach(x => x.classList.toggle('active', x.dataset.window === s.timeWindow));
+    updateCoverage();
+  }
+
+  // Step 5: Render Review & Estimate
+  function renderSummary() {
+    if (!state.selectedCategory || !state.selectedPackage || !state.selectedSize) {
+      summaryBox.innerHTML = `<div class="empty-state">${t('sum.empty')}</div>`;
+      return;
+    }
+
+    const cat = state.selectedCategory;
+    const pkg = state.selectedPackage;
+    const size = state.selectedSize;
+    const s = state.schedule;
+    const est = computeEstimate();
+
+    const inclusionsHtml = pkg.includes.map(inc => `<li>${CHECK_SVG}<span>${inc}</span></li>`).join('');
+    const showSizeRow = cat.sizes.length > 1;
+    const row = (lab, val) => val ? `<div class="summary-row"><span class="lab">${lab}</span><span class="val">${val}</span></div>` : '';
+    const scheduleVal = [prettyDate(s.date), timeWindowLabel(s.timeWindow)].filter(Boolean).join(' · ');
+
+    summaryBox.innerHTML = `
+      ${row(t('sum.category'), cat.name)}
+      ${row(t('sum.service'), pkg.name)}
+      ${showSizeRow ? row(t('sum.size'), size.name) : ''}
+      ${state.selectedAddons.length ? row(t('sum.addons'), state.selectedAddons.map(a => a.name).join(', ')) : ''}
+      ${row(t('sum.name'), s.name)}
+      ${row(t('sum.area'), s.zip)}
+      ${row(t('sum.time'), scheduleVal)}
+      ${row(t('sum.notes'), s.notes)}
+      <div class="summary-total">
+        <span class="lab">${t('sum.total')}</span>
+        <span class="val">${est ? est.label : '—'}</span>
+      </div>
+      <div class="summary-note">
+        ${t('sum.disclaimer')}
+      </div>
+      <div class="summary-includes">
+        <h4>${t('sum.included')}</h4>
+        <ul class="includes-list">${inclusionsHtml}</ul>
+      </div>`;
+  }
+
+  // ──────────────────────────────────────────────
+  // WIZARD NAVIGATION & VALIDATION
+  // ──────────────────────────────────────────────
+  function validateStep() {
+    let valid = false;
+
+    switch (state.currentStep) {
+      case 1:
+        valid = state.selectedCategory !== null;
+        break;
+      case 2:
+        valid = state.selectedPackage !== null;
+        break;
+      case 3: {
+        const validSizes = (state.selectedCategory && state.selectedPackage)
+          ? state.selectedCategory.sizes.filter(size => state.selectedPackage.prices[size.id] !== undefined)
+          : [];
+        valid = validSizes.length > 1 ? state.selectedSize !== null : true;
+        break;
+      }
+      case 4:
+        valid = scheduleValid();
+        break;
+      case 5:
+        valid = true;
+        break;
+    }
+
+    btnNext.disabled = !valid;
+    saveState();
+  }
+
+  function updateStepUI() {
+    const stepsEls = ['ws1', 'ws2', 'ws3', 'ws4', 'ws5'].map(id => document.getElementById(id));
+    stepsEls.forEach((el, index) => {
+      if (el) el.classList.toggle('active', index === state.currentStep - 1);
+    });
+
+    stepCircles.forEach((circle, i) => {
+      const stepNum = i + 1;
+      circle.classList.remove('active', 'done');
+      if (stepNum < state.currentStep) {
+        circle.classList.add('done');
+        circle.innerHTML = CHECK_SVG;
+      } else if (stepNum === state.currentStep) {
+        circle.classList.add('active');
+        circle.innerHTML = stepNum;
+      } else {
+        circle.innerHTML = stepNum;
+      }
+    });
+
+    stepLines.forEach((line, i) => {
+      line.classList.toggle('done', (i + 1) < state.currentStep);
+    });
+
+    btnBack.style.display = state.currentStep > 1 ? 'inline-flex' : 'none';
+
+    if (state.currentStep === state.totalSteps) {
+      btnNext.innerHTML = `
+        ${t('btn.book')}
+        <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon" width="18" height="18">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+        </svg>
+      `;
+    } else {
+      btnNext.innerHTML = `
+        ${state.currentStep === 4 ? t('btn.review') : t('btn.next')}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+          <path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>
+        </svg>
+      `;
+    }
+
+    validateStep();
+  }
+
+  function goToStep(step) {
+    state.currentStep = step;
+
+    if (step === 2) renderPackages();
+    else if (step === 3) renderSizesAndAddons();
+    else if (step === 4) restoreScheduleInputs();
+    else if (step === 5) renderSummary();
+
+    updateStepUI();
+    updateQuoteBar();
+    document.getElementById('quoter').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  btnNext.addEventListener('click', () => {
+    if (btnNext.disabled) return;
+
+    if (state.currentStep === state.totalSteps) {
+      sendWhatsAppBooking();
+      return;
+    }
+
+    goToStep(state.currentStep + 1);
+  });
+
+  btnBack.addEventListener('click', () => {
+    if (state.currentStep > 1) {
+      goToStep(state.currentStep - 1);
+    }
+  });
+
+  // ──────────────────────────────────────────────
+  // WHATSAPP DISPATCH
+  // ──────────────────────────────────────────────
+  function sendWhatsAppBooking() {
+    const cat = state.selectedCategory;
+    const pkg = state.selectedPackage;
+    const size = state.selectedSize;
+    const s = state.schedule;
+    const est = computeEstimate();
+
+    let message = `*${t('wa.title')}*\n\n`;
+    message += `*${t('wa.category')}:* ${cat.name}\n`;
+    message += `*${t('wa.service')}:* ${pkg.name}\n`;
+    if (cat.sizes.length > 1) message += `*${t('wa.size')}:* ${size.name}\n`;
+    if (state.selectedAddons.length > 0) {
+      const addonsStr = state.selectedAddons.map(a => `${a.name} (${a.range || `+$${a.price}`})`).join(', ');
+      message += `*${t('wa.addons')}:* ${addonsStr}\n`;
+    }
+
+    message += `\n*${t('wa.total')}:* ${est ? est.label : '—'}\n\n`;
+
+    message += `*${t('wa.contact')}:* ${s.name || '—'}\n`;
+    if (s.phone) message += `*${t('wa.phone')}:* ${s.phone}\n`;
+    if (s.zip) message += `*${t('wa.area')}:* ${s.zip}\n`;
+    if (s.date) message += `*${t('wa.date')}:* ${prettyDate(s.date)}\n`;
+    if (s.timeWindow) message += `*${t('wa.time')}:* ${timeWindowLabel(s.timeWindow)}\n`;
+    if (s.notes) message += `*${t('wa.notes')}:* ${s.notes}\n`;
+
+    message += `\n${t('wa.closing')}`;
+
+    // Guard against WhatsApp's URL length limit; trim notes if necessary.
+    let encoded = encodeURIComponent(message);
+    if (encoded.length > 1900 && s.notes) {
+      message = message.replace(`*${t('wa.notes')}:* ${s.notes}\n`, '');
+      encoded = encodeURIComponent(message);
+    }
+    window.open(`https://wa.me/${PHONE_E164}?text=${encoded}`, '_blank');
+  }
+
+  // ──────────────────────────────────────────────
+  // EXTERNAL SERVICES LINKING (Landing Page Cards)
+  // ──────────────────────────────────────────────
+  function setupExternalServiceCards() {
+    document.querySelectorAll('.build-service-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const category = SERVICES_DATA.categories.find(c => c.id === btn.dataset.cat);
+        if (!category) return;
+        state.catFilter = category.cluster || 'all';
+        resetFromCategory(category);
+        renderCatFilter();
+        renderCategories();
+        goToStep(2);
+      });
+    });
+  }
+
+  function setupRouteCards() {
+    document.querySelectorAll('.build-route-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const route = SERVICE_ROUTES[btn.dataset.route];
+        if (!route) return;
+        state.catFilter = route.filter;
+        clearServiceSelection();
+        renderCatFilter();
+        renderCategories();
+        goToStep(1);
+      });
+    });
+  }
+
+  // ──────────────────────────────────────────────
+  // PREMIUM MICRO-INTERACTIONS
+  // ──────────────────────────────────────────────
+  // Cursor spotlight — feeds --mx/--my CSS vars to a card
+  function attachSpotlight(el) {
+    if (prefersReduced || el.dataset.spot) return;
+    el.dataset.spot = '1';
+    el.addEventListener('pointermove', (e) => {
+      const r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%');
+      el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%');
+    });
+  }
+
+  function setupReset() {
+    const btn = document.getElementById('btnReset');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      try { localStorage.removeItem('lyb-quote'); } catch (e) {}
+      state.catFilter = 'all';
+      state.pkgType = 'onetime';
+      state.heavyGroup = null;
+      state.selectedCategory = null;
+      state.selectedPackage = null;
+      state.selectedSize = null;
+      state.selectedAddons = [];
+      state.quizYes = [];
+      state.quizPicks = [];
+      state.quizOpen = false;
+      state.schedule = { name: '', phone: '', zip: '', date: '', timeWindow: '', notes: '' };
+      renderCatFilter();
+      renderCategories();
+      restoreScheduleInputs();
+      goToStep(1);
+    });
+  }
+
+  // ──────────────────────────────────────────────
+  // ANIMATED HERO BACKGROUND VIDEO
+  // Orientation-aware (horizontal desktop / vertical mobile), reduced-motion safe.
+  // Only the matching source is downloaded; the poster image is the fallback.
+  // ──────────────────────────────────────────────
+  function setupHeroVideo() {
+    const video = document.querySelector('.hero-bg-video');
+    if (!video) return;
+
+    // Evaluate the media queries live (not the load-time `prefersReduced`
+    // constant, which can be stale) and react to changes.
+    const reduceMq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const portraitMq = window.matchMedia('(max-width: 768px), (orientation: portrait)');
+    let currentMode = null;
+
+    function load(mode) {
+      if (mode === currentMode) return;
+      currentMode = mode;
+      const src = mode === 'mobile' ? video.dataset.srcMobile : video.dataset.srcDesktop;
+      if (!src) return;
+      video.classList.remove('is-playing');
+      video.src = src;
+      video.load();
+      const p = video.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    }
+
+    const reveal = () => video.classList.add('is-playing');
+    video.addEventListener('playing', reveal);
+    video.addEventListener('canplay', reveal);
+
+    function pick() {
+      if (reduceMq.matches) {
+        // Honor reduced motion: keep the static poster image, no playback.
+        currentMode = null;
+        video.classList.remove('is-playing');
+        video.pause();
+        return;
+      }
+      load(portraitMq.matches ? 'mobile' : 'desktop');
+    }
+    pick();
+
+    const onChange = () => pick();
+    [reduceMq, portraitMq].forEach(mq => {
+      if (mq.addEventListener) mq.addEventListener('change', onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    });
+
+    // Pause when the hero scrolls out of view to save resources
+    if ('IntersectionObserver' in window) {
+      const hero = document.getElementById('hero');
+      if (hero) {
+        new IntersectionObserver((entries) => {
+          entries.forEach(e => {
+            if (reduceMq.matches) return;
+            if (e.isIntersecting) { video.play().catch(() => {}); }
+            else { video.pause(); }
+          });
+        }, { threshold: 0.05 }).observe(hero);
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // LANGUAGE TOGGLE (ES / EN)
+  // ──────────────────────────────────────────────
+  function refreshAfterLang() {
+    renderCatFilter();
+    renderCategories();
+    if (state.currentStep >= 2) renderPackages();
+    if (state.currentStep >= 3) renderSizesAndAddons();
+    if (state.currentStep === 5) renderSummary();
+    restoreScheduleInputs();
+    updateStepUI();
+    updateQuoteBar();
+  }
+
+  function updateLangToggle() {
+    const btn = document.getElementById('langToggle');
+    if (!btn) return;
+    const lbl = btn.querySelector('.lang-toggle-label');
+    if (lbl) lbl.textContent = LANG === 'es' ? 'EN' : 'ES';
+    btn.setAttribute('aria-label', LANG === 'es' ? 'Switch language to English' : 'Cambiar idioma a español');
+  }
+
+  function applyLanguage(lang, persist) {
+    LANG = (lang === 'es') ? 'es' : 'en';
+    if (persist) { try { localStorage.setItem('lyb-lang', LANG); } catch (e) { /* storage unavailable */ } }
+    const root = document.documentElement;
+    root.setAttribute('data-lang', LANG);
+    root.setAttribute('lang', LANG);
+    applyServiceLanguage(LANG);
+    applyUILanguage();
+    updateLangToggle();
+    refreshAfterLang();
+  }
+
+  function setupLangToggle() {
+    const btn = document.getElementById('langToggle');
+    if (!btn) return;
+    updateLangToggle();
+    btn.addEventListener('click', () => applyLanguage(LANG === 'es' ? 'en' : 'es', true));
+  }
+
+  // ──────────────────────────────────────────────
+  // INITIALIZATION
+  // ──────────────────────────────────────────────
+  function init() {
+    setupThemeToggle();
+    setupLangToggle();
+    applyUILanguage();
+    setupHeroVideo();
+    handleNavScroll();
+    restoreState();
+    renderCatFilter();
+    renderCategories();
+    setupSchedule();
+    restoreScheduleInputs();
+    setupReset();
+    setupRouteCards();
+    setupExternalServiceCards();
+    document.querySelectorAll('.route-card').forEach(attachSpotlight);
+    updateStepUI();
+    updateQuoteBar();
+  }
+
+  init();
+
+})();

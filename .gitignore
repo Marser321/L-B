@@ -1,0 +1,5 @@
+# OS
+.DS_Store
+
+# PDF conversion artifacts — not part of the deployed site
+pdf_pages/
