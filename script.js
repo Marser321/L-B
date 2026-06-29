@@ -1575,6 +1575,45 @@
   const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="14" height="14" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
   const fmt = (n) => '$' + Math.round(n).toLocaleString('en-US');
 
+  // Line-art vehicle silhouettes for the size/type selector (Step 3).
+  // Stroke uses currentColor so they adopt the theme and glow on .selected.
+  const SIZE_ICONS = {
+    sedan: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3,18.5 L4,13.6 Q4.3,12.2 6.2,11.8 L10.5,11.2 L15.5,7.2 L27.5,7.2 L33,11.4 L43.5,12.4 Q45.8,12.6 46,14.8 L46,18.5 L41.5,18.5 Q35.5,13.4 29.5,18.5 L19,18.5 Q12.8,13.4 6.5,18.5 Z"/><circle cx="12.8" cy="21" r="3.5"/><circle cx="36" cy="21" r="3.5"/></svg>',
+    suv: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3,18.5 L3.6,11 Q3.8,9.4 5.6,9 L8.6,8.6 L12.5,6 L33,6 L38.5,8.8 L45,9.8 Q46.6,10.1 46.6,11.8 L46.6,18.5 L41.5,18.5 Q35.5,13.2 29.5,18.5 L19,18.5 Q12.5,13.2 6.5,18.5 Z"/><circle cx="12.5" cy="21" r="3.6"/><circle cx="36.5" cy="21" r="3.6"/></svg>',
+    truck: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3,18.5 L3.6,11.4 Q3.8,10 5.6,9.8 L8.8,9.5 L12.5,6.4 L20.5,6.4 L22.6,9.7 L22.6,12.8 L43.4,12.8 L43.4,10.8 L46.6,10.8 L46.6,18.5 L41.5,18.5 Q35.5,13.4 29.5,18.5 L19,18.5 Q12.5,13.4 6.5,18.5 Z"/><circle cx="12.5" cy="21" r="3.6"/><circle cx="36.5" cy="21" r="3.6"/></svg>',
+    van: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M2.8,18.5 L2.8,9.6 L6.8,6 L44.5,6 Q46.6,6 46.6,8.2 L46.6,18.5 L41.5,18.5 Q35.5,13.2 29.5,18.5 L19,18.5 Q12.5,13.2 6.5,18.5 Z"/><path d="M9.2,6.4 L9.2,11.2 L2.9,11.2"/><circle cx="12.5" cy="21" r="3.6"/><circle cx="37" cy="21" r="3.6"/></svg>',
+    van_pequena: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5,18.5 L4,11 Q4.2,9 7,8.4 L13.5,7 Q18,6.2 24,6.4 L33,6.8 Q39,7.4 39.6,11 L39.6,18.5 L35.5,18.5 Q30,13.4 24.5,18.5 L17.5,18.5 Q12,13.4 6.5,18.5 Z"/><circle cx="11.8" cy="21" r="3.4"/><circle cx="33.2" cy="21" r="3.4"/></svg>',
+    van_xl: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M2,18.5 L2,8 L6,4.8 L46,4.8 Q48,4.8 48,7 L48,18.5 L43,18.5 Q39.5,13 34.5,18.5 L18,18.5 Q11.5,13 5.5,18.5 Z"/><path d="M9,5.2 L9,10 L2.1,10"/><circle cx="11" cy="21" r="3.6"/><circle cx="39.5" cy="21" r="3.6"/></svg>',
+    box_truck: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M2,18.5 L2,12.5 L4.5,10 L13,10 L13,4 L47,4 L47,18.5 L42.5,18.5 Q37.5,13.2 32.5,18.5 L16,18.5 Q10.5,13.2 5.5,18.5 Z"/><circle cx="10.5" cy="21" r="3.6"/><circle cx="39" cy="21" r="3.6"/></svg>',
+    boat: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4,12.8 L44,9.8 Q47.5,9 47.5,11.5 L44,15 Q43,17.5 39,17.5 L10,17.5 Q4.5,17.5 4,12.8 Z"/><path d="M29,11.2 L31.5,7.8 L35.5,7.6 L36.5,10.6"/><path d="M3,20.4 q3,1.6 6,0 t6,0 t6,0 t6,0 t6,0 t6,0" stroke-width="1.6"/></svg>',
+    jetski: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4,16.6 Q3.6,14.9 6.2,14.5 L25,13.4 Q30,10.8 35,11.2 L43.5,12.8 Q46.4,13.4 45.4,15.6 Q44.4,17.5 41,17.5 L9,17.5 Q4.6,17.5 4,16.6 Z"/><path d="M22.5,13.2 L21,9.6 L18.4,9.9"/><path d="M5,20.2 q3,1.5 6,0 t6,0 t6,0 t6,0 t6,0" stroke-width="1.6"/></svg>',
+    atv: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5.5,16.5 Q5.5,12.8 9.8,12.4 L17,12 L20,8.6 L22.8,8.6 L23.9,11.8 L31.8,11.8 Q40.5,12.1 42.5,16.5"/><path d="M20.4,8.6 L18.8,6 L16.4,6.2"/><circle cx="11.5" cy="20.2" r="4.6"/><circle cx="37.5" cy="20.2" r="4.6"/><circle cx="11.5" cy="20.2" r="1.4"/><circle cx="37.5" cy="20.2" r="1.4"/></svg>',
+    golf_cart: '<svg viewBox="0 0 50 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M6,17.5 L6,13 L9.5,13 L10.6,10.8 L29,10.8 L29,13 L37.5,13 L37.5,17.5"/><path d="M4,6.3 L40,6.3"/><path d="M6.6,11 L6.6,6.3"/><path d="M37,12.8 L37,6.3"/><path d="M20,12.8 L20,8.2"/><circle cx="11.5" cy="21.2" r="3"/><circle cx="33.5" cy="21.2" r="3"/></svg>',
+    mobile_home: '<svg viewBox="0 0 44 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M2.5,11.5 L21,6.5 L39.5,11.5"/><path d="M5,11.5 L5,25 L37,25 L37,11.5"/><path d="M16,25 L16,16.5 L22.5,16.5 L22.5,25"/><path d="M26,14.5 L31.5,14.5 L31.5,18.5 L26,18.5 Z"/></svg>'
+  };
+
+  // Map a category + size id to an icon key and a repeat count (quantity / sections).
+  function sizeIconInfo(catId, sizeId) {
+    if (SIZE_ICONS[sizeId]) return { key: sizeId, count: 1 };
+    const qty = /^qty_(\d)/.exec(sizeId);
+    if (catId === 'jetski') return { key: 'jetski', count: qty ? +qty[1] : 1 };
+    if (catId === 'atv') return { key: 'atv', count: qty ? +qty[1] : 1 };
+    if (catId === 'mobile_home') return { key: 'mobile_home', count: sizeId === 'triple_wide' ? 3 : sizeId === 'double_wide' ? 2 : 1 };
+    if (catId === 'heavy_trucks') return { key: 'box_truck', count: 1 };
+    if (catId === 'boats') return { key: 'boat', count: 1 };
+    if (catId === 'golf_cart') return { key: 'golf_cart', count: 1 };
+    return null;
+  }
+
+  // Build the plaque markup for a size card (empty string when there is no icon).
+  function sizeIconHTML(catId, sizeId) {
+    const info = sizeIconInfo(catId, sizeId);
+    if (!info || !SIZE_ICONS[info.key]) return '';
+    const n = Math.min(info.count, 3);
+    const cls = n >= 3 ? 'opt-icon qty q3' : n === 2 ? 'opt-icon qty' : 'opt-icon';
+    return '<div class="' + cls + '">' + SIZE_ICONS[info.key].repeat(n) + '</div>';
+  }
+
   function rangeParts(str) {
     const cleaned = String(str).replace(/[^0-9-]/g, '');
     const parts = cleaned.split('-').filter(Boolean).map(n => parseInt(n, 10));
@@ -1609,6 +1648,11 @@
   function addonImage(addon, cat = state.selectedCategory) {
     return EXTRA_IMAGES[addon.id] || categoryImage(cat);
   }
+
+  // Graceful fallback when a referenced photo is missing (e.g. not yet generated),
+  // so cards never render a broken image. Applied to every dynamic <img>.
+  const IMG_FALLBACK = 'assets/route-vehicle-detailing.jpg';
+  const IMG_ERR_ATTR = `onerror="this.onerror=null;this.src='${IMG_FALLBACK}'"`;
 
   // Single source of truth for pricing (summary, live bar & WhatsApp all use this)
   function computeEstimate() {
@@ -1993,7 +2037,7 @@
     return `
       <div class="opt-card has-media ${isSel ? 'selected' : ''}" data-id="${pkg.id}" role="radio" tabindex="0" aria-checked="${isSel}">
         <div class="opt-radio"></div>
-        <img class="opt-img" src="${img}" alt="" loading="lazy" />
+        <img class="opt-img" src="${img}" alt="" loading="lazy" ${IMG_ERR_ATTR} />
         <div class="opt-text">
           <span class="opt-name">${pkg.name}</span>
           <span class="opt-desc">${pkg.description}</span>
@@ -2010,7 +2054,7 @@
       return `
         <div class="compare-card ${featured ? 'featured' : ''} ${isSel ? 'selected' : ''}" data-id="${pkg.id}" role="radio" tabindex="0" aria-checked="${isSel}">
           ${featured ? `<span class="compare-flag">${t('mostPopular')}</span>` : ''}
-          <img class="compare-img" src="${packageImage(pkg)}" alt="" loading="lazy" />
+          <img class="compare-img" src="${packageImage(pkg)}" alt="" loading="lazy" ${IMG_ERR_ATTR} />
           <span class="compare-name">${pkg.name}</span>
           <span class="compare-price">${packageFromLabel(pkg)}</span>
           <p class="compare-desc">${pkg.description}</p>
@@ -2230,9 +2274,11 @@
           ? pkg.priceRanges[size.id]
           : fmt(pkg.prices[size.id]);
         const isSel = state.selectedSize && state.selectedSize.id === size.id;
+        const iconHTML = sizeIconHTML(cat.id, size.id);
         return `
-          <div class="opt-card ${isSel ? 'selected' : ''}" data-id="${size.id}" role="radio" tabindex="0" aria-checked="${isSel}">
+          <div class="opt-card ${iconHTML ? 'has-icon' : ''} ${isSel ? 'selected' : ''}" data-id="${size.id}" role="radio" tabindex="0" aria-checked="${isSel}">
             <div class="opt-radio"></div>
+            ${iconHTML}
             <span class="opt-name">${size.name}</span>
             <span class="opt-price">${displayPrice}</span>
           </div>`;
@@ -2263,7 +2309,7 @@
         return `
           <div class="addon-card ${isSel ? 'selected' : ''} ${state.quizPicks.includes(addon.id) ? 'rec-you' : ''}" data-id="${addon.id}" role="checkbox" tabindex="0" aria-checked="${isSel}">
             <div class="addon-check">${CHECK_SVG}</div>
-            <img class="addon-img" src="${addonImage(addon)}" alt="" loading="lazy" />
+            <img class="addon-img" src="${addonImage(addon)}" alt="" loading="lazy" ${IMG_ERR_ATTR} />
             <div class="addon-text">
               <span class="addon-name">${addon.name}</span>
               ${badge}
@@ -2369,8 +2415,10 @@
     const showSizeRow = cat.sizes.length > 1;
     const row = (lab, val) => val ? `<div class="summary-row"><span class="lab">${lab}</span><span class="val">${val}</span></div>` : '';
     const scheduleVal = [prettyDate(s.date), timeWindowLabel(s.timeWindow)].filter(Boolean).join(' · ');
+    const vehIcon = sizeIconHTML(cat.id, size.id);
 
     summaryBox.innerHTML = `
+      ${vehIcon ? `<div class="summary-vehicle">${vehIcon}<div class="summary-vehicle-text"><span class="sv-name">${pkg.name}</span><span class="sv-sub">${showSizeRow ? size.name : cat.name}</span></div></div>` : ''}
       ${row(t('sum.category'), cat.name)}
       ${row(t('sum.service'), pkg.name)}
       ${showSizeRow ? row(t('sum.size'), size.name) : ''}
