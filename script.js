@@ -33,6 +33,8 @@
   }
   // Single source of truth for the business phone number.
   const PHONE_E164 = '12395270770';
+  const PHONE_TEL = '+12395270770';
+  const PHONE_DISPLAY = '(239) 527-0770';
   // Localized label for a stored time-window key (morning/afternoon/evening).
   function timeWindowLabel(key) { return key ? t('tw.' + key) : ''; }
 
@@ -500,7 +502,7 @@
           { id: 'cera-rapida', name: 'Cera Rápida', price: 20, range: '$20 - $40' },
           { id: 'desengrasado-profundo', name: 'Desengrasado Profundo', price: 30, range: '$30 - $60' },
           { id: 'motor-pesado', name: 'Limpieza de Motor', price: 30 },
-          { id: 'volteo-aluminio', name: 'Caja de Aluminio (+ $120)', price: 120, onlyFor: ['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x'] },
+          { id: 'volteo-aluminio', name: 'Caja de Aluminio', price: 120, onlyFor: ['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x'] },
           { id: 'rines-aluminio', name: 'Ácido para Rines de Aluminio', price: 25 },
           { id: 'pulido-tanques', name: 'Pulido Tanques de Aluminio (Cotiz.)', price: 0, range: 'Cotización personalizada' }
         ]
@@ -871,7 +873,7 @@
           'cera-rapida': ['Quick Wax', '$20 - $40'],
           'desengrasado-profundo': ['Deep Degreasing', '$30 - $60'],
           'motor-pesado': ['Engine Cleaning'],
-          'volteo-aluminio': ['Aluminum Dump Bed (+ $120)'],
+          'volteo-aluminio': ['Aluminum Dump Bed'],
           'rines-aluminio': ['Aluminum Wheel Acid Cleaning'],
           'pulido-tanques': ['Aluminum Tank Polishing (Quote)', 'Custom quote']
         }
@@ -1223,55 +1225,18 @@
   };
 
   const CATEGORY_IMAGES = {
-    cars: 'assets/route-vehicle-detailing.jpg',
-    paint_correction: 'assets/service-paint-protection.jpg',
-    heavy_trucks: 'assets/route-fleet-property.jpg',
-    boats: 'assets/route-marine-recreation.jpg',
-    jetski: 'assets/service-jet-ski-detail.jpg',
-    golf_cart: 'assets/service-golf-cart-detail.jpg',
-    atv: 'assets/service-atv-detail.jpg',
-    mobile_home: 'assets/service-mobile-home-wash.jpg',
-    driveway: 'assets/service-driveway-pressure.jpg'
+    cars: 'assets/service-cars.webp',
+    paint_correction: 'assets/service-paint-correction.webp',
+    heavy_trucks: 'assets/service-heavy-trucks.webp',
+    boats: 'assets/service-boats.webp',
+    jetski: 'assets/service-jetski.webp',
+    golf_cart: 'assets/service-golf-cart.webp',
+    atv: 'assets/service-atv.webp',
+    mobile_home: 'assets/service-mobile-home.webp',
+    driveway: 'assets/service-driveway.webp'
   };
 
-  const PACKAGE_IMAGES = {
-    'basico-exterior': 'assets/route-vehicle-detailing.jpg',
-    'basico-premium': 'assets/service-interior-detail.jpg',
-    'premium-detail': 'assets/service-interior-detail.jpg',
-    vip: 'assets/service-interior-detail.jpg',
-    'membresia-2x': 'assets/route-vehicle-detailing.jpg',
-    'membresia-4x': 'assets/route-vehicle-detailing.jpg',
-    'paint-enhancement': 'assets/service-paint-protection.jpg',
-    'paint-correction': 'assets/service-paint-protection.jpg',
-    'ceramic-protection': 'assets/extra-paint-protection.jpg',
-    'box-truck-wash': 'assets/route-fleet-property.jpg',
-    'box-truck-2x': 'assets/route-fleet-property.jpg',
-    'box-truck-4x': 'assets/route-fleet-property.jpg',
-    'semi-truck-wash': 'assets/route-fleet-property.jpg',
-    'semi-truck-2x': 'assets/route-fleet-property.jpg',
-    'semi-truck-4x': 'assets/route-fleet-property.jpg',
-    'trailer-wash': 'assets/route-fleet-property.jpg',
-    'trailer-2x': 'assets/route-fleet-property.jpg',
-    'trailer-4x': 'assets/route-fleet-property.jpg',
-    'dump-truck-wash': 'assets/extra-degreasing.jpg',
-    'dump-truck-2x': 'assets/extra-degreasing.jpg',
-    'dump-truck-4x': 'assets/extra-degreasing.jpg',
-    'garbage-truck-wash': 'assets/extra-degreasing.jpg',
-    'garbage-truck-2x': 'assets/extra-degreasing.jpg',
-    'garbage-truck-4x': 'assets/extra-degreasing.jpg',
-    'boat-basico': 'assets/route-marine-recreation.jpg',
-    'boat-premium': 'assets/route-marine-recreation.jpg',
-    'boat-detail': 'assets/route-marine-recreation.jpg',
-    'jetski-premium': 'assets/service-jet-ski-detail.jpg',
-    'jetski-membresia': 'assets/service-jet-ski-detail.jpg',
-    'golf-premium': 'assets/service-golf-cart-detail.jpg',
-    'golf-membresia': 'assets/service-golf-cart-detail.jpg',
-    'atv-premium': 'assets/service-atv-detail.jpg',
-    'atv-membresia': 'assets/service-atv-detail.jpg',
-    'mobile-home-basico': 'assets/service-mobile-home-wash.jpg',
-    'driveway-basico': 'assets/service-driveway-pressure.jpg',
-    'driveway-premium': 'assets/service-driveway-pressure.jpg'
-  };
+  const PACKAGE_IMAGE_DIR = 'assets/packages/';
 
   const EXTRA_IMAGES = {
     'limpieza-motor': 'assets/extra-engine-bay.jpg',
@@ -1368,6 +1333,8 @@
       ]
     }
   };
+
+  const FROM_PRICE_EXTRA_IDS = new Set(['motor-pesado', 'rines-aluminio']);
 
   // ──────────────────────────────────────────────
   // UI STRING DICTIONARY (everything outside SERVICES_DATA / RECO)
@@ -1534,7 +1501,9 @@
     'wa.date': { en: 'Preferred date', es: 'Fecha preferida' },
     'wa.time': { en: 'Preferred time', es: 'Horario preferido' },
     'wa.notes': { en: 'Notes', es: 'Notas' },
-    'wa.closing': { en: "Hi, I'd like to book this mobile service. Please confirm availability for my preferred time. Thank you!", es: 'Hola, me gustaría reservar este servicio móvil. Por favor confirmen disponibilidad para mi horario preferido. ¡Gracias!' }
+    'wa.closing': { en: "Hi, I'd like to book this mobile service. Please confirm availability for my preferred time. Thank you!", es: 'Hola, me gustaría reservar este servicio móvil. Por favor confirmen disponibilidad para mi horario preferido. ¡Gracias!' },
+    'wa.quick': { en: "Hi L&B Elite! I'd like to book a service.", es: 'Hola L&B Elite, me gustaría reservar un servicio.' },
+    'waFloat.aria': { en: 'Contact us on WhatsApp', es: 'Contactar por WhatsApp' }
   };
 
   // Apply the active language to all static [data-i18n*] nodes.
@@ -1551,7 +1520,10 @@
       if (cat.id === 'paint_correction') cat.compareView = true;
       if (cat.id === 'heavy_trucks') cat.groupBy = true;
 
+      (cat.extras || []).forEach(extra => normalizeAddonPricing(extra));
+
       cat.packages.forEach(pkg => {
+        normalizePackagePricing(pkg);
         pkg.type = /membresia|membership|-2x$|-4x$/.test(pkg.id) ? 'membership' : 'onetime';
         if (cat.id === 'heavy_trucks') {
           const g = HEAVY_GROUPS.find(grp => pkg.id.startsWith(grp.id));
@@ -1614,12 +1586,54 @@
     return '<div class="' + cls + '">' + SIZE_ICONS[info.key].repeat(n) + '</div>';
   }
 
-  function rangeParts(str) {
-    const cleaned = String(str).replace(/[^0-9-]/g, '');
-    const parts = cleaned.split('-').filter(Boolean).map(n => parseInt(n, 10));
-    const min = parts[0] || 0;
-    const max = parts.length > 1 ? parts[1] : min;
-    return { min, max };
+  function parsePriceText(text) {
+    const str = String(text || '');
+    const nums = (str.match(/\d[\d,]*/g) || []).map(n => parseInt(n.replace(/,/g, ''), 10)).filter(Number.isFinite);
+    const custom = /custom quote|cotiz/i.test(str) && nums.length === 0;
+    if (!nums.length) return { min: 0, max: 0, from: false, custom };
+    return {
+      min: nums[0],
+      max: nums.length > 1 ? nums[1] : nums[0],
+      from: /\b(from|desde)\b/i.test(str),
+      custom: false
+    };
+  }
+
+  function normalizePackagePricing(pkg) {
+    pkg.priceRangeValues = {};
+    Object.keys(pkg.priceRanges || {}).forEach(sizeId => {
+      pkg.priceRangeValues[sizeId] = parsePriceText(pkg.priceRanges[sizeId]);
+    });
+  }
+
+  function normalizeAddonPricing(addon) {
+    const parsed = addon.range ? parsePriceText(addon.range) : null;
+    const base = Number(addon.price || 0);
+    addon.customQuote = Boolean(parsed && parsed.custom);
+    addon.priceMin = parsed && !parsed.custom ? parsed.min : base;
+    addon.priceMax = parsed && !parsed.custom ? parsed.max : base;
+    addon.priceFrom = Boolean((parsed && parsed.from) || FROM_PRICE_EXTRA_IDS.has(addon.id));
+  }
+
+  function validSizesForPackage(cat, pkg) {
+    if (!cat || !pkg) return [];
+    return (cat.sizes || []).filter(size => pkg.prices && pkg.prices[size.id] !== undefined);
+  }
+
+  function packagePriceBounds(pkg, sizeId) {
+    const range = pkg.priceRangeValues && pkg.priceRangeValues[sizeId];
+    if (range) return range;
+    const base = Number(pkg.prices && pkg.prices[sizeId]) || 0;
+    return { min: base, max: base, from: false, custom: false };
+  }
+
+  function addonPriceBounds(addon) {
+    return {
+      min: Number(addon.priceMin != null ? addon.priceMin : addon.price || 0),
+      max: Number(addon.priceMax != null ? addon.priceMax : addon.price || 0),
+      from: Boolean(addon.priceFrom),
+      custom: Boolean(addon.customQuote)
+    };
   }
 
   function currentValidAddons() {
@@ -1630,11 +1644,8 @@
   }
 
   function packageFromLabel(pkg) {
-    if (pkg.priceRanges) {
-      const key = Object.keys(pkg.priceRanges)[0];
-      return t('from') + ' ' + fmt(rangeParts(pkg.priceRanges[key]).min);
-    }
-    return t('from') + ' ' + fmt(Math.min(...Object.values(pkg.prices)));
+    const mins = Object.keys(pkg.prices || {}).map(sizeId => packagePriceBounds(pkg, sizeId).min);
+    return t('from') + ' ' + fmt(Math.min(...mins));
   }
 
   function categoryImage(cat) {
@@ -1642,7 +1653,11 @@
   }
 
   function packageImage(pkg, cat = state.selectedCategory) {
-    return PACKAGE_IMAGES[pkg.id] || categoryImage(cat);
+    const fallback = categoryImage(cat);
+    return {
+      src: pkg && pkg.id ? `${PACKAGE_IMAGE_DIR}${pkg.id}.jpg` : fallback,
+      fallback
+    };
   }
 
   function addonImage(addon, cat = state.selectedCategory) {
@@ -1652,7 +1667,10 @@
   // Graceful fallback when a referenced photo is missing (e.g. not yet generated),
   // so cards never render a broken image. Applied to every dynamic <img>.
   const IMG_FALLBACK = 'assets/route-vehicle-detailing.jpg';
-  const IMG_ERR_ATTR = `onerror="this.onerror=null;this.src='${IMG_FALLBACK}'"`;
+  function imgErrAttr(fallback = IMG_FALLBACK) {
+    return `onerror="this.onerror=null;this.src='${fallback}'"`;
+  }
+  const IMG_ERR_ATTR = imgErrAttr();
 
   // Single source of truth for pricing (summary, live bar & WhatsApp all use this)
   function computeEstimate() {
@@ -1660,31 +1678,27 @@
     const size = state.selectedSize;
     if (!pkg || !size) return null;
 
-    let min, max, isRange = false, custom = false;
-    const baseRange = pkg.priceRanges ? pkg.priceRanges[size.id] : null;
-
-    if (baseRange) {
-      const p = rangeParts(baseRange);
-      min = p.min; max = p.max; isRange = true;
-    } else {
-      const base = pkg.prices[size.id] || 0;
-      min = base; max = base;
-    }
+    const base = packagePriceBounds(pkg, size.id);
+    let min = base.min;
+    let max = base.max;
+    let isRange = base.max > base.min;
+    let isFrom = base.from;
+    let custom = false;
 
     state.selectedAddons.forEach(addon => {
-      if (addon.range && addon.price === 0) {
+      const p = addonPriceBounds(addon);
+      if (p.custom) {
         custom = true; // e.g. aluminum tank polishing — custom quote
-      } else if (addon.range) {
-        const p = rangeParts(addon.range);
-        min += p.min; max += p.max;
-        if (p.max !== p.min) isRange = true;
-      } else {
-        min += addon.price; max += addon.price;
+        return;
       }
+      min += p.min;
+      max += p.max;
+      if (p.max > p.min) isRange = true;
+      if (p.from) isFrom = true;
     });
 
     const showRange = isRange && max > min;
-    let label = showRange ? `${fmt(min)} - ${fmt(max)}` : fmt(min);
+    let label = showRange ? `${fmt(min)} - ${fmt(max)}` : (isFrom ? `${t('from')} ${fmt(min)}` : fmt(min));
     if (custom) label += ' ' + t('customQuote');
     return { min, max, isRange: showRange, custom, label };
   }
@@ -1741,14 +1755,33 @@
   // ── Add-on bundle pricing ──
   function bundlePrice(bundle) {
     const cat = state.selectedCategory;
-    let sum = 0, hasRange = false;
+    let sum = 0, hasVariable = false, custom = false;
     bundle.addons.forEach(id => {
       const a = (cat.extras || []).find(e => e.id === id);
       if (!a) return;
-      sum += a.price;
-      if (a.range) hasRange = true;
+      const p = addonPriceBounds(a);
+      if (p.custom) {
+        custom = true;
+        return;
+      }
+      sum += p.min;
+      if (p.max > p.min || p.from) hasVariable = true;
     });
-    return (hasRange ? t('from') + ' ' : '') + fmt(sum);
+    return (hasVariable ? t('from') + ' ' : '') + fmt(sum) + (custom ? ' ' + t('customQuote') : '');
+  }
+
+  function addonDisplayPrice(addon) {
+    if (addon.customQuote) return '+ ' + t('customQuote');
+    if (addon.range) return '+ ' + addon.range;
+    const p = addonPriceBounds(addon);
+    return '+ ' + (p.from ? `${t('from')} ${fmt(p.min)}` : fmt(p.min));
+  }
+
+  function addonWhatsAppPrice(addon) {
+    if (addon.customQuote) return t('customQuote');
+    if (addon.range) return addon.range;
+    const p = addonPriceBounds(addon);
+    return p.from ? `${t('from')} ${fmt(p.min)}` : '+' + fmt(p.min);
   }
 
   function addonBadge(addon) {
@@ -1781,9 +1814,26 @@
     const n = (name || '').trim();
     return n.length >= 2 && /[\p{L}]/u.test(n);
   }
+  function validZip(zip) {
+    const z = (zip || '').trim();
+    return !z || /^\d{5}$/.test(z);
+  }
+  function phoneDigits(phone) {
+    return String(phone || '').replace(/\D/g, '');
+  }
+  function validPhone(phone) {
+    const d = phoneDigits(phone);
+    return !d || d.length === 10 || (d.length === 11 && d[0] === '1');
+  }
+  function normalizedPhone(phone) {
+    let d = phoneDigits(phone);
+    if (d.length === 11 && d[0] === '1') d = d.slice(1);
+    if (d.length !== 10) return (phone || '').trim();
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
   function scheduleValid() {
     const s = state.schedule;
-    return !!(validName(s.name) && s.date && s.date >= tomorrowISO() && s.timeWindow);
+    return !!(validName(s.name) && validPhone(s.phone) && validZip(s.zip) && s.date && s.date >= tomorrowISO() && s.timeWindow);
   }
 
   // ── Persistence ──
@@ -1813,7 +1863,7 @@
     state.heavyGroup = s.heavyGroup || null;
     if (s.pkgId) state.selectedPackage = cat.packages.find(p => p.id === s.pkgId) || null;
     if (s.sizeId && state.selectedPackage) {
-      const vs = cat.sizes.filter(sz => state.selectedPackage.prices[sz.id] !== undefined);
+      const vs = validSizesForPackage(cat, state.selectedPackage);
       state.selectedSize = vs.find(sz => sz.id === s.sizeId) || null;
     }
     if (Array.isArray(s.addonIds)) {
@@ -1896,6 +1946,19 @@
         e.preventDefault();
         handler();
       }
+    });
+  }
+
+  function setupContactLinks() {
+    document.querySelectorAll('[data-phone-link], [data-phone-display]').forEach(el => {
+      el.setAttribute('href', 'tel:' + PHONE_TEL);
+    });
+    document.querySelectorAll('[data-phone-display]').forEach(el => {
+      el.textContent = PHONE_DISPLAY;
+    });
+    document.querySelectorAll('[data-whatsapp-float]').forEach(el => {
+      el.setAttribute('href', `https://wa.me/${PHONE_E164}?text=${encodeURIComponent(t('wa.quick'))}`);
+      el.setAttribute('aria-label', t('waFloat.aria'));
     });
   }
 
@@ -2037,7 +2100,7 @@
     return `
       <div class="opt-card has-media ${isSel ? 'selected' : ''}" data-id="${pkg.id}" role="radio" tabindex="0" aria-checked="${isSel}">
         <div class="opt-radio"></div>
-        <img class="opt-img" src="${img}" alt="" loading="lazy" ${IMG_ERR_ATTR} />
+        <img class="opt-img" src="${img.src}" alt="" loading="lazy" decoding="async" ${imgErrAttr(img.fallback)} />
         <div class="opt-text">
           <span class="opt-name">${pkg.name}</span>
           <span class="opt-desc">${pkg.description}</span>
@@ -2050,11 +2113,12 @@
     return pkgs.map((pkg, i) => {
       const featured = pkgs.length === 3 && i === 1;
       const isSel = state.selectedPackage && state.selectedPackage.id === pkg.id;
+      const img = packageImage(pkg);
       const incs = pkg.includes.map(x => `<li>${CHECK_SVG}<span>${x}</span></li>`).join('');
       return `
         <div class="compare-card ${featured ? 'featured' : ''} ${isSel ? 'selected' : ''}" data-id="${pkg.id}" role="radio" tabindex="0" aria-checked="${isSel}">
           ${featured ? `<span class="compare-flag">${t('mostPopular')}</span>` : ''}
-          <img class="compare-img" src="${packageImage(pkg)}" alt="" loading="lazy" ${IMG_ERR_ATTR} />
+          <img class="compare-img" src="${img.src}" alt="" loading="lazy" decoding="async" ${imgErrAttr(img.fallback)} />
           <span class="compare-name">${pkg.name}</span>
           <span class="compare-price">${packageFromLabel(pkg)}</span>
           <p class="compare-desc">${pkg.description}</p>
@@ -2266,7 +2330,7 @@
     const pkg = state.selectedPackage;
 
     // A. Sizes
-    const validSizes = cat.sizes.filter(size => pkg.prices[size.id] !== undefined);
+    const validSizes = validSizesForPackage(cat, pkg);
     if (validSizes.length > 1) {
       sizeSection.style.display = 'block';
       sizeGrid.innerHTML = validSizes.map(size => {
@@ -2304,12 +2368,12 @@
       renderRecoUI();
       addonGrid.innerHTML = validAddons.map(addon => {
         const isSel = state.selectedAddons.some(a => a.id === addon.id);
-        const priceLabel = addon.range ? `+ ${addon.range}` : `+ ${fmt(addon.price)}`;
+        const priceLabel = addonDisplayPrice(addon);
         const badge = addonBadge(addon);
         return `
           <div class="addon-card ${isSel ? 'selected' : ''} ${state.quizPicks.includes(addon.id) ? 'rec-you' : ''}" data-id="${addon.id}" role="checkbox" tabindex="0" aria-checked="${isSel}">
             <div class="addon-check">${CHECK_SVG}</div>
-            <img class="addon-img" src="${addonImage(addon)}" alt="" loading="lazy" ${IMG_ERR_ATTR} />
+            <img class="addon-img" src="${addonImage(addon)}" alt="" loading="lazy" decoding="async" ${IMG_ERR_ATTR} />
             <div class="addon-text">
               <span class="addon-name">${addon.name}</span>
               ${badge}
@@ -2358,10 +2422,19 @@
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('input', () => {
-        state.schedule[key] = el.value;
+        state.schedule[key] = key === 'zip' ? el.value.replace(/\D/g, '').slice(0, 5) : el.value;
+        if (key === 'zip' && el.value !== state.schedule[key]) el.value = state.schedule[key];
         if (key === 'zip') updateCoverage();
         validateStep();
       });
+      if (key === 'phone') {
+        el.addEventListener('blur', () => {
+          if (!validPhone(el.value)) return;
+          el.value = normalizedPhone(el.value);
+          state.schedule.phone = el.value;
+          validateStep();
+        });
+      }
     };
     bind('schedName', 'name');
     bind('schedPhone', 'phone');
@@ -2412,7 +2485,7 @@
     const est = computeEstimate();
 
     const inclusionsHtml = pkg.includes.map(inc => `<li>${CHECK_SVG}<span>${inc}</span></li>`).join('');
-    const showSizeRow = cat.sizes.length > 1;
+    const showSizeRow = validSizesForPackage(cat, pkg).length > 1;
     const row = (lab, val) => val ? `<div class="summary-row"><span class="lab">${lab}</span><span class="val">${val}</span></div>` : '';
     const scheduleVal = [prettyDate(s.date), timeWindowLabel(s.timeWindow)].filter(Boolean).join(' · ');
     const vehIcon = sizeIconHTML(cat.id, size.id);
@@ -2454,9 +2527,7 @@
         valid = state.selectedPackage !== null;
         break;
       case 3: {
-        const validSizes = (state.selectedCategory && state.selectedPackage)
-          ? state.selectedCategory.sizes.filter(size => state.selectedPackage.prices[size.id] !== undefined)
-          : [];
+        const validSizes = validSizesForPackage(state.selectedCategory, state.selectedPackage);
         valid = validSizes.length > 1 ? state.selectedSize !== null : true;
         break;
       }
@@ -2560,16 +2631,16 @@
     let message = `*${t('wa.title')}*\n\n`;
     message += `*${t('wa.category')}:* ${cat.name}\n`;
     message += `*${t('wa.service')}:* ${pkg.name}\n`;
-    if (cat.sizes.length > 1) message += `*${t('wa.size')}:* ${size.name}\n`;
+    if (validSizesForPackage(cat, pkg).length > 1) message += `*${t('wa.size')}:* ${size.name}\n`;
     if (state.selectedAddons.length > 0) {
-      const addonsStr = state.selectedAddons.map(a => `${a.name} (${a.range || `+$${a.price}`})`).join(', ');
+      const addonsStr = state.selectedAddons.map(a => `${a.name} (${addonWhatsAppPrice(a)})`).join(', ');
       message += `*${t('wa.addons')}:* ${addonsStr}\n`;
     }
 
     message += `\n*${t('wa.total')}:* ${est ? est.label : '—'}\n\n`;
 
     message += `*${t('wa.contact')}:* ${s.name || '—'}\n`;
-    if (s.phone) message += `*${t('wa.phone')}:* ${s.phone}\n`;
+    if (s.phone) message += `*${t('wa.phone')}:* ${normalizedPhone(s.phone)}\n`;
     if (s.zip) message += `*${t('wa.area')}:* ${s.zip}\n`;
     if (s.date) message += `*${t('wa.date')}:* ${prettyDate(s.date)}\n`;
     if (s.timeWindow) message += `*${t('wa.time')}:* ${timeWindowLabel(s.timeWindow)}\n`;
@@ -2751,6 +2822,7 @@
     applyServiceLanguage(LANG);
     applyUILanguage();
     updateLangToggle();
+    setupContactLinks();
     refreshAfterLang();
   }
 
@@ -2768,6 +2840,7 @@
     setupThemeToggle();
     setupLangToggle();
     applyUILanguage();
+    setupContactLinks();
     setupHeroVideo();
     handleNavScroll();
     restoreState();

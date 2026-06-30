@@ -539,10 +539,10 @@ html[data-lang="en"] .i18n-es { display: none !important; }
   align-items: center;
   min-height: 34px;
   padding: 7px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--text-dim);
+  background: var(--surface-2);
+  color: var(--text);
   font-size: var(--fs-xs);
   font-weight: 700;
 }
@@ -671,7 +671,7 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 /* --- Category Cards (Step 1) --- */
 .category-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
 }
 .cat-card {
@@ -721,8 +721,9 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 /* --- Option Cards (packages & sizes — Steps 2 & 3) --- */
 .option-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: var(--space-5);
+  align-items: stretch;
 }
 .opt-card {
   display: flex; align-items: center; gap: var(--space-4);
@@ -730,18 +731,32 @@ html[data-lang="en"] .i18n-es { display: none !important; }
   border-radius: var(--radius);
 }
 .opt-card.has-media {
-  align-items: flex-start;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "image image"
+    "text price"
+    "radio price";
+  align-items: start;
+  gap: var(--space-3) var(--space-4);
   padding: 14px;
+  overflow: hidden;
 }
-.opt-card.has-media .opt-radio { margin-top: 24px; }
+.opt-card.has-media .opt-radio {
+  grid-area: radio;
+  align-self: end;
+  margin-top: var(--space-1);
+}
 .opt-img {
-  width: 92px;
-  height: 72px;
-  flex-shrink: 0;
+  grid-area: image;
+  width: 100%;
+  aspect-ratio: 16 / 10;
   object-fit: cover;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
+  min-height: 148px;
 }
 .opt-radio {
   width: 20px; height: 20px; flex-shrink: 0;
@@ -762,10 +777,21 @@ html[data-lang="en"] .i18n-es { display: none !important; }
   position: absolute; top: 50%; left: 50%;
   transform: translate(-50%,-50%);
 }
-.opt-text { display: flex; flex-direction: column; gap: var(--space-1); flex-grow: 1; text-align: left; }
-.opt-name { font-family: var(--font-title); font-weight: 600; font-size: var(--fs-base); color: var(--text-strong); }
-.opt-desc { font-size: .75rem; color: var(--text-dim); line-height: 1.35; }
-.opt-price { font-family: var(--font-title); font-size: .9rem; color: var(--accent-bright); font-weight: 700; margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.opt-text { grid-area: text; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; text-align: left; }
+.opt-name { font-family: var(--font-title); font-weight: 700; font-size: var(--fs-md); color: var(--text-strong); line-height: 1.2; }
+.opt-desc { font-size: var(--fs-sm); color: var(--text-dim); line-height: 1.42; }
+.opt-price {
+  grid-area: price;
+  align-self: start;
+  justify-self: end;
+  font-family: var(--font-title);
+  font-size: 1rem;
+  color: var(--accent-bright);
+  font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.opt-card:not(.has-media) .opt-price { margin-left: auto; }
 
 /* --- Size/type cards with vehicle silhouette ("plaque + glow") --- */
 .opt-card.has-icon { padding: 12px 16px 12px 14px; }
@@ -794,24 +820,32 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 /* --- Add-ons (Step 3) --- */
 .addon-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: var(--space-4);
 }
 .addon-card {
-  display: flex; align-items: center; gap: var(--space-3);
+  display: grid;
+  grid-template-columns: clamp(116px, 38%, 160px) minmax(0, 1fr) auto;
+  grid-template-areas:
+    "image text price"
+    "image text check";
+  align-items: center;
+  gap: var(--space-3);
   padding: 12px;
   border-radius: var(--radius);
 }
 .addon-img {
-  width: 64px;
-  height: 54px;
-  flex-shrink: 0;
+  grid-area: image;
+  width: 100%;
+  aspect-ratio: 4 / 3;
   object-fit: cover;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
 .addon-check {
+  grid-area: check;
+  justify-self: end;
   width: 20px; height: 20px; flex-shrink: 0;
   border: 1.5px solid var(--border-strong);
   border-radius: 6px;
@@ -824,8 +858,18 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 }
 .addon-check svg { width: 12px; height: 12px; color: var(--on-accent); opacity: 0; transition: var(--transition); }
 .addon-card.selected .addon-check svg { opacity: 1; }
-.addon-name { font-size: var(--fs-sm); font-weight: 500; color: var(--text); }
-.addon-price { margin-left: auto; font-family: var(--font-title); font-size: var(--fs-sm); color: var(--accent-bright); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.addon-text { grid-area: text; min-width: 0; }
+.addon-name { font-size: var(--fs-sm); font-weight: 600; color: var(--text); line-height: 1.3; }
+.addon-price {
+  grid-area: price;
+  justify-self: end;
+  font-family: var(--font-title);
+  font-size: var(--fs-sm);
+  color: var(--accent-bright);
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 
 /* --- Summary (Step 4) --- */
 .summary-box {
@@ -915,8 +959,8 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 
 .service-routes {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-5);
   position: relative;
   z-index: 2;
 }
@@ -951,6 +995,7 @@ html[data-lang="en"] .i18n-es { display: none !important; }
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   transition: transform var(--transition);
 }
 
@@ -1209,12 +1254,12 @@ html[data-lang="en"] .i18n-es { display: none !important; }
    ====================================================== */
 .compare-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: var(--space-4); align-items: stretch;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: var(--space-5); align-items: stretch;
 }
 .compare-card {
   position: relative; display: flex; flex-direction: column; gap: var(--space-2);
-  padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); backdrop-filter: var(--backdrop-blur); -webkit-backdrop-filter: var(--backdrop-blur);
   box-shadow: var(--glass-shadow); cursor: pointer; overflow: hidden; transition: var(--transition);
   --mx: 50%; --my: 50%;
@@ -1225,18 +1270,19 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 .compare-card.selected { border-color: var(--accent-bright); background: var(--accent-soft); box-shadow: 0 0 30px var(--accent-glow-strong); }
 .compare-img {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 10;
   object-fit: cover;
+  object-position: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   margin-bottom: var(--space-2);
 }
 .compare-flag {
-  position: absolute; top: 16px; right: -34px; transform: rotate(45deg);
+  position: absolute; top: 16px; right: -30px; transform: rotate(45deg);
   background: var(--accent); color: var(--on-accent);
   font-family: var(--font-title); font-size: var(--fs-xs); font-weight: 700;
-  padding: 4px 38px; box-shadow: var(--shadow-sm); z-index: 3;
+  padding: 4px 34px; box-shadow: var(--shadow-sm); z-index: 3;
 }
 .compare-name { font-family: var(--font-title); font-weight: 700; font-size: var(--fs-md); color: var(--text-strong); }
 .compare-price { font-family: var(--font-title); font-weight: 800; font-size: 1.4rem; color: var(--accent-bright); font-variant-numeric: tabular-nums; }
@@ -1406,7 +1452,7 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 /* Tablet & below */
 @media (max-width: 1024px) {
   .service-routes { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 840px; margin: 0 auto; }
-  .category-grid { grid-template-columns: repeat(3, 1fr); }
+  .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* Large phones / small tablets */
@@ -1440,15 +1486,15 @@ html[data-lang="en"] .i18n-es { display: none !important; }
   .scroll-hint { display: none; }
 
   .service-routes { grid-template-columns: 1fr; }
-  .category-grid { grid-template-columns: repeat(2, 1fr); gap: var(--space-3); }
+  .category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
   .option-grid { grid-template-columns: 1fr; }
   .addon-grid { grid-template-columns: 1fr; }
   .opt-card.has-media { gap: var(--space-3); padding: 12px; }
-  .opt-card.has-media .opt-radio { margin-top: 19px; }
+  .opt-card.has-media .opt-radio { margin-top: 0; }
   .opt-card.has-icon { gap: var(--space-3); padding: 12px; }
   .opt-icon { width: 58px; height: 46px; }
-  .opt-img { width: 72px; height: 58px; }
-  .addon-img { width: 56px; height: 48px; }
+  .opt-img { width: 100%; height: auto; min-height: 136px; }
+  .addon-img { width: 100%; height: auto; }
   .addon-price { font-size: .78rem; }
   .route-body { padding: var(--space-4); }
   .route-body h3 { font-size: 1.18rem; }
@@ -1474,6 +1520,32 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 
   .wa-float { bottom: 20px; right: 20px; width: 50px; height: 50px; }
   .wa-float svg { width: 24px; height: 24px; }
+}
+
+@media (max-width: 420px) {
+  .addon-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "image image"
+      "text price"
+      "text check";
+  }
+  .compare-flag {
+    right: -28px;
+    padding: 4px 30px;
+  }
+}
+
+@media (max-width: 360px) {
+  .compare-flag {
+    top: 10px;
+    right: 10px;
+    transform: none;
+    max-width: calc(100% - 20px);
+    padding: 5px 9px;
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+  }
 }
 
 /* ======================================================
