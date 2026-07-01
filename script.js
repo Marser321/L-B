@@ -1241,22 +1241,22 @@
   const EXTRA_IMAGES = {
     'limpieza-motor': 'assets/extra-engine-bay.jpg',
     'engine-bay': 'assets/extra-engine-bay.jpg',
-    'cera-rapida': 'assets/extra-paint-protection.jpg',
+    'cera-rapida': 'assets/extra-spray-wax.jpg',
     'sellador-pintura': 'assets/extra-paint-protection.jpg',
-    'descontaminacion-pintura': 'assets/extra-paint-protection.jpg',
+    'descontaminacion-pintura': 'assets/extra-paint-decontamination.jpg',
     'tar-sap': 'assets/extra-paint-protection.jpg',
     'water-spots': 'assets/extra-paint-protection.jpg',
     'repelente-cristales': 'assets/extra-paint-protection.jpg',
     'pelos-animal': 'assets/extra-pet-hair.jpg',
-    'eliminar-olores': 'assets/extra-odor-ozone.jpg',
+    'eliminar-olores': 'assets/extra-odor-removal.jpg',
     'tratamiento-ozono': 'assets/extra-odor-ozone.jpg',
     'limpieza-asientos': 'assets/extra-seat-carpet.jpg',
-    'limpieza-alfombras': 'assets/extra-seat-carpet.jpg',
+    'limpieza-alfombras': 'assets/extra-carpet-mat-cleaning.jpg',
     'limpieza-asiento': 'assets/extra-seat-carpet.jpg',
-    'restauracion-plasticos': 'assets/extra-headlight-trim.jpg',
+    'restauracion-plasticos': 'assets/extra-plastic-restoration.jpg',
     'pulido-faros': 'assets/extra-headlight-trim.jpg',
     'faros-recup': 'assets/extra-headlight-trim.jpg',
-    'ext-plastics': 'assets/extra-headlight-trim.jpg',
+    'ext-plastics': 'assets/extra-plastic-restoration.jpg',
     'cargo-bed': 'assets/extra-truck-bed.jpg',
     'limpieza-cabina': 'assets/extra-cab-cleaning.jpg',
     'desengrasado-profundo': 'assets/extra-degreasing.jpg',
@@ -2730,11 +2730,12 @@
   // ──────────────────────────────────────────────
   // ANIMATED HERO BACKGROUND VIDEO
   // Orientation-aware (horizontal desktop / vertical mobile), reduced-motion safe.
-  // Only the matching source is downloaded; the poster image is the fallback.
+  // Only the matching source is downloaded; CSS provides the non-image fallback.
   // ──────────────────────────────────────────────
   function setupHeroVideo() {
     const video = document.querySelector('.hero-bg-video');
     if (!video) return;
+    video.removeAttribute('poster');
 
     // Evaluate the media queries live (not the load-time `prefersReduced`
     // constant, which can be stale) and react to changes.
@@ -2748,6 +2749,7 @@
       const src = mode === 'mobile' ? video.dataset.srcMobile : video.dataset.srcDesktop;
       if (!src) return;
       video.classList.remove('is-playing');
+      video.muted = true;
       video.src = src;
       video.load();
       const p = video.play();
@@ -2760,10 +2762,12 @@
 
     function pick() {
       if (reduceMq.matches) {
-        // Honor reduced motion: keep the static poster image, no playback.
+        // Honor reduced motion with the CSS fallback only; no static hero photo.
         currentMode = null;
         video.classList.remove('is-playing');
         video.pause();
+        video.removeAttribute('src');
+        video.load();
         return;
       }
       load(portraitMq.matches ? 'mobile' : 'desktop');
