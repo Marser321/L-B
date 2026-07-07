@@ -1552,3 +1552,31 @@ html[data-lang="en"] .i18n-es { display: none !important; }
   .reveal { opacity: 1 !important; transform: none !important; }
   .p { display: none; }
 }
+
+/* ── Policy consent checkbox (Step 5) ── */
+.consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: var(--space-4);
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.consent-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  flex-shrink: 0;
+  accent-color: var(--accent-bright);
+  cursor: pointer;
+}
+.consent-row label {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.consent-row label a { color: var(--accent-bright); text-decoration: underline; }
+.consent-row .req { color: var(--accent-bright); }

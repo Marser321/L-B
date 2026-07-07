@@ -204,7 +204,8 @@
           { id: 'restauracion-plasticos', name: 'Restauración de Plásticos', price: 25, range: 'Desde $25' },
           { id: 'pulido-faros', name: 'Pulido de Faros', price: 60, range: 'Desde $60/par' },
           { id: 'descontaminacion-pintura', name: 'Descontaminación de Pintura', price: 60, range: 'Desde $60' },
-          { id: 'cargo-bed', name: 'Lavado Compartimiento Carga (Truck Bed)', price: 25, range: 'Desde $25' }
+          { id: 'cargo-bed', name: 'Lavado Compartimiento Carga (Truck Bed)', price: 25, range: 'Desde $25' },
+          { id: 'limpieza-chasis', name: 'Limpieza de Chasis', price: 20 }
         ]
       },
       {
@@ -501,6 +502,7 @@
           { id: 'limpieza-cabina', name: 'Limpieza Interior de Cabina', price: 25, range: '$25 - $60' },
           { id: 'cera-rapida', name: 'Cera Rápida', price: 20, range: '$20 - $40' },
           { id: 'desengrasado-profundo', name: 'Desengrasado Profundo', price: 30, range: '$30 - $60' },
+          { id: 'engrasado-camion', name: 'Engrasado para Camiones', price: 50 },
           { id: 'motor-pesado', name: 'Limpieza de Motor', price: 30 },
           { id: 'volteo-aluminio', name: 'Caja de Aluminio', price: 120, onlyFor: ['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x'] },
           { id: 'rines-aluminio', name: 'Ácido para Rines de Aluminio', price: 25 },
@@ -588,7 +590,22 @@
           { id: 'boat_31_40', name: '31 FT a 40 FT' },
           { id: 'boat_41_60', name: '41 FT a 60 FT' }
         ],
-        extras: []
+        extras: [
+          { id: 'boat-motor', name: 'Limpieza y detallado del motor', price: 75, range: 'Desde $75' },
+          { id: 'boat-vinilo-uv', name: 'Limpieza profunda y protección UV de asientos de vinilo', price: 100, range: 'Desde $100' },
+          { id: 'boat-cera-marina', name: 'Aplicación de cera marina premium', price: 20, range: '$20/pie' },
+          { id: 'boat-pulido', name: 'Pulido de una etapa', price: 30, range: '$30/pie' },
+          { id: 'boat-oxidacion', name: 'Eliminación de oxidación', price: 35, range: 'Desde $35/pie' },
+          { id: 'boat-ceramica', name: 'Recubrimiento cerámico marino', price: 75, range: 'Desde $75/pie' },
+          { id: 'boat-inox', name: 'Pulido de acero inoxidable y cromados', price: 100 },
+          { id: 'boat-compartimientos', name: 'Limpieza de compartimientos y áreas de almacenamiento', price: 75 },
+          { id: 'boat-manchas-agua', name: 'Eliminación de manchas de agua', price: 75, range: 'Desde $75' },
+          { id: 'boat-marcas-casco', name: 'Eliminación de marcas negras del casco', price: 60, range: 'Desde $60' },
+          { id: 'boat-lona-bimini', name: 'Limpieza de lona, Bimini Top o T-Top', price: 100, range: 'Desde $100' },
+          { id: 'boat-repelente-cristales', name: 'Tratamiento repelente de agua para cristales', price: 75 },
+          { id: 'boat-olores-ozono', name: 'Eliminación de olores y tratamiento con ozono', price: 100 },
+          { id: 'boat-teca', name: 'Limpieza y restauración de teca (Teak)', price: 25, range: 'Desde $25/pie' }
+        ]
       },
       {
         id: 'jetski',
@@ -840,7 +857,8 @@
           'restauracion-plasticos': ['Plastic Trim Restoration', 'From $25'],
           'pulido-faros': ['Headlight Polishing', 'From $60/pair'],
           'descontaminacion-pintura': ['Paint Decontamination', 'From $60'],
-          'cargo-bed': ['Truck Bed Wash', 'From $25']
+          'cargo-bed': ['Truck Bed Wash', 'From $25'],
+          'limpieza-chasis': ['Chassis Cleaning']
         }
       },
       paint_correction: {
@@ -872,6 +890,7 @@
           'limpieza-cabina': ['Interior Cab Cleaning', '$25 - $60'],
           'cera-rapida': ['Quick Wax', '$20 - $40'],
           'desengrasado-profundo': ['Deep Degreasing', '$30 - $60'],
+          'engrasado-camion': ['Truck Chassis Greasing'],
           'motor-pesado': ['Engine Cleaning'],
           'volteo-aluminio': ['Aluminum Dump Bed'],
           'rines-aluminio': ['Aluminum Wheel Acid Cleaning'],
@@ -885,6 +904,22 @@
           boat_21_30: '21 FT to 30 FT',
           boat_31_40: '31 FT to 40 FT',
           boat_41_60: '41 FT to 60 FT'
+        },
+        extras: {
+          'boat-motor': ['Engine Cleaning & Detailing', 'From $75'],
+          'boat-vinilo-uv': ['Deep Vinyl Seat Cleaning & UV Protection', 'From $100'],
+          'boat-cera-marina': ['Premium Marine Wax Application', '$20/ft'],
+          'boat-pulido': ['One-Stage Polish', '$30/ft'],
+          'boat-oxidacion': ['Oxidation Removal', 'From $35/ft'],
+          'boat-ceramica': ['Marine Ceramic Coating', 'From $75/ft'],
+          'boat-inox': ['Stainless Steel & Chrome Polishing'],
+          'boat-compartimientos': ['Compartment & Storage Area Cleaning'],
+          'boat-manchas-agua': ['Water Spot Removal', 'From $75'],
+          'boat-marcas-casco': ['Hull Black Streak Removal', 'From $60'],
+          'boat-lona-bimini': ['Canvas, Bimini Top or T-Top Cleaning', 'From $100'],
+          'boat-repelente-cristales': ['Glass Water-Repellent Treatment'],
+          'boat-olores-ozono': ['Odor Removal & Ozone Treatment'],
+          'boat-teca': ['Teak Cleaning & Restoration', 'From $25/ft']
         }
       },
       jetski: {
@@ -1261,12 +1296,28 @@
     'limpieza-cabina': 'assets/extra-cab-cleaning.jpg',
     'desengrasado-profundo': 'assets/extra-degreasing.jpg',
     'motor-pesado': 'assets/extra-degreasing.jpg',
-    'volteo-aluminio': 'assets/extra-truck-bed.jpg',
+    'volteo-aluminio': 'assets/extra-aluminum-box.jpg',
     'rines-aluminio': 'assets/extra-aluminum-wheels.jpg',
-    'pulido-tanques': 'assets/extra-aluminum-wheels.jpg',
+    'pulido-tanques': 'assets/extra-tank-polishing.jpg',
     'eliminacion-sal': 'assets/extra-marine-salt.jpg',
     'brillo-plasticos': 'assets/extra-marine-salt.jpg',
-    'ceramica-marina': 'assets/extra-marine-salt.jpg'
+    'ceramica-marina': 'assets/extra-marine-salt.jpg',
+    'engrasado-camion': 'assets/extra-greasing.jpg',
+    'limpieza-chasis': 'assets/extra-chassis-cleaning.jpg',
+    'boat-motor': 'assets/extra-engine-bay.jpg',
+    'boat-vinilo-uv': 'assets/extra-boat-interior.jpg',
+    'boat-cera-marina': 'assets/extra-marine-salt.jpg',
+    'boat-pulido': 'assets/extra-boat-hull.jpg',
+    'boat-oxidacion': 'assets/extra-boat-hull.jpg',
+    'boat-ceramica': 'assets/extra-boat-hull.jpg',
+    'boat-inox': 'assets/extra-boat-hull.jpg',
+    'boat-compartimientos': 'assets/extra-boat-interior.jpg',
+    'boat-manchas-agua': 'assets/extra-boat-hull.jpg',
+    'boat-marcas-casco': 'assets/extra-boat-hull.jpg',
+    'boat-lona-bimini': 'assets/extra-boat-interior.jpg',
+    'boat-repelente-cristales': 'assets/extra-paint-protection.jpg',
+    'boat-olores-ozono': 'assets/extra-odor-ozone.jpg',
+    'boat-teca': 'assets/extra-boat-teak.jpg'
   };
 
   const HEAVY_GROUPS = [
@@ -1334,7 +1385,7 @@
     }
   };
 
-  const FROM_PRICE_EXTRA_IDS = new Set(['motor-pesado', 'rines-aluminio']);
+  const FROM_PRICE_EXTRA_IDS = new Set(['motor-pesado', 'rines-aluminio', 'boat-cera-marina', 'boat-pulido']);
 
   // ──────────────────────────────────────────────
   // UI STRING DICTIONARY (everything outside SERVICES_DATA / RECO)
@@ -1421,6 +1472,12 @@
     'form.phone': { en: 'Phone', es: 'Teléfono' },
     'form.zip': { en: 'Service area / ZIP', es: 'Zona / Código Postal' },
     'form.zipPh': { en: 'e.g. 33901', es: 'ej. 33901' },
+    'form.address': { en: 'Street address', es: 'Dirección (calle y número)' },
+    'form.addressPh': { en: 'e.g. 1234 Palm Ave', es: 'ej. 1234 Palm Ave' },
+    'form.unit': { en: 'Apt / Unit', es: 'Apto / Unidad' },
+    'form.unitPh': { en: 'e.g. Apt 2B', es: 'ej. Apto 2B' },
+    'form.city': { en: 'City', es: 'Ciudad' },
+    'form.cityPh': { en: 'e.g. Fort Myers', es: 'ej. Fort Myers' },
     'form.date': { en: 'Preferred date', es: 'Fecha preferida' },
     'form.dateHint': { en: 'Please book at least 24 hours ahead.', es: 'Reserva con al menos 24 horas de anticipación.' },
     'form.time': { en: 'Preferred time', es: 'Horario preferido' },
@@ -1476,6 +1533,7 @@
     'sum.size': { en: 'Size / Option', es: 'Tamaño / Opción' },
     'sum.addons': { en: 'Add-ons', es: 'Extras' },
     'sum.name': { en: 'Name', es: 'Nombre' },
+    'sum.address': { en: 'Address', es: 'Dirección' },
     'sum.area': { en: 'Service area', es: 'Zona de servicio' },
     'sum.time': { en: 'Preferred time', es: 'Horario preferido' },
     'sum.notes': { en: 'Notes', es: 'Notas' },
@@ -1497,6 +1555,8 @@
     'wa.total': { en: 'Estimated Total', es: 'Total Estimado' },
     'wa.contact': { en: 'Contact', es: 'Contacto' },
     'wa.phone': { en: 'Phone', es: 'Teléfono' },
+    'wa.address': { en: 'Address', es: 'Dirección' },
+    'wa.city': { en: 'City', es: 'Ciudad' },
     'wa.area': { en: 'Service area / ZIP', es: 'Zona / Código Postal' },
     'wa.date': { en: 'Preferred date', es: 'Fecha preferida' },
     'wa.time': { en: 'Preferred time', es: 'Horario preferido' },
@@ -1771,7 +1831,7 @@
   }
 
   function addonDisplayPrice(addon) {
-    if (addon.customQuote) return '+ ' + t('customQuote');
+    if (addon.customQuote) return t('customQuote');
     if (addon.range) return '+ ' + addon.range;
     const p = addonPriceBounds(addon);
     return '+ ' + (p.from ? `${t('from')} ${fmt(p.min)}` : fmt(p.min));
@@ -1814,6 +1874,12 @@
     const n = (name || '').trim();
     return n.length >= 2 && /[\p{L}]/u.test(n);
   }
+  function validStreet(v) {
+    return (v || '').trim().length >= 4;
+  }
+  function validCity(v) {
+    return (v || '').trim().length >= 2;
+  }
   function validZip(zip) {
     const z = (zip || '').trim();
     return !z || /^\d{5}$/.test(z);
@@ -1833,7 +1899,7 @@
   }
   function scheduleValid() {
     const s = state.schedule;
-    return !!(validName(s.name) && validPhone(s.phone) && validZip(s.zip) && s.date && s.date >= tomorrowISO() && s.timeWindow);
+    return !!(validName(s.name) && validPhone(s.phone) && validZip(s.zip) && validStreet(s.address) && validCity(s.city) && s.date && s.date >= tomorrowISO() && s.timeWindow);
   }
 
   // ── Persistence ──
@@ -1888,7 +1954,8 @@
     quizYes: [],
     quizPicks: [],
     quizOpen: false,
-    schedule: { name: '', phone: '', zip: '', date: '', timeWindow: '', notes: '' }
+    policiesAccepted: false,
+    schedule: { name: '', phone: '', address: '', unit: '', city: '', zip: '', date: '', timeWindow: '', notes: '' }
   };
 
   // ──────────────────────────────────────────────
@@ -2438,6 +2505,9 @@
     };
     bind('schedName', 'name');
     bind('schedPhone', 'phone');
+    bind('schedAddress', 'address');
+    bind('schedUnit', 'unit');
+    bind('schedCity', 'city');
     bind('schedZip', 'zip');
     bind('schedDate', 'date');
     bind('schedNotes', 'notes');
@@ -2449,6 +2519,15 @@
         validateStep();
       });
     });
+
+    const policyEl = document.getElementById('policyAccept');
+    if (policyEl) {
+      policyEl.checked = state.policiesAccepted;
+      policyEl.addEventListener('change', () => {
+        state.policiesAccepted = policyEl.checked;
+        validateStep();
+      });
+    }
   }
 
   function updateCoverage() {
@@ -2464,6 +2543,9 @@
     const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v || ''; };
     set('schedName', s.name);
     set('schedPhone', s.phone);
+    set('schedAddress', s.address);
+    set('schedUnit', s.unit);
+    set('schedCity', s.city);
     set('schedZip', s.zip);
     set('schedDate', s.date);
     set('schedNotes', s.notes);
@@ -2497,7 +2579,8 @@
       ${showSizeRow ? row(t('sum.size'), size.name) : ''}
       ${state.selectedAddons.length ? row(t('sum.addons'), state.selectedAddons.map(a => a.name).join(', ')) : ''}
       ${row(t('sum.name'), s.name)}
-      ${row(t('sum.area'), s.zip)}
+      ${row(t('sum.address'), [s.address, s.unit].filter(Boolean).join(', '))}
+      ${row(t('sum.area'), [s.city, s.zip].filter(Boolean).join(' '))}
       ${row(t('sum.time'), scheduleVal)}
       ${row(t('sum.notes'), s.notes)}
       <div class="summary-total">
@@ -2535,7 +2618,7 @@
         valid = scheduleValid();
         break;
       case 5:
-        valid = true;
+        valid = state.policiesAccepted === true;
         break;
     }
 
@@ -2622,6 +2705,7 @@
   // WHATSAPP DISPATCH
   // ──────────────────────────────────────────────
   function sendWhatsAppBooking() {
+    if (!state.policiesAccepted) return;
     const cat = state.selectedCategory;
     const pkg = state.selectedPackage;
     const size = state.selectedSize;
@@ -2641,6 +2725,8 @@
 
     message += `*${t('wa.contact')}:* ${s.name || '—'}\n`;
     if (s.phone) message += `*${t('wa.phone')}:* ${normalizedPhone(s.phone)}\n`;
+    if (s.address) message += `*${t('wa.address')}:* ${s.address}${s.unit ? ', ' + s.unit : ''}\n`;
+    if (s.city) message += `*${t('wa.city')}:* ${s.city}\n`;
     if (s.zip) message += `*${t('wa.area')}:* ${s.zip}\n`;
     if (s.date) message += `*${t('wa.date')}:* ${prettyDate(s.date)}\n`;
     if (s.timeWindow) message += `*${t('wa.time')}:* ${timeWindowLabel(s.timeWindow)}\n`;
