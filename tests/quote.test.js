@@ -66,6 +66,8 @@ test('rejects incomplete identity, vehicle, policy, and selection data', () => {
   assert.throws(() => validatePayload(payload({ customer: { ...payload().customer, phone: '123' } })), /phone/i);
   assert.throws(() => validatePayload(payload({ vehicle: { ...payload().vehicle, year: 1800 } })), /year/i);
   assert.throws(() => validatePayload(payload({ selection: { ...payload().selection, category: { id: 'invalid', name: 'Invalid' } } })), /category/i);
+  assert.throws(() => validatePayload(payload({ selection: { ...payload().selection, size: { id: 'van_xl', name: 'XL Van' } } })), /size/i);
+  assert.throws(() => validatePayload(payload({ selection: { ...payload().selection, addons: [{ id: 'forged-extra', name: 'Forged', price: '$1' }] } })), /addons/i);
 });
 
 test('honeypot requests do not require CRM configuration', async () => {
@@ -90,7 +92,7 @@ test('returns a safe configuration error when CRM secrets are absent', async () 
   if (previous.location) process.env.GHL_LOCATION_ID = previous.location;
 });
 
-test('upserts one contact and creates a separate opportunity per submission', async () => {
+test('upserts one contact, creates one opportunity per submission, and makes retries idempotent', async () => {
   const oldFetch = global.fetch;
   const oldEnv = {
     token: process.env.GHL_PRIVATE_TOKEN,
@@ -105,6 +107,8 @@ test('upserts one contact and creates a separate opportunity per submission', as
   resetMetadataCache();
 
   const requests = [];
+  const opportunities = [];
+  let staleSearches = 0;
   const fields = Object.values(OPPORTUNITY_FIELDS).map((name, index) => ({
     id: `field-${index}`, name, model: 'opportunity', dataType: 'TEXT'
   }));
@@ -112,16 +116,43 @@ test('upserts one contact and creates a separate opportunity per submission', as
     requests.push({ url, options, body: options.body ? JSON.parse(options.body) : null });
     if (url.includes('/customFields')) return new Response(JSON.stringify({ customFields: fields }), { status: 200 });
     if (url.endsWith('/contacts/upsert')) return new Response(JSON.stringify({ contact: { id: 'contact-1' } }), { status: 200 });
-    if (url.endsWith('/opportunities/')) return new Response(JSON.stringify({ opportunity: { id: `opp-${requests.length}` } }), { status: 201 });
+    if (url.includes('/opportunities/search?')) {
+      if (staleSearches > 0) {
+        staleSearches -= 1;
+        return new Response(JSON.stringify({ opportunities: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ opportunities }), { status: 200 });
+    }
+    if (url.endsWith('/opportunities/')) {
+      const submissionField = requests.at(-1).body.customFields.find(field => field.id === `field-${Object.keys(OPPORTUNITY_FIELDS).indexOf('submissionId')}`);
+      const duplicate = opportunities.some(opportunity => opportunity.customFields.some(field =>
+        field.id === submissionField.id && field.fieldValueString === submissionField.fieldValue
+      ));
+      if (duplicate) return new Response('{}', { status: 400 });
+      const opportunity = {
+        id: `opp-${requests.length}`,
+        customFields: requests.at(-1).body.customFields.map(field => ({
+          id: field.id,
+          type: 'string',
+          fieldValueString: field.fieldValue
+        }))
+      };
+      opportunities.push(opportunity);
+      staleSearches = 1;
+      return new Response(JSON.stringify({ opportunity }), { status: 201 });
+    }
     return new Response('{}', { status: 404 });
   };
 
   const first = await invoke(payload());
+  const retry = await invoke(payload());
   const second = await invoke(payload({ submissionId: '223e4567-e89b-12d3-a456-426614174001' }));
   assert.equal(first.status, 200);
+  assert.equal(retry.status, 200);
   assert.equal(second.status, 200);
-  assert.equal(requests.filter(item => item.url.endsWith('/contacts/upsert')).length, 2);
-  assert.equal(requests.filter(item => item.url.endsWith('/opportunities/')).length, 2);
+  assert.equal(requests.filter(item => item.url.endsWith('/contacts/upsert')).length, 3);
+  assert.equal(requests.filter(item => item.url.endsWith('/opportunities/')).length, 3);
+  assert.equal(opportunities.length, 2);
   const opportunity = requests.find(item => item.url.endsWith('/opportunities/')).body;
   assert.equal(opportunity.contactId, 'contact-1');
   assert.equal(opportunity.monetaryValue, 155);
@@ -139,4 +170,36 @@ test('rejects cross-origin submissions', async () => {
   const result = await invoke(payload(), { origin: 'https://evil.example' });
   assert.equal(result.status, 403);
   assert.equal(result.body.ok, false);
+});
+
+test('rejects submissions without an origin', async () => {
+  const result = await invoke(payload(), { origin: undefined });
+  assert.equal(result.status, 403);
+  assert.equal(result.body.ok, false);
+});
+
+test('maps HighLevel authorization, rate-limit, server, and timeout failures safely', async () => {
+  const oldFetch = global.fetch;
+  const oldEnv = { token: process.env.GHL_PRIVATE_TOKEN, location: process.env.GHL_LOCATION_ID };
+  process.env.GHL_PRIVATE_TOKEN = 'test-token';
+  process.env.GHL_LOCATION_ID = 'location-1';
+
+  for (const [upstreamStatus, expectedStatus] of [[401, 503], [403, 503], [429, 503], [500, 502]]) {
+    resetMetadataCache();
+    global.fetch = async () => new Response('{}', { status: upstreamStatus });
+    const result = await invoke(payload());
+    assert.equal(result.status, expectedStatus);
+    assert.deepEqual(result.body, { ok: false, error: 'CRM temporarily unavailable' });
+  }
+
+  resetMetadataCache();
+  global.fetch = async () => { throw Object.assign(new Error('timed out'), { name: 'TimeoutError' }); };
+  const timeout = await invoke(payload());
+  assert.equal(timeout.status, 504);
+  assert.deepEqual(timeout.body, { ok: false, error: 'CRM temporarily unavailable' });
+
+  global.fetch = oldFetch;
+  if (oldEnv.token == null) delete process.env.GHL_PRIVATE_TOKEN; else process.env.GHL_PRIVATE_TOKEN = oldEnv.token;
+  if (oldEnv.location == null) delete process.env.GHL_LOCATION_ID; else process.env.GHL_LOCATION_ID = oldEnv.location;
+  resetMetadataCache();
 });

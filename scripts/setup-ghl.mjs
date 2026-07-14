@@ -6,9 +6,8 @@ const require = createRequire(import.meta.url);
 const { OPPORTUNITY_FIELDS } = require('../api/quote.js')._test;
 
 const BASE_URL = 'https://services.leadconnectorhq.com';
-const PIPELINE_NAME = 'Website Quotes';
-const FALLBACK_PIPELINE_NAME = 'Website Quotes - L&B';
-const STAGE_NAME = 'New Quote';
+const PIPELINE_NAME = 'Pipeline de Servicios';
+const STAGE_NAME = 'Pendiente de Información';
 const token = process.env.GHL_PRIVATE_TOKEN;
 const locationId = process.env.GHL_LOCATION_ID;
 
@@ -39,39 +38,10 @@ async function request(path, { method = 'GET', body, version = 'v3' } = {}) {
 async function ensurePipeline() {
   const data = await request(`/opportunities/pipelines?locationId=${encodeURIComponent(locationId)}`);
   const pipelines = data.pipelines || [];
-  let pipeline = pipelines.find(item => String(item.name || '').toLowerCase() === PIPELINE_NAME.toLowerCase());
-
-  async function createPipeline(name) {
-    console.log(`Creating pipeline "${name}" without altering existing pipelines…`);
-    const created = await request('/opportunities/pipelines', {
-      method: 'POST',
-      body: {
-        locationId,
-        name,
-        stages: [{ name: STAGE_NAME, position: 0 }]
-      }
-    });
-    const result = created.pipeline || created;
-    if (result.id && !Array.isArray(result.stages)) {
-      const refreshed = await request(`/opportunities/pipelines/${encodeURIComponent(result.id)}`);
-      return refreshed.pipeline || refreshed;
-    }
-    return result;
-  }
-
-  if (!pipeline) {
-    pipeline = await createPipeline(PIPELINE_NAME);
-  }
-
-  let stage = (pipeline.stages || []).find(item => String(item.name || '').toLowerCase() === STAGE_NAME.toLowerCase());
-  if (!stage) {
-    // Do not rewrite an existing pipeline because HighLevel replaces the full
-    // stage array on updates. Use a dedicated fallback instead.
-    pipeline = pipelines.find(item => String(item.name || '').toLowerCase() === FALLBACK_PIPELINE_NAME.toLowerCase());
-    if (!pipeline) pipeline = await createPipeline(FALLBACK_PIPELINE_NAME);
-    stage = (pipeline.stages || []).find(item => String(item.name || '').toLowerCase() === STAGE_NAME.toLowerCase());
-  }
-  if (!pipeline.id || !stage.id) throw new Error('HighLevel did not return the pipeline and stage IDs.');
+  const pipeline = pipelines.find(item => String(item.name || '').toLowerCase() === PIPELINE_NAME.toLowerCase());
+  if (!pipeline) throw new Error(`Required pipeline "${PIPELINE_NAME}" does not exist.`);
+  const stage = (pipeline.stages || []).find(item => String(item.name || '').toLowerCase() === STAGE_NAME.toLowerCase());
+  if (!stage) throw new Error(`Required stage "${STAGE_NAME}" does not exist in "${PIPELINE_NAME}".`);
   return { pipelineId: pipeline.id, pipelineStageId: stage.id };
 }
 

@@ -1,9 +1,10 @@
 'use strict';
 
 const GHL_BASE_URL = 'https://services.leadconnectorhq.com';
-const PIPELINE_NAME = 'Website Quotes';
-const PIPELINE_STAGE_NAME = 'New Quote';
+const PIPELINE_NAME = 'Pipeline de Servicios';
+const PIPELINE_STAGE_NAME = 'Pendiente de Información';
 const MAX_BODY_BYTES = 32 * 1024;
+const GHL_REQUEST_TIMEOUT_MS = 10 * 1000;
 
 const CATEGORY_IDS = new Set([
   'cars', 'paint_correction', 'heavy_trucks', 'boats', 'jetski',
@@ -25,6 +26,67 @@ const PACKAGES_BY_CATEGORY = Object.freeze({
   atv: new Set(['atv-premium', 'atv-membresia']),
   mobile_home: new Set(['mobile-home-basico']),
   driveway: new Set(['driveway-basico', 'driveway-premium'])
+});
+const SIZES_BY_PACKAGE = Object.freeze({
+  'basico-exterior': new Set(['sedan', 'suv', 'truck', 'van_pequena', 'van_xl']),
+  'basico-premium': new Set(['sedan', 'suv', 'truck', 'van_pequena', 'van_xl']),
+  'premium-detail': new Set(['sedan', 'suv', 'truck']),
+  vip: new Set(['sedan', 'suv', 'truck']),
+  'membresia-2x': new Set(['sedan', 'suv', 'truck', 'van_pequena', 'van_xl']),
+  'membresia-4x': new Set(['sedan', 'suv', 'truck', 'van_pequena', 'van_xl']),
+  'paint-enhancement': new Set(['sedan', 'suv', 'truck', 'van']),
+  'paint-correction': new Set(['sedan', 'suv', 'truck', 'van']),
+  'ceramic-protection': new Set(['sedan', 'suv', 'truck', 'van']),
+  'box-truck-wash': new Set(['size_10_16', 'size_17_20', 'size_21_26']),
+  'box-truck-2x': new Set(['size_10_16', 'size_17_20', 'size_21_26']),
+  'box-truck-4x': new Set(['size_10_16', 'size_17_20', 'size_21_26']),
+  'semi-truck-wash': new Set(['standard']),
+  'semi-truck-2x': new Set(['standard']),
+  'semi-truck-4x': new Set(['standard']),
+  'trailer-wash': new Set(['standard']),
+  'trailer-2x': new Set(['standard']),
+  'trailer-4x': new Set(['standard']),
+  'dump-truck-wash': new Set(['standard']),
+  'dump-truck-2x': new Set(['standard']),
+  'dump-truck-4x': new Set(['standard']),
+  'garbage-truck-wash': new Set(['standard']),
+  'garbage-truck-2x': new Set(['standard']),
+  'garbage-truck-4x': new Set(['standard']),
+  'boat-basico': new Set(['boat_16_20', 'boat_21_30', 'boat_31_40', 'boat_41_60']),
+  'boat-premium': new Set(['boat_16_20', 'boat_21_30', 'boat_31_40', 'boat_41_60']),
+  'boat-detail': new Set(['boat_16_20', 'boat_21_30', 'boat_31_40', 'boat_41_60']),
+  'jetski-premium': new Set(['qty_1', 'qty_2', 'qty_3']),
+  'jetski-membresia': new Set(['qty_1', 'qty_2', 'qty_3']),
+  'golf-premium': new Set(['standard']),
+  'golf-membresia': new Set(['standard']),
+  'atv-premium': new Set(['qty_1', 'qty_2', 'qty_3']),
+  'atv-membresia': new Set(['qty_1', 'qty_2', 'qty_3']),
+  'mobile-home-basico': new Set(['single_wide', 'double_wide', 'triple_wide']),
+  'driveway-basico': new Set(['standard']),
+  'driveway-premium': new Set(['standard'])
+});
+const ADDONS_BY_CATEGORY = Object.freeze({
+  cars: new Set([
+    'limpieza-motor', 'cera-rapida', 'sellador-pintura', 'pelos-animal', 'eliminar-olores',
+    'tratamiento-ozono', 'limpieza-asientos', 'limpieza-alfombras', 'restauracion-plasticos',
+    'pulido-faros', 'descontaminacion-pintura', 'cargo-bed', 'limpieza-chasis'
+  ]),
+  paint_correction: new Set(['faros-recup', 'tar-sap', 'water-spots', 'engine-bay', 'ext-plastics', 'repelente-cristales']),
+  heavy_trucks: new Set([
+    'limpieza-cabina', 'cera-rapida', 'desengrasado-profundo', 'engrasado-camion',
+    'motor-pesado', 'volteo-aluminio', 'rines-aluminio', 'pulido-tanques'
+  ]),
+  boats: new Set([
+    'boat-motor', 'boat-vinilo-uv', 'boat-cera-marina', 'boat-pulido', 'boat-oxidacion',
+    'boat-ceramica', 'boat-inox', 'boat-compartimientos', 'boat-manchas-agua',
+    'boat-marcas-casco', 'boat-lona-bimini', 'boat-repelente-cristales',
+    'boat-olores-ozono', 'boat-teca'
+  ]),
+  jetski: new Set(['eliminacion-sal', 'brillo-plasticos', 'limpieza-asiento', 'ceramica-marina']),
+  golf_cart: new Set(),
+  atv: new Set(),
+  mobile_home: new Set(),
+  driveway: new Set()
 });
 const TIME_WINDOWS = new Set(['morning', 'afternoon', 'evening']);
 const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,79}$/;
@@ -61,10 +123,11 @@ class RequestError extends Error {
 }
 
 class HighLevelError extends Error {
-  constructor(statusCode) {
-    super(`HighLevel request failed (${statusCode})`);
+  constructor(upstreamStatus, statusCode = 502) {
+    super(`HighLevel request failed (${upstreamStatus})`);
     this.name = 'HighLevelError';
     this.statusCode = statusCode;
+    this.upstreamStatus = upstreamStatus;
   }
 }
 
@@ -88,7 +151,7 @@ function readBody(req) {
 function assertSameOrigin(req) {
   const origin = req.headers && req.headers.origin;
   const host = req.headers && (req.headers['x-forwarded-host'] || req.headers.host);
-  if (!origin || !host) return;
+  if (!origin || !host) throw new RequestError('Origin is required', 403);
   let originHost;
   try { originHost = new URL(origin).host; } catch (error) { throw new RequestError('Invalid origin', 403); }
   if (originHost !== host) throw new RequestError('Origin not allowed', 403);
@@ -148,10 +211,16 @@ function validatePayload(body) {
   const servicePackage = validateNamedSelection(selection.package, 'selection.package');
   if (!PACKAGES_BY_CATEGORY[category.id].has(servicePackage.id)) throw new RequestError('selection.package.id is invalid for this category');
   const size = validateNamedSelection(selection.size, 'selection.size');
+  if (!SIZES_BY_PACKAGE[servicePackage.id] || !SIZES_BY_PACKAGE[servicePackage.id].has(size.id)) {
+    throw new RequestError('selection.size.id is invalid for this package');
+  }
   const addonsInput = Array.isArray(selection.addons) ? selection.addons : [];
   if (addonsInput.length > 30) throw new RequestError('selection.addons is invalid');
   const addons = addonsInput.map((addon, index) => {
     const named = validateNamedSelection(addon, `selection.addons[${index}]`);
+    if (!ADDONS_BY_CATEGORY[category.id].has(named.id)) {
+      throw new RequestError(`selection.addons[${index}].id is invalid for this category`);
+    }
     return { ...named, price: optionalText(addon.price, `selection.addons[${index}].price`, 60) };
   });
 
@@ -229,18 +298,30 @@ function getConfig() {
 }
 
 async function ghlRequest(config, path, options = {}) {
-  const response = await fetch(`${GHL_BASE_URL}${path}`, {
-    method: options.method || 'GET',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${config.token}`,
-      Version: options.version || 'v3',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {})
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
+  let response;
+  try {
+    response = await fetch(`${GHL_BASE_URL}${path}`, {
+      method: options.method || 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${config.token}`,
+        Version: options.version || 'v3',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: options.signal || AbortSignal.timeout(GHL_REQUEST_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      throw new HighLevelError('timeout', 504);
+    }
+    throw error;
+  }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new HighLevelError(response.status);
+  if (!response.ok) {
+    const statusCode = response.status === 401 || response.status === 403 || response.status === 429 ? 503 : 502;
+    throw new HighLevelError(response.status, statusCode);
+  }
   return data;
 }
 
@@ -310,6 +391,33 @@ function opportunityValues(payload) {
   };
 }
 
+function opportunityCustomFieldValue(field) {
+  if (!field || typeof field !== 'object') return '';
+  if (field.fieldValue != null) return field.fieldValue;
+  if (field.fieldValueString != null) return field.fieldValueString;
+  return '';
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function findOpportunityBySubmission(config, metadata, contactId, submissionId) {
+  const searchParams = new URLSearchParams({
+    locationId: config.locationId,
+    pipelineId: metadata.pipelineId,
+    contactId,
+    status: 'all',
+    limit: '100'
+  });
+  const existingData = await ghlRequest(config, `/opportunities/search?${searchParams}`);
+  return (existingData.opportunities || []).find(opportunity =>
+    (opportunity.customFields || []).some(field =>
+      field.id === metadata.fieldIds.submissionId && String(opportunityCustomFieldValue(field)) === submissionId
+    )
+  );
+}
+
 async function createQuoteInHighLevel(config, metadata, payload) {
   const names = splitName(payload.customer.name);
   const contactBody = {
@@ -335,26 +443,50 @@ async function createQuoteInHighLevel(config, metadata, payload) {
   const contact = contactResult.contact || contactResult;
   if (!contact || !contact.id) throw new HighLevelError(502);
 
+  const existingOpportunity = await findOpportunityBySubmission(
+    config, metadata, contact.id, payload.submissionId
+  );
+  if (existingOpportunity) return { opportunityId: existingOpportunity.id, duplicate: true };
+
   const values = opportunityValues(payload);
   const customFields = Object.entries(values)
     .filter(([, value]) => value !== '')
     .map(([key, value]) => ({ id: metadata.fieldIds[key], fieldValue: String(value) }));
   const vehicleLabel = `${payload.vehicle.year} ${payload.vehicle.make} ${payload.vehicle.model}`;
 
-  await ghlRequest(config, '/opportunities/', {
-    method: 'POST',
-    version: 'v3',
-    body: {
-      pipelineId: metadata.pipelineId,
-      pipelineStageId: metadata.pipelineStageId,
-      locationId: config.locationId,
-      contactId: contact.id,
-      name: `Web Quote - ${payload.customer.name} - ${vehicleLabel}`.slice(0, 160),
-      status: 'open',
-      monetaryValue: Math.round(payload.estimate.min),
-      customFields
+  let opportunityResult;
+  try {
+    opportunityResult = await ghlRequest(config, '/opportunities/', {
+      method: 'POST',
+      version: 'v3',
+      body: {
+        pipelineId: metadata.pipelineId,
+        pipelineStageId: metadata.pipelineStageId,
+        locationId: config.locationId,
+        contactId: contact.id,
+        name: `Web Quote - ${payload.customer.name} - ${vehicleLabel}`.slice(0, 160),
+        status: 'open',
+        monetaryValue: Math.round(payload.estimate.min),
+        customFields
+      }
+    });
+  } catch (error) {
+    // HighLevel's opportunity search index is eventually consistent. If a
+    // retry arrives immediately, creation may reject the duplicate before the
+    // first search can see it. Recheck briefly before returning an error.
+    if (error instanceof HighLevelError && [400, 409, 422].includes(error.upstreamStatus)) {
+      for (const delayMs of [250, 500, 1000]) {
+        await wait(delayMs);
+        const indexedOpportunity = await findOpportunityBySubmission(
+          config, metadata, contact.id, payload.submissionId
+        );
+        if (indexedOpportunity) return { opportunityId: indexedOpportunity.id, duplicate: true };
+      }
     }
-  });
+    throw error;
+  }
+  const opportunity = opportunityResult.opportunity || opportunityResult;
+  return { opportunityId: opportunity && opportunity.id, duplicate: false };
 }
 
 async function handler(req, res) {
@@ -378,9 +510,11 @@ async function handler(req, res) {
     await createQuoteInHighLevel(config, metadata, payload);
     return sendJson(res, 200, { ok: true, submissionId: payload.submissionId });
   } catch (error) {
-    const statusCode = error instanceof RequestError ? error.statusCode : 502;
+    const statusCode = error instanceof RequestError || error instanceof HighLevelError ? error.statusCode : 502;
     const publicMessage = error instanceof RequestError ? error.message : 'CRM temporarily unavailable';
-    console.error('[quote]', submissionId, error.name || 'Error', error.statusCode || statusCode);
+    if (statusCode >= 500) {
+      console.error('[quote]', submissionId, error.name || 'Error', error.statusCode || statusCode);
+    }
     return sendJson(res, statusCode, { ok: false, error: publicMessage });
   }
 }
@@ -393,5 +527,6 @@ module.exports._test = {
   splitName,
   validatePayload,
   opportunityValues,
+  opportunityCustomFieldValue,
   resetMetadataCache: () => { metadataPromise = null; }
 };
