@@ -314,17 +314,46 @@
           </h3>
           <p class="quoter-note schedule-intro" data-i18n="ws.scheduleIntro">We're a mobile service — tell us where and when, and we'll confirm on WhatsApp.</p>
           <div class="schedule-form">
+            <h4 class="form-section-title" data-i18n="form.contactDetails">Contact details</h4>
             <div class="field">
               <label for="schedName"><span data-i18n="form.name">Full name</span> <span class="req">*</span></label>
-              <input type="text" id="schedName" autocomplete="name" placeholder="Your name" data-i18n-ph="form.namePh" />
+              <input type="text" id="schedName" autocomplete="name" maxlength="100" placeholder="Your name" data-i18n-ph="form.namePh" />
             </div>
             <div class="field">
-              <label for="schedPhone" data-i18n="form.phone">Phone</label>
-              <input type="tel" id="schedPhone" autocomplete="tel" placeholder="(239) 000-0000" />
+              <label for="schedPhone"><span data-i18n="form.phone">Phone</span> <span class="req">*</span></label>
+              <input type="tel" id="schedPhone" autocomplete="tel" inputmode="tel" maxlength="20" placeholder="(239) 000-0000" />
             </div>
             <div class="field field-full">
+              <label for="schedEmail"><span data-i18n="form.email">Email</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
+              <input type="email" id="schedEmail" autocomplete="email" maxlength="160" placeholder="you@example.com" data-i18n-ph="form.emailPh" />
+            </div>
+
+            <h4 class="form-section-title" data-i18n="form.vehicleDetails">Vehicle details</h4>
+            <div class="field">
+              <label for="vehicleMake"><span data-i18n="form.vehicleMake">Make</span> <span class="req">*</span></label>
+              <input type="text" id="vehicleMake" autocomplete="off" maxlength="60" placeholder="e.g. Toyota" data-i18n-ph="form.vehicleMakePh" />
+            </div>
+            <div class="field">
+              <label for="vehicleModel"><span data-i18n="form.vehicleModel">Model</span> <span class="req">*</span></label>
+              <input type="text" id="vehicleModel" autocomplete="off" maxlength="60" placeholder="e.g. Camry" data-i18n-ph="form.vehicleModelPh" />
+            </div>
+            <div class="field">
+              <label for="vehicleYear"><span data-i18n="form.vehicleYear">Year</span> <span class="req">*</span></label>
+              <input type="number" id="vehicleYear" inputmode="numeric" min="1900" max="2030" placeholder="e.g. 2024" data-i18n-ph="form.vehicleYearPh" />
+            </div>
+            <div class="field">
+              <label for="vehicleColor"><span data-i18n="form.vehicleColor">Color</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
+              <input type="text" id="vehicleColor" autocomplete="off" maxlength="40" placeholder="e.g. Electric blue" data-i18n-ph="form.vehicleColorPh" />
+            </div>
+            <div class="field field-full">
+              <label for="vehiclePlate"><span data-i18n="form.vehiclePlate">License plate</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
+              <input type="text" id="vehiclePlate" autocomplete="off" maxlength="16" placeholder="e.g. ABC 123" data-i18n-ph="form.vehiclePlatePh" />
+            </div>
+
+            <h4 class="form-section-title" data-i18n="form.serviceDetails">Service location and time</h4>
+            <div class="field field-full">
               <label for="schedAddress"><span data-i18n="form.address">Street address</span> <span class="req">*</span></label>
-              <input type="text" id="schedAddress" autocomplete="address-line1" placeholder="e.g. 1234 Palm Ave" data-i18n-ph="form.addressPh" />
+              <input type="text" id="schedAddress" autocomplete="address-line1" maxlength="160" placeholder="e.g. 1234 Palm Ave" data-i18n-ph="form.addressPh" />
             </div>
             <div class="field">
               <label for="schedUnit"><span data-i18n="form.unit">Apt / Unit</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
@@ -354,7 +383,11 @@
             </div>
             <div class="field field-full">
               <label for="schedNotes"><span data-i18n="form.notes">Notes</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
-              <textarea id="schedNotes" rows="3" placeholder="Gate code, vehicle condition, special requests…" data-i18n-ph="form.notesPh"></textarea>
+              <textarea id="schedNotes" rows="3" maxlength="1000" placeholder="Gate code, vehicle condition, special requests…" data-i18n-ph="form.notesPh"></textarea>
+            </div>
+            <div class="field hp-field" aria-hidden="true">
+              <label for="schedWebsite">Website</label>
+              <input type="text" id="schedWebsite" tabindex="-1" autocomplete="off" />
             </div>
           </div>
         </div>
@@ -375,6 +408,8 @@
               <span class="i18n-en">I have read and accept the <a href="#policies">Service Policies</a>. <span class="req">*</span></span>
             </label>
           </div>
+          <div class="submission-status" id="submissionStatus" role="status" aria-live="polite"></div>
+          <button type="button" class="btn btn-ghost continue-whatsapp" id="continueWhatsApp" hidden data-i18n="btn.continueWhatsApp">Continue to WhatsApp anyway</button>
         </div>
       </div>
 

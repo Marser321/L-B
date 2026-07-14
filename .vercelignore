@@ -1,0 +1,6 @@
+.git/
+.vercel/
+.env*
+pdf_pages/
+scripts/
+tests/

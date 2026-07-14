@@ -1274,50 +1274,50 @@
   const PACKAGE_IMAGE_DIR = 'assets/packages/';
 
   const EXTRA_IMAGES = {
-    'limpieza-motor': 'assets/extra-engine-bay.jpg',
-    'engine-bay': 'assets/extra-engine-bay.jpg',
-    'cera-rapida': 'assets/extra-spray-wax.jpg',
-    'sellador-pintura': 'assets/extra-paint-protection.jpg',
-    'descontaminacion-pintura': 'assets/extra-paint-decontamination.jpg',
-    'tar-sap': 'assets/extra-paint-protection.jpg',
-    'water-spots': 'assets/extra-paint-protection.jpg',
-    'repelente-cristales': 'assets/extra-paint-protection.jpg',
-    'pelos-animal': 'assets/extra-pet-hair.jpg',
-    'eliminar-olores': 'assets/extra-odor-removal.jpg',
-    'tratamiento-ozono': 'assets/extra-odor-ozone.jpg',
-    'limpieza-asientos': 'assets/extra-seat-carpet.jpg',
-    'limpieza-alfombras': 'assets/extra-carpet-mat-cleaning.jpg',
-    'limpieza-asiento': 'assets/extra-seat-carpet.jpg',
-    'restauracion-plasticos': 'assets/extra-plastic-restoration.jpg',
-    'pulido-faros': 'assets/extra-headlight-trim.jpg',
-    'faros-recup': 'assets/extra-headlight-trim.jpg',
-    'ext-plastics': 'assets/extra-plastic-restoration.jpg',
-    'cargo-bed': 'assets/extra-truck-bed.jpg',
-    'limpieza-cabina': 'assets/extra-cab-cleaning.jpg',
-    'desengrasado-profundo': 'assets/extra-degreasing.jpg',
-    'motor-pesado': 'assets/extra-degreasing.jpg',
-    'volteo-aluminio': 'assets/extra-aluminum-box.jpg',
-    'rines-aluminio': 'assets/extra-aluminum-wheels.jpg',
-    'pulido-tanques': 'assets/extra-tank-polishing.jpg',
-    'eliminacion-sal': 'assets/extra-marine-salt.jpg',
-    'brillo-plasticos': 'assets/extra-marine-salt.jpg',
-    'ceramica-marina': 'assets/extra-marine-salt.jpg',
-    'engrasado-camion': 'assets/extra-greasing.jpg',
-    'limpieza-chasis': 'assets/extra-chassis-cleaning.jpg',
-    'boat-motor': 'assets/extra-engine-bay.jpg',
-    'boat-vinilo-uv': 'assets/extra-boat-interior.jpg',
-    'boat-cera-marina': 'assets/extra-marine-salt.jpg',
-    'boat-pulido': 'assets/extra-boat-hull.jpg',
-    'boat-oxidacion': 'assets/extra-boat-hull.jpg',
-    'boat-ceramica': 'assets/extra-boat-hull.jpg',
-    'boat-inox': 'assets/extra-boat-hull.jpg',
-    'boat-compartimientos': 'assets/extra-boat-interior.jpg',
-    'boat-manchas-agua': 'assets/extra-boat-hull.jpg',
-    'boat-marcas-casco': 'assets/extra-boat-hull.jpg',
-    'boat-lona-bimini': 'assets/extra-boat-interior.jpg',
-    'boat-repelente-cristales': 'assets/extra-paint-protection.jpg',
-    'boat-olores-ozono': 'assets/extra-odor-ozone.jpg',
-    'boat-teca': 'assets/extra-boat-teak.jpg'
+    'limpieza-motor': 'assets/extras/limpieza-motor.jpg',
+    'engine-bay': 'assets/extras/engine-bay.jpg',
+    'cera-rapida': 'assets/extras/cera-rapida.jpg',
+    'sellador-pintura': 'assets/extras/sellador-pintura.jpg',
+    'descontaminacion-pintura': 'assets/extras/descontaminacion-pintura.jpg',
+    'tar-sap': 'assets/extras/tar-sap.jpg',
+    'water-spots': 'assets/extras/water-spots.jpg',
+    'repelente-cristales': 'assets/extras/repelente-cristales.jpg',
+    'pelos-animal': 'assets/extras/pelos-animal.jpg',
+    'eliminar-olores': 'assets/extras/eliminar-olores.jpg',
+    'tratamiento-ozono': 'assets/extras/tratamiento-ozono.jpg',
+    'limpieza-asientos': 'assets/extras/limpieza-asientos.jpg',
+    'limpieza-alfombras': 'assets/extras/limpieza-alfombras.jpg',
+    'limpieza-asiento': 'assets/extras/limpieza-asiento.jpg',
+    'restauracion-plasticos': 'assets/extras/restauracion-plasticos.jpg',
+    'pulido-faros': 'assets/extras/pulido-faros.jpg',
+    'faros-recup': 'assets/extras/faros-recup.jpg',
+    'ext-plastics': 'assets/extras/ext-plastics.jpg',
+    'cargo-bed': 'assets/extras/cargo-bed.jpg',
+    'limpieza-cabina': 'assets/extras/limpieza-cabina.jpg',
+    'desengrasado-profundo': 'assets/extras/desengrasado-profundo.jpg',
+    'motor-pesado': 'assets/extras/motor-pesado.jpg',
+    'volteo-aluminio': 'assets/extras/volteo-aluminio.jpg',
+    'rines-aluminio': 'assets/extras/rines-aluminio.jpg',
+    'pulido-tanques': 'assets/extras/pulido-tanques.jpg',
+    'eliminacion-sal': 'assets/extras/eliminacion-sal.jpg',
+    'brillo-plasticos': 'assets/extras/brillo-plasticos.jpg',
+    'ceramica-marina': 'assets/extras/ceramica-marina.jpg',
+    'engrasado-camion': 'assets/extras/engrasado-camion.jpg',
+    'limpieza-chasis': 'assets/extras/limpieza-chasis.jpg',
+    'boat-motor': 'assets/extras/boat-motor.jpg',
+    'boat-vinilo-uv': 'assets/extras/boat-vinilo-uv.jpg',
+    'boat-cera-marina': 'assets/extras/boat-cera-marina.jpg',
+    'boat-pulido': 'assets/extras/boat-pulido.jpg',
+    'boat-oxidacion': 'assets/extras/boat-oxidacion.jpg',
+    'boat-ceramica': 'assets/extras/boat-ceramica.jpg',
+    'boat-inox': 'assets/extras/boat-inox.jpg',
+    'boat-compartimientos': 'assets/extras/boat-compartimientos.jpg',
+    'boat-manchas-agua': 'assets/extras/boat-manchas-agua.jpg',
+    'boat-marcas-casco': 'assets/extras/boat-marcas-casco.jpg',
+    'boat-lona-bimini': 'assets/extras/boat-lona-bimini.jpg',
+    'boat-repelente-cristales': 'assets/extras/boat-repelente-cristales.jpg',
+    'boat-olores-ozono': 'assets/extras/boat-olores-ozono.jpg',
+    'boat-teca': 'assets/extras/boat-teca.jpg'
   };
 
   const HEAVY_GROUPS = [
@@ -1467,9 +1467,24 @@
     'ws.scheduleIntro': { en: "We're a mobile service — tell us where and when, and we'll confirm on WhatsApp.", es: 'Somos un servicio móvil — dinos dónde y cuándo, y confirmamos por WhatsApp.' },
     'ws.reviewTitle': { en: 'Review & Book', es: 'Revisa y Reserva' },
     // Schedule form
+    'form.contactDetails': { en: 'Contact details', es: 'Datos de contacto' },
+    'form.vehicleDetails': { en: 'Vehicle details', es: 'Datos del vehículo' },
+    'form.serviceDetails': { en: 'Service location and time', es: 'Lugar y horario del servicio' },
     'form.name': { en: 'Full name', es: 'Nombre completo' },
     'form.namePh': { en: 'Your name', es: 'Tu nombre' },
     'form.phone': { en: 'Phone', es: 'Teléfono' },
+    'form.email': { en: 'Email', es: 'Email' },
+    'form.emailPh': { en: 'you@example.com', es: 'tu@email.com' },
+    'form.vehicleMake': { en: 'Make', es: 'Marca' },
+    'form.vehicleMakePh': { en: 'e.g. Toyota', es: 'ej. Toyota' },
+    'form.vehicleModel': { en: 'Model', es: 'Modelo' },
+    'form.vehicleModelPh': { en: 'e.g. Camry', es: 'ej. Camry' },
+    'form.vehicleYear': { en: 'Year', es: 'Año' },
+    'form.vehicleYearPh': { en: 'e.g. 2024', es: 'ej. 2024' },
+    'form.vehicleColor': { en: 'Color', es: 'Color' },
+    'form.vehicleColorPh': { en: 'e.g. Electric blue', es: 'ej. Azul eléctrico' },
+    'form.vehiclePlate': { en: 'License plate', es: 'Matrícula' },
+    'form.vehiclePlatePh': { en: 'e.g. ABC 123', es: 'ej. ABC 123' },
     'form.zip': { en: 'Service area / ZIP', es: 'Zona / Código Postal' },
     'form.zipPh': { en: 'e.g. 33901', es: 'ej. 33901' },
     'form.address': { en: 'Street address', es: 'Dirección (calle y número)' },
@@ -1496,6 +1511,9 @@
     'btn.next': { en: 'Next', es: 'Siguiente' },
     'btn.review': { en: 'Review', es: 'Revisar' },
     'btn.book': { en: 'Book on WhatsApp', es: 'Reservar por WhatsApp' },
+    'btn.saving': { en: 'Saving to CRM…', es: 'Guardando en el CRM…' },
+    'btn.retry': { en: 'Retry and save', es: 'Reintentar y guardar' },
+    'btn.continueWhatsApp': { en: 'Continue to WhatsApp anyway', es: 'Continuar a WhatsApp de todos modos' },
     // Policies header
     'policies.label': { en: 'Important Information', es: 'Información Importante' },
     'policies.titleA': { en: 'Service ', es: 'Políticas de ' },
@@ -1514,6 +1532,7 @@
     'selected': { en: 'Selected', es: 'Seleccionado' },
     'choosePlan': { en: 'Choose plan', es: 'Elegir plan' },
     'mostPopular': { en: 'Most popular', es: 'Más popular' },
+    'package.viewAll': { en: 'Show everything included', es: 'Ver todo lo que incluye' },
     'oneTime': { en: 'One-time', es: 'Único' },
     'membership': { en: 'Membership', es: 'Membresía' },
     'recommendExtras': { en: 'Recommend my extras', es: 'Recomiéndame extras' },
@@ -1533,6 +1552,9 @@
     'sum.size': { en: 'Size / Option', es: 'Tamaño / Opción' },
     'sum.addons': { en: 'Add-ons', es: 'Extras' },
     'sum.name': { en: 'Name', es: 'Nombre' },
+    'sum.email': { en: 'Email', es: 'Email' },
+    'sum.vehicle': { en: 'Vehicle', es: 'Vehículo' },
+    'sum.plate': { en: 'License plate', es: 'Matrícula' },
     'sum.address': { en: 'Address', es: 'Dirección' },
     'sum.area': { en: 'Service area', es: 'Zona de servicio' },
     'sum.time': { en: 'Preferred time', es: 'Horario preferido' },
@@ -1555,6 +1577,9 @@
     'wa.total': { en: 'Estimated Total', es: 'Total Estimado' },
     'wa.contact': { en: 'Contact', es: 'Contacto' },
     'wa.phone': { en: 'Phone', es: 'Teléfono' },
+    'wa.email': { en: 'Email', es: 'Email' },
+    'wa.vehicle': { en: 'Vehicle', es: 'Vehículo' },
+    'wa.plate': { en: 'License plate', es: 'Matrícula' },
     'wa.address': { en: 'Address', es: 'Dirección' },
     'wa.city': { en: 'City', es: 'Ciudad' },
     'wa.area': { en: 'Service area / ZIP', es: 'Zona / Código Postal' },
@@ -1562,6 +1587,9 @@
     'wa.time': { en: 'Preferred time', es: 'Horario preferido' },
     'wa.notes': { en: 'Notes', es: 'Notas' },
     'wa.closing': { en: "Hi, I'd like to book this mobile service. Please confirm availability for my preferred time. Thank you!", es: 'Hola, me gustaría reservar este servicio móvil. Por favor confirmen disponibilidad para mi horario preferido. ¡Gracias!' },
+    'submit.saving': { en: 'Saving your quote securely before opening WhatsApp…', es: 'Guardando tu cotización de forma segura antes de abrir WhatsApp…' },
+    'submit.success': { en: 'Saved. Opening WhatsApp…', es: 'Guardado. Abriendo WhatsApp…' },
+    'submit.error': { en: "We couldn't save the quote to the CRM. Your information is still here; retry or continue to WhatsApp.", es: 'No pudimos guardar la cotización en el CRM. Tus datos siguen aquí; reintenta o continúa a WhatsApp.' },
     'wa.quick': { en: "Hi L&B Elite! I'd like to book a service.", es: 'Hola L&B Elite, me gustaría reservar un servicio.' },
     'waFloat.aria': { en: 'Contact us on WhatsApp', es: 'Contactar por WhatsApp' }
   };
@@ -1606,6 +1634,9 @@
   const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="14" height="14" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
   const fmt = (n) => '$' + Math.round(n).toLocaleString('en-US');
+  const escapeHTML = (value) => String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  })[char]);
 
   // Line-art vehicle silhouettes for the size/type selector (Step 3).
   // Stroke uses currentColor so they adopt the theme and glow on .selected.
@@ -1889,7 +1920,18 @@
   }
   function validPhone(phone) {
     const d = phoneDigits(phone);
-    return !d || d.length === 10 || (d.length === 11 && d[0] === '1');
+    return d.length === 10 || (d.length === 11 && d[0] === '1');
+  }
+  function validEmail(email) {
+    const value = String(email || '').trim();
+    return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
+  function validVehicleText(value) {
+    return String(value || '').trim().length >= 2;
+  }
+  function validVehicleYear(value) {
+    const year = Number(value);
+    return Number.isInteger(year) && year >= 1900 && year <= new Date().getFullYear() + 1;
   }
   function normalizedPhone(phone) {
     let d = phoneDigits(phone);
@@ -1899,7 +1941,25 @@
   }
   function scheduleValid() {
     const s = state.schedule;
-    return !!(validName(s.name) && validPhone(s.phone) && validZip(s.zip) && validStreet(s.address) && validCity(s.city) && s.date && s.date >= tomorrowISO() && s.timeWindow);
+    return !!(
+      validName(s.name) && validPhone(s.phone) && validEmail(s.email) &&
+      validVehicleText(s.vehicleMake) && validVehicleText(s.vehicleModel) && validVehicleYear(s.vehicleYear) &&
+      validZip(s.zip) && validStreet(s.address) && validCity(s.city) &&
+      s.date && s.date >= tomorrowISO() && s.timeWindow
+    );
+  }
+
+  function blankSchedule() {
+    return {
+      name: '', phone: '', email: '',
+      vehicleMake: '', vehicleModel: '', vehicleYear: '', vehicleColor: '', vehiclePlate: '',
+      address: '', unit: '', city: '', zip: '', date: '', timeWindow: '', notes: '', website: ''
+    };
+  }
+
+  function newSubmissionId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return `lyb-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
   // ── Persistence ──
@@ -1912,6 +1972,7 @@
         pkgId: state.selectedPackage ? state.selectedPackage.id : null,
         sizeId: state.selectedSize ? state.selectedSize.id : null,
         addonIds: state.selectedAddons.map(a => a.id),
+        submissionId: state.submissionId,
         schedule: state.schedule
       }));
     } catch (e) { /* storage unavailable */ }
@@ -1921,6 +1982,7 @@
     try { s = JSON.parse(localStorage.getItem('lyb-quote') || 'null'); } catch (e) { return; }
     if (!s) return;
     if (s.schedule) Object.assign(state.schedule, s.schedule);
+    if (s.submissionId) state.submissionId = s.submissionId;
     if (!s.catId) return;
     const cat = SERVICES_DATA.categories.find(c => c.id === s.catId);
     if (!cat) return;
@@ -1955,7 +2017,11 @@
     quizPicks: [],
     quizOpen: false,
     policiesAccepted: false,
-    schedule: { name: '', phone: '', address: '', unit: '', city: '', zip: '', date: '', timeWindow: '', notes: '' }
+    submitting: false,
+    submitError: false,
+    completed: false,
+    submissionId: newSubmissionId(),
+    schedule: blankSchedule()
   };
 
   // ──────────────────────────────────────────────
@@ -2164,6 +2230,7 @@
   function optCardHTML(pkg) {
     const isSel = state.selectedPackage && state.selectedPackage.id === pkg.id;
     const img = packageImage(pkg);
+    const includes = packageIncludesHTML(pkg);
     return `
       <div class="opt-card has-media ${isSel ? 'selected' : ''}" data-id="${pkg.id}" role="radio" tabindex="0" aria-checked="${isSel}">
         <div class="opt-radio"></div>
@@ -2172,8 +2239,22 @@
           <span class="opt-name">${pkg.name}</span>
           <span class="opt-desc">${pkg.description}</span>
         </div>
+        ${includes}
         <span class="opt-price">${packageFromLabel(pkg)}</span>
       </div>`;
+  }
+
+  function packageIncludesHTML(pkg) {
+    const items = Array.isArray(pkg.includes) ? pkg.includes : [];
+    const firstItems = items.slice(0, 4).map(x => `<li>${CHECK_SVG}<span>${x}</span></li>`).join('');
+    const remainingItems = items.slice(4).map(x => `<li>${CHECK_SVG}<span>${x}</span></li>`).join('');
+    return `
+      <ul class="package-includes">${firstItems}</ul>
+      ${remainingItems ? `
+        <details class="package-details">
+          <summary>${t('package.viewAll')}</summary>
+          <ul class="package-includes">${remainingItems}</ul>
+        </details>` : ''}`;
   }
 
   function compareCardsHTML(pkgs) {
@@ -2181,7 +2262,6 @@
       const featured = pkgs.length === 3 && i === 1;
       const isSel = state.selectedPackage && state.selectedPackage.id === pkg.id;
       const img = packageImage(pkg);
-      const incs = pkg.includes.map(x => `<li>${CHECK_SVG}<span>${x}</span></li>`).join('');
       return `
         <div class="compare-card ${featured ? 'featured' : ''} ${isSel ? 'selected' : ''}" data-id="${pkg.id}" role="radio" tabindex="0" aria-checked="${isSel}">
           ${featured ? `<span class="compare-flag">${t('mostPopular')}</span>` : ''}
@@ -2189,7 +2269,7 @@
           <span class="compare-name">${pkg.name}</span>
           <span class="compare-price">${packageFromLabel(pkg)}</span>
           <p class="compare-desc">${pkg.description}</p>
-          <ul class="compare-list">${incs}</ul>
+          ${packageIncludesHTML(pkg)}
           <span class="compare-cta">${isSel ? t('selected') : t('choosePlan')}</span>
         </div>`;
     }).join('');
@@ -2257,6 +2337,10 @@
     optGrid.querySelectorAll('[data-id]').forEach(card => {
       bindActivation(card, () => selectPackage(card.dataset.id));
       if (useCompare) attachSpotlight(card);
+    });
+    optGrid.querySelectorAll('.package-details').forEach(details => {
+      details.addEventListener('click', e => e.stopPropagation());
+      details.addEventListener('keydown', e => e.stopPropagation());
     });
 
     updateQuoteBar();
@@ -2484,13 +2568,19 @@
   function setupSchedule() {
     const dateEl = document.getElementById('schedDate');
     if (dateEl) dateEl.min = tomorrowISO();
+    const yearEl = document.getElementById('vehicleYear');
+    if (yearEl) yearEl.max = String(new Date().getFullYear() + 1);
 
     const bind = (id, key) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('input', () => {
-        state.schedule[key] = key === 'zip' ? el.value.replace(/\D/g, '').slice(0, 5) : el.value;
-        if (key === 'zip' && el.value !== state.schedule[key]) el.value = state.schedule[key];
+        let value = el.value;
+        if (key === 'zip') value = value.replace(/\D/g, '').slice(0, 5);
+        if (key === 'vehicleYear') value = value.replace(/\D/g, '').slice(0, 4);
+        if (key === 'vehiclePlate') value = value.toUpperCase().replace(/[^A-Z0-9 -]/g, '').slice(0, 16);
+        state.schedule[key] = value;
+        if (el.value !== value) el.value = value;
         if (key === 'zip') updateCoverage();
         validateStep();
       });
@@ -2505,12 +2595,19 @@
     };
     bind('schedName', 'name');
     bind('schedPhone', 'phone');
+    bind('schedEmail', 'email');
+    bind('vehicleMake', 'vehicleMake');
+    bind('vehicleModel', 'vehicleModel');
+    bind('vehicleYear', 'vehicleYear');
+    bind('vehicleColor', 'vehicleColor');
+    bind('vehiclePlate', 'vehiclePlate');
     bind('schedAddress', 'address');
     bind('schedUnit', 'unit');
     bind('schedCity', 'city');
     bind('schedZip', 'zip');
     bind('schedDate', 'date');
     bind('schedNotes', 'notes');
+    bind('schedWebsite', 'website');
 
     document.querySelectorAll('.time-chip').forEach(c => {
       c.addEventListener('click', () => {
@@ -2543,12 +2640,19 @@
     const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v || ''; };
     set('schedName', s.name);
     set('schedPhone', s.phone);
+    set('schedEmail', s.email);
+    set('vehicleMake', s.vehicleMake);
+    set('vehicleModel', s.vehicleModel);
+    set('vehicleYear', s.vehicleYear);
+    set('vehicleColor', s.vehicleColor);
+    set('vehiclePlate', s.vehiclePlate);
     set('schedAddress', s.address);
     set('schedUnit', s.unit);
     set('schedCity', s.city);
     set('schedZip', s.zip);
     set('schedDate', s.date);
     set('schedNotes', s.notes);
+    set('schedWebsite', s.website);
     document.querySelectorAll('.time-chip').forEach(x => x.classList.toggle('active', x.dataset.window === s.timeWindow));
     updateCoverage();
   }
@@ -2568,7 +2672,7 @@
 
     const inclusionsHtml = pkg.includes.map(inc => `<li>${CHECK_SVG}<span>${inc}</span></li>`).join('');
     const showSizeRow = validSizesForPackage(cat, pkg).length > 1;
-    const row = (lab, val) => val ? `<div class="summary-row"><span class="lab">${lab}</span><span class="val">${val}</span></div>` : '';
+    const row = (lab, val) => val ? `<div class="summary-row"><span class="lab">${escapeHTML(lab)}</span><span class="val">${escapeHTML(val)}</span></div>` : '';
     const scheduleVal = [prettyDate(s.date), timeWindowLabel(s.timeWindow)].filter(Boolean).join(' · ');
     const vehIcon = sizeIconHTML(cat.id, size.id);
 
@@ -2579,6 +2683,9 @@
       ${showSizeRow ? row(t('sum.size'), size.name) : ''}
       ${state.selectedAddons.length ? row(t('sum.addons'), state.selectedAddons.map(a => a.name).join(', ')) : ''}
       ${row(t('sum.name'), s.name)}
+      ${row(t('sum.email'), s.email)}
+      ${row(t('sum.vehicle'), [s.vehicleYear, s.vehicleMake, s.vehicleModel, s.vehicleColor].filter(Boolean).join(' · '))}
+      ${row(t('sum.plate'), s.vehiclePlate)}
       ${row(t('sum.address'), [s.address, s.unit].filter(Boolean).join(', '))}
       ${row(t('sum.area'), [s.city, s.zip].filter(Boolean).join(' '))}
       ${row(t('sum.time'), scheduleVal)}
@@ -2622,8 +2729,8 @@
         break;
     }
 
-    btnNext.disabled = !valid;
-    saveState();
+    btnNext.disabled = !valid || state.submitting;
+    if (!state.completed) saveState();
   }
 
   function updateStepUI() {
@@ -2653,8 +2760,9 @@
     btnBack.style.display = state.currentStep > 1 ? 'inline-flex' : 'none';
 
     if (state.currentStep === state.totalSteps) {
+      const buttonLabel = state.submitting ? t('btn.saving') : (state.submitError ? t('btn.retry') : t('btn.book'));
       btnNext.innerHTML = `
-        ${t('btn.book')}
+        ${buttonLabel}
         <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon" width="18" height="18">
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
         </svg>
@@ -2673,6 +2781,14 @@
 
   function goToStep(step) {
     state.currentStep = step;
+    if (step !== state.totalSteps) {
+      if (state.completed) {
+        state.completed = false;
+        state.submissionId = newSubmissionId();
+      }
+      state.submitError = false;
+      setSubmissionStatus('', '');
+    }
 
     if (step === 2) renderPackages();
     else if (step === 3) renderSizesAndAddons();
@@ -2684,11 +2800,12 @@
     document.getElementById('quoter').scrollIntoView({ behavior: 'smooth' });
   }
 
-  btnNext.addEventListener('click', () => {
+  btnNext.addEventListener('click', async () => {
     if (btnNext.disabled) return;
 
     if (state.currentStep === state.totalSteps) {
-      sendWhatsAppBooking();
+      const pendingWindow = window.open('about:blank', '_blank');
+      await submitQuoteAndContinue(pendingWindow);
       return;
     }
 
@@ -2702,9 +2819,19 @@
   });
 
   // ──────────────────────────────────────────────
-  // WHATSAPP DISPATCH
+  // CRM SUBMISSION + WHATSAPP DISPATCH
   // ──────────────────────────────────────────────
-  function sendWhatsAppBooking() {
+  function setSubmissionStatus(message, type) {
+    const statusEl = document.getElementById('submissionStatus');
+    if (statusEl) {
+      statusEl.textContent = message || '';
+      statusEl.className = 'submission-status' + (type ? ` ${type}` : '');
+    }
+    const continueBtn = document.getElementById('continueWhatsApp');
+    if (continueBtn) continueBtn.hidden = type !== 'error';
+  }
+
+  function buildWhatsAppUrl() {
     if (!state.policiesAccepted) return;
     const cat = state.selectedCategory;
     const pkg = state.selectedPackage;
@@ -2725,6 +2852,9 @@
 
     message += `*${t('wa.contact')}:* ${s.name || '—'}\n`;
     if (s.phone) message += `*${t('wa.phone')}:* ${normalizedPhone(s.phone)}\n`;
+    if (s.email) message += `*${t('wa.email')}:* ${s.email.trim()}\n`;
+    message += `*${t('wa.vehicle')}:* ${[s.vehicleYear, s.vehicleMake, s.vehicleModel, s.vehicleColor].filter(Boolean).join(' · ')}\n`;
+    if (s.vehiclePlate) message += `*${t('wa.plate')}:* ${s.vehiclePlate}\n`;
     if (s.address) message += `*${t('wa.address')}:* ${s.address}${s.unit ? ', ' + s.unit : ''}\n`;
     if (s.city) message += `*${t('wa.city')}:* ${s.city}\n`;
     if (s.zip) message += `*${t('wa.area')}:* ${s.zip}\n`;
@@ -2740,8 +2870,91 @@
       message = message.replace(`*${t('wa.notes')}:* ${s.notes}\n`, '');
       encoded = encodeURIComponent(message);
     }
-    window.open(`https://wa.me/${PHONE_E164}?text=${encoded}`, '_blank');
+    return `https://wa.me/${PHONE_E164}?text=${encoded}`;
   }
+
+  function openWhatsApp(url, pendingWindow) {
+    if (pendingWindow && !pendingWindow.closed) {
+      pendingWindow.location.href = url;
+      return;
+    }
+    const opened = window.open(url, '_blank');
+    if (!opened) window.location.href = url;
+  }
+
+  function quotePayload() {
+    const cat = state.selectedCategory;
+    const pkg = state.selectedPackage;
+    const size = state.selectedSize;
+    const s = state.schedule;
+    const est = computeEstimate();
+    return {
+      submissionId: state.submissionId,
+      language: LANG,
+      website: s.website || '',
+      policyAccepted: state.policiesAccepted,
+      policyAcceptedAt: new Date().toISOString(),
+      customer: {
+        name: s.name.trim(),
+        phone: normalizedPhone(s.phone),
+        email: s.email.trim(),
+        address: s.address.trim(),
+        unit: s.unit.trim(),
+        city: s.city.trim(),
+        zip: s.zip.trim()
+      },
+      vehicle: {
+        make: s.vehicleMake.trim(),
+        model: s.vehicleModel.trim(),
+        year: Number(s.vehicleYear),
+        color: s.vehicleColor.trim(),
+        plate: s.vehiclePlate.trim()
+      },
+      selection: {
+        category: { id: cat.id, name: cat.name },
+        package: { id: pkg.id, name: pkg.name },
+        size: { id: size.id, name: size.name },
+        addons: state.selectedAddons.map(addon => ({ id: addon.id, name: addon.name, price: addonWhatsAppPrice(addon) }))
+      },
+      estimate: est ? { min: est.min, max: est.max, label: est.label, custom: est.custom, isRange: est.isRange } : null,
+      schedule: { date: s.date, timeWindow: s.timeWindow, timeLabel: timeWindowLabel(s.timeWindow), notes: s.notes.trim() }
+    };
+  }
+
+  async function submitQuoteAndContinue(pendingWindow) {
+    if (!state.policiesAccepted || state.submitting) return;
+    state.submitting = true;
+    state.submitError = false;
+    setSubmissionStatus(t('submit.saving'), 'saving');
+    updateStepUI();
+
+    try {
+      const response = await fetch('/api/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(quotePayload())
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.error || `CRM request failed (${response.status})`);
+
+      const whatsappUrl = buildWhatsAppUrl();
+      setSubmissionStatus(t('submit.success'), 'success');
+      try { localStorage.removeItem('lyb-quote'); } catch (e) { /* storage unavailable */ }
+      state.completed = true;
+      state.submissionId = newSubmissionId();
+      openWhatsApp(whatsappUrl, pendingWindow);
+    } catch (error) {
+      if (pendingWindow && !pendingWindow.closed) pendingWindow.close();
+      state.submitError = true;
+      setSubmissionStatus(t('submit.error'), 'error');
+    } finally {
+      state.submitting = false;
+      updateStepUI();
+    }
+  }
+
+  const continueWhatsApp = document.getElementById('continueWhatsApp');
+  if (continueWhatsApp) continueWhatsApp.addEventListener('click', () => openWhatsApp(buildWhatsAppUrl(), null));
 
   // ──────────────────────────────────────────────
   // EXTERNAL SERVICES LINKING (Landing Page Cards)
@@ -2805,7 +3018,15 @@
       state.quizYes = [];
       state.quizPicks = [];
       state.quizOpen = false;
-      state.schedule = { name: '', phone: '', zip: '', date: '', timeWindow: '', notes: '' };
+      state.policiesAccepted = false;
+      state.submitting = false;
+      state.submitError = false;
+      state.completed = false;
+      state.submissionId = newSubmissionId();
+      state.schedule = blankSchedule();
+      const policyEl = document.getElementById('policyAccept');
+      if (policyEl) policyEl.checked = false;
+      setSubmissionStatus('', '');
       renderCatFilter();
       renderCategories();
       restoreScheduleInputs();
