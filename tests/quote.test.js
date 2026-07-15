@@ -70,6 +70,54 @@ test('rejects incomplete identity, vehicle, policy, and selection data', () => {
   assert.throws(() => validatePayload(payload({ selection: { ...payload().selection, addons: [{ id: 'forged-extra', name: 'Forged', price: '$1' }] } })), /addons/i);
 });
 
+test('accepts every car hauler package with the standard size', () => {
+  const packageIds = [
+    'car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x',
+    'car-hauler-graphite-wash', 'car-hauler-graphite-2x', 'car-hauler-graphite-4x'
+  ];
+  for (const packageId of packageIds) {
+    const result = validatePayload(payload({
+      selection: {
+        category: { id: 'heavy_trucks', name: 'Heavy Trucks' },
+        package: { id: packageId, name: 'Car Hauler' },
+        size: { id: 'standard', name: 'Standard Size' },
+        addons: []
+      }
+    }));
+    assert.equal(result.selection.package.id, packageId);
+    assert.equal(result.selection.size.id, 'standard');
+  }
+});
+
+test('allows car hauler extras and enforces package-scoped extras', () => {
+  const carHaulerSelection = {
+    category: { id: 'heavy_trucks', name: 'Heavy Trucks' },
+    package: { id: 'car-hauler-wash', name: 'Car Hauler Basic Wash' },
+    size: { id: 'standard', name: 'Standard Size' },
+    addons: [
+      { id: 'car-hauler-second-deck', name: 'Second-Deck Wash', price: '$100' },
+      { id: 'pulido-rines-llantas', name: 'Wheel and Tire Polishing', price: '$25' }
+    ]
+  };
+  const accepted = validatePayload(payload({ selection: carHaulerSelection }));
+  assert.deepEqual(accepted.selection.addons.map(addon => addon.id), ['car-hauler-second-deck', 'pulido-rines-llantas']);
+
+  assert.throws(() => validatePayload(payload({
+    selection: {
+      ...carHaulerSelection,
+      package: { id: 'semi-truck-wash', name: 'Semi Truck Wash' }
+    }
+  })), /invalid for this package/i);
+
+  assert.throws(() => validatePayload(payload({
+    selection: {
+      ...carHaulerSelection,
+      package: { id: 'semi-truck-wash', name: 'Semi Truck Wash' },
+      addons: [{ id: 'volteo-aluminio', name: 'Aluminum Dump Bed', price: '$120' }]
+    }
+  })), /invalid for this package/i);
+});
+
 test('honeypot requests do not require CRM configuration', async () => {
   const previous = { token: process.env.GHL_PRIVATE_TOKEN, location: process.env.GHL_LOCATION_ID };
   delete process.env.GHL_PRIVATE_TOKEN;

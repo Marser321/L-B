@@ -35,6 +35,14 @@
   const PHONE_E164 = '12395270770';
   const PHONE_TEL = '+12395270770';
   const PHONE_DISPLAY = '(239) 527-0770';
+  const CAR_HAULER_PACKAGE_IDS = Object.freeze([
+    'car-hauler-wash',
+    'car-hauler-2x',
+    'car-hauler-4x',
+    'car-hauler-graphite-wash',
+    'car-hauler-graphite-2x',
+    'car-hauler-graphite-4x'
+  ]);
   // Localized label for a stored time-window key (morning/afternoon/evening).
   function timeWindowLabel(key) { return key ? t('tw.' + key) : ''; }
 
@@ -419,6 +427,105 @@
             }
           },
           {
+            id: 'car-hauler-wash',
+            name: 'Car Hauler (Lavado Básico)',
+            description: 'Lavado completo para camiones y trailers transportadores de vehículos, con atención especial a chasis, estructura, rampas y plataformas.',
+            includes: [
+              'Desengrasado de chasis y estructura',
+              'Lavado completo con champú para vehículos comerciales',
+              'Limpieza de rines y llantas',
+              'Lavado de guardabarros',
+              'Enjuague a presión',
+              'Secado para evitar manchas',
+              'Aplicación de brillo para neumáticos',
+              'Desengrasado profundo de rampas y plataformas'
+            ],
+            prices: {
+              standard: 120
+            }
+          },
+          {
+            id: 'car-hauler-2x',
+            name: 'Car Hauler Membresía (2x al mes)',
+            description: 'Dos lavados mensuales completos para mantener limpio y listo para operar tu transportador de vehículos.',
+            includes: [
+              '2 lavados básicos completos al mes',
+              'Desengrasado de chasis, estructura, rampas y plataformas',
+              'Lavado con champú para vehículos comerciales',
+              'Limpieza de rines, llantas y guardabarros',
+              'Enjuague a presión',
+              'Secado para evitar manchas',
+              'Aplicación de brillo para neumáticos'
+            ],
+            prices: {
+              standard: 220
+            }
+          },
+          {
+            id: 'car-hauler-4x',
+            name: 'Car Hauler Membresía (4x al mes)',
+            description: 'Lavado semanal recurrente para transportadores de vehículos con operación frecuente.',
+            includes: [
+              '4 lavados básicos completos al mes',
+              'Desengrasado de chasis, estructura, rampas y plataformas',
+              'Lavado con champú para vehículos comerciales',
+              'Limpieza de rines, llantas y guardabarros',
+              'Enjuague a presión',
+              'Secado para evitar manchas',
+              'Aplicación de brillo para neumáticos'
+            ],
+            prices: {
+              standard: 400
+            }
+          },
+          {
+            id: 'car-hauler-graphite-wash',
+            name: 'Car Hauler + Lubricante de Grafito',
+            description: 'Lavado completo del car hauler más aplicación profesional de lubricante seco de grafito.',
+            includes: [
+              'Desengrasado de chasis y estructura',
+              'Lavado completo con champú para vehículos comerciales',
+              'Limpieza de rines, llantas y guardabarros',
+              'Enjuague a presión y secado para evitar manchas',
+              'Aplicación de brillo para neumáticos',
+              'Desengrasado profundo de rampas y plataformas',
+              'Aplicación de lubricante seco de grafito en plataformas deslizantes y componentes móviles compatibles'
+            ],
+            prices: {
+              standard: 180
+            }
+          },
+          {
+            id: 'car-hauler-graphite-2x',
+            name: 'Car Hauler + Grafito Membresía (2x al mes)',
+            description: 'Dos servicios mensuales de lavado completo y mantenimiento con lubricante seco de grafito.',
+            includes: [
+              '2 lavados completos al mes',
+              'Desengrasado de chasis, estructura, rampas y plataformas',
+              'Limpieza de rines, llantas y guardabarros',
+              'Enjuague, secado y brillo para neumáticos',
+              '2 aplicaciones de lubricante seco de grafito en plataformas deslizantes y componentes móviles compatibles'
+            ],
+            prices: {
+              standard: 320
+            }
+          },
+          {
+            id: 'car-hauler-graphite-4x',
+            name: 'Car Hauler + Grafito Membresía (4x al mes)',
+            description: 'Servicio semanal de lavado completo y mantenimiento con lubricante seco de grafito.',
+            includes: [
+              '4 lavados completos al mes',
+              'Desengrasado de chasis, estructura, rampas y plataformas',
+              'Limpieza de rines, llantas y guardabarros',
+              'Enjuague, secado y brillo para neumáticos',
+              '4 aplicaciones de lubricante seco de grafito en plataformas deslizantes y componentes móviles compatibles'
+            ],
+            prices: {
+              standard: 620
+            }
+          },
+          {
             id: 'dump-truck-wash',
             name: 'Dump Truck (Camión de Volteo)',
             description: 'Lavado exterior para camiones de volteo incluyendo chasis visible y tolva.',
@@ -506,6 +613,8 @@
           { id: 'motor-pesado', name: 'Limpieza de Motor', price: 30 },
           { id: 'volteo-aluminio', name: 'Caja de Aluminio', price: 120, onlyFor: ['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x'] },
           { id: 'rines-aluminio', name: 'Ácido para Rines de Aluminio', price: 25 },
+          { id: 'pulido-rines-llantas', name: 'Pulido de Rines y Llantas', price: 25 },
+          { id: 'car-hauler-second-deck', name: 'Lavado del Segundo Piso', price: 100, onlyFor: CAR_HAULER_PACKAGE_IDS },
           { id: 'pulido-tanques', name: 'Pulido Tanques de Aluminio (Cotiz.)', price: 0, range: 'Cotización personalizada' }
         ]
       },
@@ -894,6 +1003,8 @@
           'motor-pesado': ['Engine Cleaning'],
           'volteo-aluminio': ['Aluminum Dump Bed'],
           'rines-aluminio': ['Aluminum Wheel Acid Cleaning'],
+          'pulido-rines-llantas': ['Wheel and Tire Polishing'],
+          'car-hauler-second-deck': ['Second-Deck Wash'],
           'pulido-tanques': ['Aluminum Tank Polishing (Quote)', 'Custom quote']
         }
       },
@@ -1052,6 +1163,36 @@
         name: 'Trailer Membership (4x per month)',
         description: 'Weekly recurring exterior washing for commercial trailers.',
         includes: ['4 complete exterior washes per month', 'Side, front, and rear panel cleaning']
+      },
+      'car-hauler-wash': {
+        name: 'Car Hauler Basic Wash',
+        description: 'Complete wash for auto transport trucks and trailers, with special attention to the chassis, structure, ramps, and platforms.',
+        includes: ['Chassis and structure degreasing', 'Complete wash with commercial vehicle shampoo', 'Wheel and tire cleaning', 'Fender cleaning', 'Pressure rinse', 'Spot-prevention drying', 'Tire shine application', 'Deep degreasing of ramps and platforms']
+      },
+      'car-hauler-2x': {
+        name: 'Car Hauler Membership (2x per month)',
+        description: 'Two complete monthly washes to keep your auto transporter clean and ready to work.',
+        includes: ['2 complete basic washes per month', 'Chassis, structure, ramp, and platform degreasing', 'Commercial vehicle shampoo wash', 'Wheel, tire, and fender cleaning', 'Pressure rinse', 'Spot-prevention drying', 'Tire shine application']
+      },
+      'car-hauler-4x': {
+        name: 'Car Hauler Membership (4x per month)',
+        description: 'Recurring weekly washing for frequently operated auto transporters.',
+        includes: ['4 complete basic washes per month', 'Chassis, structure, ramp, and platform degreasing', 'Commercial vehicle shampoo wash', 'Wheel, tire, and fender cleaning', 'Pressure rinse', 'Spot-prevention drying', 'Tire shine application']
+      },
+      'car-hauler-graphite-wash': {
+        name: 'Car Hauler Wash + Dry Graphite Lubricant',
+        description: 'Complete car hauler wash plus professional application of dry graphite lubricant.',
+        includes: ['Chassis and structure degreasing', 'Complete wash with commercial vehicle shampoo', 'Wheel, tire, and fender cleaning', 'Pressure rinse and spot-prevention drying', 'Tire shine application', 'Deep degreasing of ramps and platforms', 'Dry graphite lubricant application on compatible sliding platforms and moving components']
+      },
+      'car-hauler-graphite-2x': {
+        name: 'Car Hauler + Graphite Membership (2x per month)',
+        description: 'Two monthly complete washes with dry graphite lubricant maintenance.',
+        includes: ['2 complete washes per month', 'Chassis, structure, ramp, and platform degreasing', 'Wheel, tire, and fender cleaning', 'Pressure rinse, drying, and tire shine', '2 dry graphite lubricant applications on compatible sliding platforms and moving components']
+      },
+      'car-hauler-graphite-4x': {
+        name: 'Car Hauler + Graphite Membership (4x per month)',
+        description: 'Weekly complete washing with dry graphite lubricant maintenance.',
+        includes: ['4 complete washes per month', 'Chassis, structure, ramp, and platform degreasing', 'Wheel, tire, and fender cleaning', 'Pressure rinse, drying, and tire shine', '4 dry graphite lubricant applications on compatible sliding platforms and moving components']
       },
       'dump-truck-wash': {
         name: 'Dump Truck Wash',
@@ -1298,6 +1439,8 @@
     'motor-pesado': 'assets/extras/motor-pesado.jpg',
     'volteo-aluminio': 'assets/extras/volteo-aluminio.jpg',
     'rines-aluminio': 'assets/extras/rines-aluminio.jpg',
+    'pulido-rines-llantas': 'assets/extras/pulido-rines-llantas.jpg',
+    'car-hauler-second-deck': 'assets/extras/car-hauler-second-deck.jpg',
     'pulido-tanques': 'assets/extras/pulido-tanques.jpg',
     'eliminacion-sal': 'assets/extras/eliminacion-sal.jpg',
     'brillo-plasticos': 'assets/extras/brillo-plasticos.jpg',
@@ -1321,11 +1464,12 @@
   };
 
   const HEAVY_GROUPS = [
-    { id: 'box-truck', label: 'Box Truck' },
-    { id: 'semi-truck', label: 'Semi Truck' },
-    { id: 'trailer', label: 'Trailer' },
-    { id: 'dump-truck', label: 'Dump Truck' },
-    { id: 'garbage-truck', label: 'Garbage Truck' }
+    { id: 'box-truck', label: { en: 'Box Truck', es: 'Camión de Caja' } },
+    { id: 'semi-truck', label: { en: 'Semi Truck', es: 'Tractocamión' } },
+    { id: 'trailer', label: { en: 'Trailer', es: 'Tráiler' } },
+    { id: 'car-hauler', label: { en: 'Car Hauler', es: 'Transportador de Autos' } },
+    { id: 'dump-truck', label: { en: 'Dump Truck', es: 'Camión de Volteo' } },
+    { id: 'garbage-truck', label: { en: 'Garbage Truck', es: 'Camión de Basura' } }
   ];
 
   // Per-category recommender config — references add-on ids that already exist
@@ -2316,10 +2460,19 @@
         if (!state.heavyGroup || !groups.some(g => g.id === state.heavyGroup)) state.heavyGroup = groups[0].id;
         groupSel.style.display = '';
         groupSel.innerHTML = groups.map(g =>
-          `<button type="button" class="chip ${state.heavyGroup === g.id ? 'active' : ''}" data-group="${g.id}">${g.label}</button>`
+          `<button type="button" class="chip ${state.heavyGroup === g.id ? 'active' : ''}" data-group="${g.id}">${loc(g.label)}</button>`
         ).join('');
         groupSel.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+          if (state.heavyGroup === b.dataset.group) return;
           state.heavyGroup = b.dataset.group;
+          if (state.selectedPackage && state.selectedPackage.group !== state.heavyGroup) {
+            state.selectedPackage = null;
+            state.selectedSize = null;
+            state.selectedAddons = [];
+            state.quizYes = [];
+            state.quizPicks = [];
+            state.quizOpen = false;
+          }
           renderPackages();
           validateStep();
         }));

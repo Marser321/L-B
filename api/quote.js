@@ -17,6 +17,8 @@ const PACKAGES_BY_CATEGORY = Object.freeze({
     'box-truck-wash', 'box-truck-2x', 'box-truck-4x',
     'semi-truck-wash', 'semi-truck-2x', 'semi-truck-4x',
     'trailer-wash', 'trailer-2x', 'trailer-4x',
+    'car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x',
+    'car-hauler-graphite-wash', 'car-hauler-graphite-2x', 'car-hauler-graphite-4x',
     'dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x',
     'garbage-truck-wash', 'garbage-truck-2x', 'garbage-truck-4x'
   ]),
@@ -46,6 +48,12 @@ const SIZES_BY_PACKAGE = Object.freeze({
   'trailer-wash': new Set(['standard']),
   'trailer-2x': new Set(['standard']),
   'trailer-4x': new Set(['standard']),
+  'car-hauler-wash': new Set(['standard']),
+  'car-hauler-2x': new Set(['standard']),
+  'car-hauler-4x': new Set(['standard']),
+  'car-hauler-graphite-wash': new Set(['standard']),
+  'car-hauler-graphite-2x': new Set(['standard']),
+  'car-hauler-graphite-4x': new Set(['standard']),
   'dump-truck-wash': new Set(['standard']),
   'dump-truck-2x': new Set(['standard']),
   'dump-truck-4x': new Set(['standard']),
@@ -74,7 +82,8 @@ const ADDONS_BY_CATEGORY = Object.freeze({
   paint_correction: new Set(['faros-recup', 'tar-sap', 'water-spots', 'engine-bay', 'ext-plastics', 'repelente-cristales']),
   heavy_trucks: new Set([
     'limpieza-cabina', 'cera-rapida', 'desengrasado-profundo', 'engrasado-camion',
-    'motor-pesado', 'volteo-aluminio', 'rines-aluminio', 'pulido-tanques'
+    'motor-pesado', 'volteo-aluminio', 'rines-aluminio', 'pulido-rines-llantas',
+    'car-hauler-second-deck', 'pulido-tanques'
   ]),
   boats: new Set([
     'boat-motor', 'boat-vinilo-uv', 'boat-cera-marina', 'boat-pulido', 'boat-oxidacion',
@@ -87,6 +96,13 @@ const ADDONS_BY_CATEGORY = Object.freeze({
   atv: new Set(),
   mobile_home: new Set(),
   driveway: new Set()
+});
+const PACKAGES_BY_RESTRICTED_ADDON = Object.freeze({
+  'volteo-aluminio': new Set(['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x']),
+  'car-hauler-second-deck': new Set([
+    'car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x',
+    'car-hauler-graphite-wash', 'car-hauler-graphite-2x', 'car-hauler-graphite-4x'
+  ])
 });
 const TIME_WINDOWS = new Set(['morning', 'afternoon', 'evening']);
 const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,79}$/;
@@ -220,6 +236,10 @@ function validatePayload(body) {
     const named = validateNamedSelection(addon, `selection.addons[${index}]`);
     if (!ADDONS_BY_CATEGORY[category.id].has(named.id)) {
       throw new RequestError(`selection.addons[${index}].id is invalid for this category`);
+    }
+    const allowedPackages = PACKAGES_BY_RESTRICTED_ADDON[named.id];
+    if (allowedPackages && !allowedPackages.has(servicePackage.id)) {
+      throw new RequestError(`selection.addons[${index}].id is invalid for this package`);
     }
     return { ...named, price: optionalText(addon.price, `selection.addons[${index}].price`, 60) };
   });
