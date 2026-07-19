@@ -3,6 +3,10 @@
 const GHL_BASE_URL = 'https://services.leadconnectorhq.com';
 const PIPELINE_NAME = 'Pipeline de Servicios';
 const PIPELINE_STAGE_NAME = 'Pendiente de Información';
+const CONFIRMED_PIPELINE_STAGE_NAME = 'Cita Confirmada';
+const BOOKING_TIMEZONE = 'America/New_York';
+const BOOKING_WINDOW_DAYS = 60;
+const MIN_BOOKING_NOTICE_MS = 24 * 60 * 60 * 1000;
 const MAX_BODY_BYTES = 32 * 1024;
 const GHL_REQUEST_TIMEOUT_MS = 10 * 1000;
 
@@ -18,6 +22,8 @@ const PACKAGES_BY_CATEGORY = Object.freeze({
     'semi-truck-wash', 'semi-truck-2x', 'semi-truck-4x',
     'trailer-wash', 'trailer-2x', 'trailer-4x',
     'car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x',
+    // TODO(remove-graphite): retired packages (now the lubricante-grafito add-on);
+    // kept during the transition window so long-lived open tabs can still submit.
     'car-hauler-graphite-wash', 'car-hauler-graphite-2x', 'car-hauler-graphite-4x',
     'dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x',
     'garbage-truck-wash', 'garbage-truck-2x', 'garbage-truck-4x'
@@ -51,6 +57,7 @@ const SIZES_BY_PACKAGE = Object.freeze({
   'car-hauler-wash': new Set(['standard']),
   'car-hauler-2x': new Set(['standard']),
   'car-hauler-4x': new Set(['standard']),
+  // TODO(remove-graphite): retired packages, transition window only.
   'car-hauler-graphite-wash': new Set(['standard']),
   'car-hauler-graphite-2x': new Set(['standard']),
   'car-hauler-graphite-4x': new Set(['standard']),
@@ -83,7 +90,7 @@ const ADDONS_BY_CATEGORY = Object.freeze({
   heavy_trucks: new Set([
     'limpieza-cabina', 'cera-rapida', 'desengrasado-profundo', 'engrasado-camion',
     'motor-pesado', 'volteo-aluminio', 'rines-aluminio', 'pulido-rines-llantas',
-    'car-hauler-second-deck', 'pulido-tanques'
+    'car-hauler-second-deck', 'lubricante-grafito', 'pulido-tanques'
   ]),
   boats: new Set([
     'boat-motor', 'boat-vinilo-uv', 'boat-cera-marina', 'boat-pulido', 'boat-oxidacion',
@@ -101,18 +108,45 @@ const PACKAGES_BY_RESTRICTED_ADDON = Object.freeze({
   'volteo-aluminio': new Set(['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x']),
   'car-hauler-second-deck': new Set([
     'car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x',
+    // TODO(remove-graphite): retired packages, transition window only.
     'car-hauler-graphite-wash', 'car-hauler-graphite-2x', 'car-hauler-graphite-4x'
-  ])
+  ]),
+  'lubricante-grafito': new Set(['car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x'])
 });
-const TIME_WINDOWS = new Set(['morning', 'afternoon', 'evening']);
+const SLOT_DEFINITIONS = Object.freeze({
+  morning: Object.freeze({ start: '08:00', end: '11:00', label: 'Morning (8am–12pm)' }),
+  afternoon: Object.freeze({ start: '12:00', end: '15:00', label: 'Afternoon (12pm–4pm)' }),
+  evening: Object.freeze({ start: '16:00', end: '19:00', label: 'Evening (4pm–7pm)' })
+});
+const TIME_WINDOWS = new Set([...Object.keys(SLOT_DEFINITIONS), 'full_day']);
+const FULL_DAY_PACKAGES = new Set([
+  ...PACKAGES_BY_CATEGORY.heavy_trucks,
+  ...PACKAGES_BY_CATEGORY.boats,
+  ...PACKAGES_BY_CATEGORY.mobile_home,
+  ...PACKAGES_BY_CATEGORY.driveway,
+  'paint-correction',
+  'ceramic-protection'
+]);
 const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,79}$/;
 const SUBMISSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{7,99}$/;
+
+// Multi-vehicle cart rules (mirrored by the frontend wizard):
+// - Memberships and one-time washes may share a cart freely.
+// - Duplicate lines are allowed (two trailers = two identical items).
+// - Every item shares one visit: same date, time window, and address → one appointment.
+// - Restricted add-ons are validated per item against that item's package.
+// - The visit books the full day when ANY item is a full-day package.
+const CART_RULES = Object.freeze({
+  MAX_ITEMS: 6
+});
 
 const OPPORTUNITY_FIELDS = Object.freeze({
   category: 'Website Quote - Category',
   servicePackage: 'Website Quote - Package',
   size: 'Website Quote - Size or Quantity',
   addons: 'Website Quote - Add-ons',
+  items: 'Website Quote - Items',
+  itemCount: 'Website Quote - Item Count',
   vehicleMake: 'Website Quote - Vehicle Make',
   vehicleModel: 'Website Quote - Vehicle Model',
   vehicleYear: 'Website Quote - Vehicle Year',
@@ -125,7 +159,12 @@ const OPPORTUNITY_FIELDS = Object.freeze({
   notes: 'Website Quote - Customer Notes',
   language: 'Website Quote - Language',
   policyAcceptedAt: 'Website Quote - Policy Accepted At',
-  submissionId: 'Website Quote - Submission ID'
+  submissionId: 'Website Quote - Submission ID',
+  appointmentId: 'Website Quote - Appointment ID',
+  bookingMode: 'Website Quote - Booking Mode',
+  confirmedStart: 'Website Quote - Confirmed Start',
+  confirmedEnd: 'Website Quote - Confirmed End',
+  bookingStatus: 'Website Quote - Booking Status'
 });
 
 let metadataPromise = null;
@@ -144,6 +183,13 @@ class HighLevelError extends Error {
     this.name = 'HighLevelError';
     this.statusCode = statusCode;
     this.upstreamStatus = upstreamStatus;
+  }
+}
+
+class SlotUnavailableError extends RequestError {
+  constructor() {
+    super('The selected appointment is no longer available', 409);
+    this.name = 'SlotUnavailableError';
   }
 }
 
@@ -209,6 +255,78 @@ function validateNamedSelection(value, field) {
   return { id: validateId(value.id, `${field}.id`), name: text(value.name, `${field}.name`, 1, 120) };
 }
 
+function validateEstimate(estimate, field) {
+  const min = Number(estimate.min);
+  const max = Number(estimate.max);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max < min || max > 100000) {
+    throw new RequestError(`${field} is invalid`);
+  }
+  return {
+    min,
+    max,
+    label: text(estimate.label, `${field}.label`, 1, 80),
+    custom: Boolean(estimate.custom),
+    isRange: Boolean(estimate.isRange)
+  };
+}
+
+// One cart line: a service selection plus the vehicle it applies to.
+function validateItem(item, field) {
+  if (!item || typeof item !== 'object') throw new RequestError(`${field} is required`);
+  const vehicle = item.vehicle || {};
+  const estimate = item.estimate || {};
+
+  const category = validateNamedSelection(item.category, `${field}.category`);
+  if (!CATEGORY_IDS.has(category.id)) throw new RequestError(`${field}.category.id is invalid`);
+  const servicePackage = validateNamedSelection(item.package, `${field}.package`);
+  if (!PACKAGES_BY_CATEGORY[category.id].has(servicePackage.id)) throw new RequestError(`${field}.package.id is invalid for this category`);
+  const size = validateNamedSelection(item.size, `${field}.size`);
+  if (!SIZES_BY_PACKAGE[servicePackage.id] || !SIZES_BY_PACKAGE[servicePackage.id].has(size.id)) {
+    throw new RequestError(`${field}.size.id is invalid for this package`);
+  }
+  const addonsInput = Array.isArray(item.addons) ? item.addons : [];
+  if (addonsInput.length > 30) throw new RequestError(`${field}.addons is invalid`);
+  const addons = addonsInput.map((addon, index) => {
+    const named = validateNamedSelection(addon, `${field}.addons[${index}]`);
+    if (!ADDONS_BY_CATEGORY[category.id].has(named.id)) {
+      throw new RequestError(`${field}.addons[${index}].id is invalid for this category`);
+    }
+    const allowedPackages = PACKAGES_BY_RESTRICTED_ADDON[named.id];
+    if (allowedPackages && !allowedPackages.has(servicePackage.id)) {
+      throw new RequestError(`${field}.addons[${index}].id is invalid for this package`);
+    }
+    return { ...named, price: optionalText(addon.price, `${field}.addons[${index}].price`, 60) };
+  });
+
+  const year = Number(vehicle.year);
+  const maxYear = new Date().getFullYear() + 1;
+  if (!Number.isInteger(year) || year < 1900 || year > maxYear) throw new RequestError(`${field}.vehicle.year is invalid`);
+
+  return {
+    category,
+    package: servicePackage,
+    size,
+    addons,
+    vehicle: {
+      make: text(vehicle.make, `${field}.vehicle.make`, 2, 60),
+      model: text(vehicle.model, `${field}.vehicle.model`, 2, 60),
+      year,
+      color: optionalText(vehicle.color, `${field}.vehicle.color`, 40),
+      plate: optionalText(vehicle.plate, `${field}.vehicle.plate`, 16)
+    },
+    estimate: validateEstimate(estimate, `${field}.estimate`)
+  };
+}
+
+function bookingModeForItems(items) {
+  return items.some(item => bookingModeForPackage(item.package.id) === 'full_day') ? 'full_day' : 'slot';
+}
+
+// The item whose package decides the calendar mode for the whole visit.
+function representativeItem(items) {
+  return items.find(item => bookingModeForPackage(item.package.id) === 'full_day') || items[0];
+}
+
 function validatePayload(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new RequestError('Invalid request body');
   const submissionId = text(body.submissionId, 'submissionId', 8, 100);
@@ -217,42 +335,22 @@ function validatePayload(body) {
   if (!['en', 'es'].includes(body.language)) throw new RequestError('language is invalid');
 
   const customer = body.customer || {};
-  const vehicle = body.vehicle || {};
-  const selection = body.selection || {};
-  const estimate = body.estimate || {};
   const schedule = body.schedule || {};
 
-  const category = validateNamedSelection(selection.category, 'selection.category');
-  if (!CATEGORY_IDS.has(category.id)) throw new RequestError('selection.category.id is invalid');
-  const servicePackage = validateNamedSelection(selection.package, 'selection.package');
-  if (!PACKAGES_BY_CATEGORY[category.id].has(servicePackage.id)) throw new RequestError('selection.package.id is invalid for this category');
-  const size = validateNamedSelection(selection.size, 'selection.size');
-  if (!SIZES_BY_PACKAGE[servicePackage.id] || !SIZES_BY_PACKAGE[servicePackage.id].has(size.id)) {
-    throw new RequestError('selection.size.id is invalid for this package');
-  }
-  const addonsInput = Array.isArray(selection.addons) ? selection.addons : [];
-  if (addonsInput.length > 30) throw new RequestError('selection.addons is invalid');
-  const addons = addonsInput.map((addon, index) => {
-    const named = validateNamedSelection(addon, `selection.addons[${index}]`);
-    if (!ADDONS_BY_CATEGORY[category.id].has(named.id)) {
-      throw new RequestError(`selection.addons[${index}].id is invalid for this category`);
+  // v2 payloads carry a cart in items[]; legacy payloads (long-lived open tabs)
+  // carry a single selection/vehicle/estimate trio and normalize to one item.
+  // TODO(remove-legacy-payload): drop the legacy branch when the window closes.
+  let itemsInput;
+  if (Array.isArray(body.items)) {
+    if (body.items.length < 1 || body.items.length > CART_RULES.MAX_ITEMS) {
+      throw new RequestError(`items must contain between 1 and ${CART_RULES.MAX_ITEMS} services`);
     }
-    const allowedPackages = PACKAGES_BY_RESTRICTED_ADDON[named.id];
-    if (allowedPackages && !allowedPackages.has(servicePackage.id)) {
-      throw new RequestError(`selection.addons[${index}].id is invalid for this package`);
-    }
-    return { ...named, price: optionalText(addon.price, `selection.addons[${index}].price`, 60) };
-  });
-
-  const year = Number(vehicle.year);
-  const maxYear = new Date().getFullYear() + 1;
-  if (!Number.isInteger(year) || year < 1900 || year > maxYear) throw new RequestError('vehicle.year is invalid');
-
-  const min = Number(estimate.min);
-  const max = Number(estimate.max);
-  if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max < min || max > 100000) {
-    throw new RequestError('estimate is invalid');
+    itemsInput = body.items;
+  } else {
+    const selection = body.selection || {};
+    itemsInput = [{ ...selection, vehicle: body.vehicle || {}, estimate: body.estimate || {} }];
   }
+  const items = itemsInput.map((item, index) => validateItem(item, `items[${index}]`));
 
   const date = text(schedule.date, 'schedule.date', 10, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
@@ -261,6 +359,13 @@ function validatePayload(body) {
   if (date < new Date().toISOString().slice(0, 10)) throw new RequestError('schedule.date is in the past');
   const timeWindow = text(schedule.timeWindow, 'schedule.timeWindow', 1, 20);
   if (!TIME_WINDOWS.has(timeWindow)) throw new RequestError('schedule.timeWindow is invalid');
+  const bookingMode = bookingModeForItems(items);
+  if (bookingMode === 'full_day' && timeWindow !== 'full_day') {
+    throw new RequestError('schedule.timeWindow must be full_day for this booking');
+  }
+  if (bookingMode === 'slot' && timeWindow === 'full_day') {
+    throw new RequestError('schedule.timeWindow is invalid for this booking');
+  }
 
   const policyAcceptedAt = text(body.policyAcceptedAt, 'policyAcceptedAt', 20, 40);
   if (Number.isNaN(Date.parse(policyAcceptedAt))) throw new RequestError('policyAcceptedAt is invalid');
@@ -281,25 +386,16 @@ function validatePayload(body) {
       city: text(customer.city, 'customer.city', 2, 80),
       zip
     },
-    vehicle: {
-      make: text(vehicle.make, 'vehicle.make', 2, 60),
-      model: text(vehicle.model, 'vehicle.model', 2, 60),
-      year,
-      color: optionalText(vehicle.color, 'vehicle.color', 40),
-      plate: optionalText(vehicle.plate, 'vehicle.plate', 16)
-    },
-    selection: { category, package: servicePackage, size, addons },
-    estimate: {
-      min,
-      max,
-      label: text(estimate.label, 'estimate.label', 1, 80),
-      custom: Boolean(estimate.custom),
-      isRange: Boolean(estimate.isRange)
-    },
+    items,
+    // Aliases for the first item, kept so single-item consumers and tests
+    // keep working while the cart rollout completes.
+    vehicle: items[0].vehicle,
+    selection: { category: items[0].category, package: items[0].package, size: items[0].size, addons: items[0].addons },
+    estimate: validateEstimate(body.estimate || {}, 'estimate'),
     schedule: {
       date,
       timeWindow,
-      timeLabel: text(schedule.timeLabel, 'schedule.timeLabel', 1, 80),
+      timeLabel: bookingLabel(timeWindow, body.language),
       notes: optionalText(schedule.notes, 'schedule.notes', 1000)
     }
   };
@@ -308,12 +404,17 @@ function validatePayload(body) {
 function getConfig() {
   const token = process.env.GHL_PRIVATE_TOKEN;
   const locationId = process.env.GHL_LOCATION_ID;
-  if (!token || !locationId) throw new RequestError('CRM is not configured', 503);
+  const calendarId = process.env.GHL_CALENDAR_ID;
+  const assignedUserId = process.env.GHL_ASSIGNED_USER_ID;
+  if (!token || !locationId || !calendarId || !assignedUserId) throw new RequestError('CRM is not configured', 503);
   return {
     token,
     locationId,
+    calendarId,
+    assignedUserId,
     pipelineId: process.env.GHL_PIPELINE_ID || '',
-    pipelineStageId: process.env.GHL_PIPELINE_STAGE_ID || ''
+    pipelineStageId: process.env.GHL_PIPELINE_STAGE_ID || '',
+    confirmedPipelineStageId: process.env.GHL_CONFIRMED_PIPELINE_STAGE_ID || ''
   };
 }
 
@@ -350,14 +451,18 @@ async function resolveMetadata(config) {
     metadataPromise = (async () => {
       let pipelineId = config.pipelineId;
       let pipelineStageId = config.pipelineStageId;
-      if (!pipelineId || !pipelineStageId) {
+      let confirmedPipelineStageId = config.confirmedPipelineStageId;
+      if (!pipelineId || !pipelineStageId || !confirmedPipelineStageId) {
         const pipelineData = await ghlRequest(config, `/opportunities/pipelines?locationId=${encodeURIComponent(config.locationId)}`);
         const pipelines = pipelineData.pipelines || [];
         const pipeline = pipelines.find(item => String(item.name || '').toLowerCase() === PIPELINE_NAME.toLowerCase());
-        const stage = pipeline && (pipeline.stages || []).find(item => String(item.name || '').toLowerCase() === PIPELINE_STAGE_NAME.toLowerCase());
-        if (!pipeline || !stage) throw new RequestError('Website Quotes pipeline is not configured', 503);
+        const stages = pipeline && (pipeline.stages || []);
+        const stage = stages && stages.find(item => String(item.name || '').toLowerCase() === PIPELINE_STAGE_NAME.toLowerCase());
+        const confirmedStage = stages && stages.find(item => String(item.name || '').toLowerCase() === CONFIRMED_PIPELINE_STAGE_NAME.toLowerCase());
+        if (!pipeline || !stage || !confirmedStage) throw new RequestError('Website booking pipeline is not configured', 503);
         pipelineId = pipeline.id;
         pipelineStageId = stage.id;
+        confirmedPipelineStageId = confirmedStage.id;
       }
 
       const customFieldData = await ghlRequest(
@@ -373,7 +478,7 @@ async function resolveMetadata(config) {
         else missing.push(name);
       });
       if (missing.length) throw new RequestError('Website quote custom fields are not configured', 503);
-      return { pipelineId, pipelineStageId, fieldIds };
+      return { pipelineId, pipelineStageId, confirmedPipelineStageId, fieldIds };
     })().catch(error => {
       metadataPromise = null;
       throw error;
@@ -388,18 +493,189 @@ function splitName(fullName) {
   return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] };
 }
 
-function opportunityValues(payload) {
-  const { customer, vehicle, selection, estimate, schedule } = payload;
+function bookingModeForPackage(packageId) {
+  return FULL_DAY_PACKAGES.has(packageId) ? 'full_day' : 'slot';
+}
+
+function bookingLabel(timeWindow, language = 'en') {
+  const labels = {
+    morning: { en: 'Morning (8am–12pm)', es: 'Mañana (8am–12pm)' },
+    afternoon: { en: 'Afternoon (12pm–4pm)', es: 'Tarde (12pm–4pm)' },
+    evening: { en: 'Evening (4pm–7pm)', es: 'Noche (4pm–7pm)' },
+    full_day: { en: 'Full day (8am–7pm)', es: 'Día completo (8am–7pm)' }
+  };
+  return labels[timeWindow] ? labels[timeWindow][language] : '';
+}
+
+function isValidDateOnly(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function addDays(date, days) {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function datesBetween(from, to) {
+  const values = [];
+  for (let date = from; date <= to; date = addDays(date, 1)) values.push(date);
+  return values;
+}
+
+function zonedParts(timestamp, timezone = BOOKING_TIMEZONE) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(new Date(timestamp));
+  return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
+}
+
+function zonedDateTimeToIso(date, time, timezone = BOOKING_TIMEZONE) {
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute] = time.split(':').map(Number);
+  const desired = Date.UTC(year, month - 1, day, hour, minute, 0);
+  let guess = desired;
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    const parts = zonedParts(guess, timezone);
+    const represented = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second || 0);
+    guess += desired - represented;
+  }
+  return new Date(guess).toISOString();
+}
+
+function requestedPeriod(date, timeWindow) {
+  if (timeWindow === 'full_day') {
+    return {
+      startTime: zonedDateTimeToIso(date, '08:00'),
+      endTime: zonedDateTimeToIso(date, '19:00')
+    };
+  }
+  const definition = SLOT_DEFINITIONS[timeWindow];
+  if (!definition) throw new RequestError('schedule.timeWindow is invalid');
   return {
-    category: selection.category.name,
-    servicePackage: selection.package.name,
-    size: selection.size.name,
-    addons: selection.addons.length ? selection.addons.map(item => `${item.name}${item.price ? ` (${item.price})` : ''}`).join(', ') : 'None',
-    vehicleMake: vehicle.make,
-    vehicleModel: vehicle.model,
-    vehicleYear: String(vehicle.year),
-    vehicleColor: vehicle.color,
-    vehiclePlate: vehicle.plate,
+    startTime: zonedDateTimeToIso(date, definition.start),
+    endTime: zonedDateTimeToIso(date, definition.end)
+  };
+}
+
+function validateAvailabilityRequest(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new RequestError('Invalid request body');
+  const packageId = validateId(body.packageId, 'packageId');
+  if (!SIZES_BY_PACKAGE[packageId]) throw new RequestError('packageId is invalid');
+  const from = text(body.from, 'from', 10, 10);
+  const to = text(body.to, 'to', 10, 10);
+  if (!isValidDateOnly(from) || !isValidDateOnly(to) || to < from) throw new RequestError('date range is invalid');
+  if (datesBetween(from, to).length > BOOKING_WINDOW_DAYS) throw new RequestError('date range is too large');
+  return { packageId, from, to };
+}
+
+function slotsForDate(response, date) {
+  const day = response && (response[date] || (response.slots && response.slots[date]) || (response.availability && response.availability[date]));
+  if (Array.isArray(day)) return day;
+  if (day && Array.isArray(day.slots)) return day.slots;
+  return [];
+}
+
+function slotStart(slot) {
+  if (typeof slot === 'string') return slot;
+  if (!slot || typeof slot !== 'object') return '';
+  return slot.startTime || slot.start || slot.slot || '';
+}
+
+function slotKeyFromStart(value) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return '';
+  const parts = zonedParts(timestamp);
+  const time = `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+  return Object.keys(SLOT_DEFINITIONS).find(key => SLOT_DEFINITIONS[key].start === time) || '';
+}
+
+async function availabilityForPackage(config, packageId, from, to, now = Date.now()) {
+  const startDate = Date.parse(zonedDateTimeToIso(from, '00:00'));
+  const endDate = Date.parse(zonedDateTimeToIso(addDays(to, 1), '00:00')) - 1;
+  const query = new URLSearchParams({
+    startDate: String(startDate),
+    endDate: String(endDate),
+    timezone: BOOKING_TIMEZONE,
+    userId: config.assignedUserId
+  });
+  const freeSlotData = await ghlRequest(config, `/calendars/${encodeURIComponent(config.calendarId)}/free-slots?${query}`);
+  const bookingMode = bookingModeForPackage(packageId);
+  const dates = [];
+
+  for (const date of datesBetween(from, to)) {
+    if (new Date(`${date}T00:00:00Z`).getUTCDay() === 0) continue;
+    const available = new Set(
+      slotsForDate(freeSlotData, date)
+        .map(slotStart)
+        .filter(value => Date.parse(value) >= now + MIN_BOOKING_NOTICE_MS)
+        .map(slotKeyFromStart)
+        .filter(Boolean)
+    );
+    if (bookingMode === 'full_day') {
+      if (Object.keys(SLOT_DEFINITIONS).every(key => available.has(key))) dates.push({ date, slots: ['full_day'] });
+    } else {
+      const slots = Object.keys(SLOT_DEFINITIONS).filter(key => available.has(key));
+      if (slots.length) dates.push({ date, slots });
+    }
+  }
+
+  return { timezone: BOOKING_TIMEZONE, bookingMode, dates };
+}
+
+// GHL custom fields are single-value TEXT; keep serialized cart values bounded.
+function truncateField(value, max = 450) {
+  const str = String(value);
+  return str.length > max ? `${str.slice(0, max - 1)}…` : str;
+}
+
+function uniqueJoin(values) {
+  return [...new Set(values.filter(Boolean))].join('; ');
+}
+
+function addonsText(item) {
+  return item.addons.length ? item.addons.map(addon => `${addon.name}${addon.price ? ` (${addon.price})` : ''}`).join(', ') : 'None';
+}
+
+// "2× Trailer Wash; 1× Car Hauler Basic Wash"
+function packagesSummary(items) {
+  const counts = new Map();
+  items.forEach(item => counts.set(item.package.name, (counts.get(item.package.name) || 0) + 1));
+  return [...counts.entries()].map(([name, count]) => (count > 1 ? `${count}× ${name}` : name)).join('; ');
+}
+
+function vehicleText(vehicle) {
+  return `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.color ? ` ${vehicle.color}` : ''}${vehicle.plate ? ` (${vehicle.plate})` : ''}`;
+}
+
+// Numbered one-line-per-item breakdown for the Items custom field and notes.
+function itemsBreakdown(items) {
+  return items.map((item, index) =>
+    `${index + 1}) ${item.package.name} — ${item.size.name} — ${item.estimate.label} — ${vehicleText(item.vehicle)} — Add-ons: ${addonsText(item)}`
+  ).join('\n');
+}
+
+function opportunityValues(payload, appointment = null) {
+  const { customer, items, estimate, schedule } = payload;
+  const single = items.length === 1;
+  const values = {
+    category: uniqueJoin(items.map(item => item.category.name)),
+    servicePackage: packagesSummary(items),
+    size: single ? items[0].size.name : items.map(item => item.size.name).join('; '),
+    addons: single ? addonsText(items[0]) : items.map((item, index) => `${index + 1}) ${addonsText(item)}`).join('; '),
+    items: itemsBreakdown(items),
+    itemCount: String(items.length),
+    vehicleMake: uniqueJoin(items.map(item => item.vehicle.make)),
+    vehicleModel: uniqueJoin(items.map(item => item.vehicle.model)),
+    vehicleYear: uniqueJoin(items.map(item => String(item.vehicle.year))),
+    vehicleColor: uniqueJoin(items.map(item => item.vehicle.color)),
+    vehiclePlate: uniqueJoin(items.map(item => item.vehicle.plate)),
     serviceAddress: [customer.address, customer.unit, customer.city, customer.zip].filter(Boolean).join(', '),
     preferredDate: schedule.date,
     preferredTime: schedule.timeLabel,
@@ -407,8 +683,14 @@ function opportunityValues(payload) {
     notes: schedule.notes,
     language: payload.language,
     policyAcceptedAt: payload.policyAcceptedAt,
-    submissionId: payload.submissionId
+    submissionId: payload.submissionId,
+    appointmentId: appointment ? appointment.id : '',
+    bookingMode: bookingModeForItems(items),
+    confirmedStart: appointment ? appointment.startTime : '',
+    confirmedEnd: appointment ? appointment.endTime : '',
+    bookingStatus: appointment ? 'confirmed' : 'pending'
   };
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, truncateField(value)]));
 }
 
 function opportunityCustomFieldValue(field) {
@@ -438,7 +720,18 @@ async function findOpportunityBySubmission(config, metadata, contactId, submissi
   );
 }
 
-async function createQuoteInHighLevel(config, metadata, payload) {
+function customFieldsForValues(metadata, values) {
+  return Object.entries(values)
+    .filter(([, value]) => value !== '')
+    .map(([key, value]) => ({ id: metadata.fieldIds[key], fieldValue: String(value) }));
+}
+
+function opportunityFieldValue(opportunity, fieldId) {
+  const field = (opportunity.customFields || []).find(item => item.id === fieldId);
+  return String(opportunityCustomFieldValue(field) || '');
+}
+
+async function upsertContact(config, payload) {
   const names = splitName(payload.customer.name);
   const contactBody = {
     locationId: config.locationId,
@@ -450,7 +743,8 @@ async function createQuoteInHighLevel(config, metadata, payload) {
     city: payload.customer.city,
     postalCode: payload.customer.zip,
     country: 'US',
-    source: 'L&B Website Quote',
+    source: 'L&B Website Booking',
+    assignedTo: config.assignedUserId,
     createNewIfDuplicateAllowed: false
   };
   if (payload.customer.email) contactBody.email = payload.customer.email;
@@ -462,17 +756,15 @@ async function createQuoteInHighLevel(config, metadata, payload) {
   });
   const contact = contactResult.contact || contactResult;
   if (!contact || !contact.id) throw new HighLevelError(502);
+  return contact;
+}
 
-  const existingOpportunity = await findOpportunityBySubmission(
-    config, metadata, contact.id, payload.submissionId
-  );
-  if (existingOpportunity) return { opportunityId: existingOpportunity.id, duplicate: true };
-
+async function createPendingOpportunity(config, metadata, contact, payload) {
   const values = opportunityValues(payload);
-  const customFields = Object.entries(values)
-    .filter(([, value]) => value !== '')
-    .map(([key, value]) => ({ id: metadata.fieldIds[key], fieldValue: String(value) }));
-  const vehicleLabel = `${payload.vehicle.year} ${payload.vehicle.make} ${payload.vehicle.model}`;
+  const customFields = customFieldsForValues(metadata, values);
+  const vehicleLabel = payload.items.length === 1
+    ? `${payload.vehicle.year} ${payload.vehicle.make} ${payload.vehicle.model}`
+    : `${payload.items.length} services`;
 
   let opportunityResult;
   try {
@@ -484,8 +776,9 @@ async function createQuoteInHighLevel(config, metadata, payload) {
         pipelineStageId: metadata.pipelineStageId,
         locationId: config.locationId,
         contactId: contact.id,
-        name: `Web Quote - ${payload.customer.name} - ${vehicleLabel}`.slice(0, 160),
+        name: `Web Booking - ${payload.customer.name} - ${vehicleLabel}`.slice(0, 160),
         status: 'open',
+        assignedTo: config.assignedUserId,
         monetaryValue: Math.round(payload.estimate.min),
         customFields
       }
@@ -500,13 +793,169 @@ async function createQuoteInHighLevel(config, metadata, payload) {
         const indexedOpportunity = await findOpportunityBySubmission(
           config, metadata, contact.id, payload.submissionId
         );
-        if (indexedOpportunity) return { opportunityId: indexedOpportunity.id, duplicate: true };
+        if (indexedOpportunity) return indexedOpportunity;
       }
     }
     throw error;
   }
   const opportunity = opportunityResult.opportunity || opportunityResult;
-  return { opportunityId: opportunity && opportunity.id, duplicate: false };
+  if (!opportunity || !opportunity.id) throw new HighLevelError(502);
+  return opportunity;
+}
+
+function appointmentDescription(payload) {
+  const lines = [`[Submission ID: ${payload.submissionId}]`];
+  if (payload.items.length === 1) {
+    const item = payload.items[0];
+    lines.push(
+      `Service: ${item.package.name}`,
+      `Category: ${item.category.name}`,
+      `Size / quantity: ${item.size.name}`,
+      `Add-ons: ${addonsText(item)}`,
+      `Estimate: ${payload.estimate.label}`,
+      `Vehicle: ${item.vehicle.year} ${item.vehicle.make} ${item.vehicle.model} ${item.vehicle.color}`.trim(),
+      `Plate: ${item.vehicle.plate || 'Not provided'}`
+    );
+  } else {
+    lines.push(`Services (${payload.items.length}):`, itemsBreakdown(payload.items), `Total estimate: ${payload.estimate.label}`);
+  }
+  lines.push(
+    `Address: ${[payload.customer.address, payload.customer.unit, payload.customer.city, payload.customer.zip].filter(Boolean).join(', ')}`,
+    `Customer notes: ${payload.schedule.notes || 'None'}`,
+    `Language: ${payload.language}`
+  );
+  return lines.join('\n');
+}
+
+async function findAppointmentBySubmission(config, payload, contactId) {
+  const startTime = Date.parse(zonedDateTimeToIso(payload.schedule.date, '00:00'));
+  const endTime = Date.parse(zonedDateTimeToIso(addDays(payload.schedule.date, 1), '00:00')) - 1;
+  const query = new URLSearchParams({
+    locationId: config.locationId,
+    calendarId: config.calendarId,
+    startTime: String(startTime),
+    endTime: String(endTime)
+  });
+  const data = await ghlRequest(config, `/calendars/events?${query}`, { version: '2021-07-28' });
+  const marker = `[Submission ID: ${payload.submissionId}]`;
+  return (data.events || []).find(event =>
+    event.contactId === contactId && !event.deleted && String(event.description || '').includes(marker)
+  );
+}
+
+async function ensureRequestedAvailability(config, payload) {
+  const availability = await availabilityForPackage(
+    config,
+    representativeItem(payload.items).package.id,
+    payload.schedule.date,
+    payload.schedule.date
+  );
+  const day = availability.dates.find(item => item.date === payload.schedule.date);
+  if (!day || !day.slots.includes(payload.schedule.timeWindow)) throw new SlotUnavailableError();
+}
+
+async function createAppointment(config, payload, contact) {
+  const period = requestedPeriod(payload.schedule.date, payload.schedule.timeWindow);
+  let result;
+  try {
+    result = await ghlRequest(config, '/calendars/events/appointments', {
+      method: 'POST',
+      version: '2021-07-28',
+      body: {
+        calendarId: config.calendarId,
+        locationId: config.locationId,
+        contactId: contact.id,
+        assignedUserId: config.assignedUserId,
+        title: `${payload.items[0].package.name}${payload.items.length > 1 ? ` +${payload.items.length - 1} more` : ''} — ${payload.customer.name}`.slice(0, 160),
+        appointmentStatus: 'confirmed',
+        description: appointmentDescription(payload),
+        address: [payload.customer.address, payload.customer.unit, payload.customer.city, payload.customer.zip].filter(Boolean).join(', '),
+        meetingLocationType: 'address',
+        overrideLocationConfig: true,
+        startTime: period.startTime,
+        endTime: period.endTime,
+        ignoreDateRange: false,
+        ignoreFreeSlotValidation: false,
+        toNotify: true
+      }
+    });
+  } catch (error) {
+    if (error instanceof HighLevelError && [400, 409, 422].includes(error.upstreamStatus)) throw new SlotUnavailableError();
+    throw error;
+  }
+  const appointment = result.appointment || result;
+  if (!appointment || !appointment.id) throw new HighLevelError(502);
+  return { ...appointment, startTime: appointment.startTime || period.startTime, endTime: appointment.endTime || period.endTime };
+}
+
+async function finalizeOpportunity(config, metadata, opportunity, payload, appointment) {
+  const customFields = customFieldsForValues(metadata, opportunityValues(payload, appointment));
+  let result;
+  for (const delayMs of [0, 250, 750]) {
+    if (delayMs) await wait(delayMs);
+    try {
+      result = await ghlRequest(config, `/opportunities/${encodeURIComponent(opportunity.id)}`, {
+        method: 'PUT',
+        version: 'v3',
+        body: {
+          pipelineStageId: metadata.confirmedPipelineStageId,
+          assignedTo: config.assignedUserId,
+          monetaryValue: Math.round(payload.estimate.min),
+          customFields
+        }
+      });
+      break;
+    } catch (error) {
+      if (delayMs === 750) throw error;
+    }
+  }
+  return (result && (result.opportunity || result)) || opportunity;
+}
+
+async function finalizeOpportunitySafely(config, metadata, opportunity, payload, appointment) {
+  try {
+    const updated = await finalizeOpportunity(config, metadata, opportunity, payload, appointment);
+    return { opportunity: updated, syncPending: false };
+  } catch (error) {
+    console.error('[booking-sync]', payload.submissionId, error.name || 'Error', error.statusCode || 502);
+    return { opportunity, syncPending: true };
+  }
+}
+
+async function createBookingInHighLevel(config, metadata, payload) {
+  const contact = await upsertContact(config, payload);
+  let opportunity = await findOpportunityBySubmission(config, metadata, contact.id, payload.submissionId);
+
+  if (opportunity) {
+    const appointmentId = opportunityFieldValue(opportunity, metadata.fieldIds.appointmentId);
+    if (appointmentId) {
+      return { contactId: contact.id, opportunityId: opportunity.id, appointmentId, duplicate: true };
+    }
+    const existingAppointment = await findAppointmentBySubmission(config, payload, contact.id);
+    if (existingAppointment) {
+      const finalized = await finalizeOpportunitySafely(config, metadata, opportunity, payload, existingAppointment);
+      return {
+        contactId: contact.id,
+        opportunityId: finalized.opportunity.id,
+        appointmentId: existingAppointment.id,
+        duplicate: true,
+        syncPending: finalized.syncPending
+      };
+    }
+  } else {
+    opportunity = await createPendingOpportunity(config, metadata, contact, payload);
+  }
+
+  await ensureRequestedAvailability(config, payload);
+  const appointment = await createAppointment(config, payload, contact);
+  const finalized = await finalizeOpportunitySafely(config, metadata, opportunity, payload, appointment);
+  return {
+    contactId: contact.id,
+    opportunityId: finalized.opportunity.id,
+    appointmentId: appointment.id,
+    duplicate: false,
+    syncPending: finalized.syncPending
+  };
 }
 
 async function handler(req, res) {
@@ -527,8 +976,21 @@ async function handler(req, res) {
 
     const config = getConfig();
     const metadata = await resolveMetadata(config);
-    await createQuoteInHighLevel(config, metadata, payload);
-    return sendJson(res, 200, { ok: true, submissionId: payload.submissionId });
+    const booking = await createBookingInHighLevel(config, metadata, payload);
+    return sendJson(res, 200, {
+      ok: true,
+      submissionId: payload.submissionId,
+      appointmentId: booking.appointmentId,
+      opportunityId: booking.opportunityId,
+      appointmentStatus: 'confirmed',
+      duplicate: booking.duplicate,
+      syncPending: Boolean(booking.syncPending),
+      schedule: {
+        date: payload.schedule.date,
+        timeWindow: payload.schedule.timeWindow,
+        timeLabel: payload.schedule.timeLabel
+      }
+    });
   } catch (error) {
     const statusCode = error instanceof RequestError || error instanceof HighLevelError ? error.statusCode : 502;
     const publicMessage = error instanceof RequestError ? error.message : 'CRM temporarily unavailable';
@@ -542,11 +1004,30 @@ async function handler(req, res) {
 module.exports = handler;
 module.exports._test = {
   OPPORTUNITY_FIELDS,
+  SLOT_DEFINITIONS,
+  FULL_DAY_PACKAGES,
   RequestError,
+  HighLevelError,
+  SlotUnavailableError,
   normalizePhone,
   splitName,
   validatePayload,
+  validateAvailabilityRequest,
+  bookingModeForPackage,
+  bookingModeForItems,
+  representativeItem,
+  CART_RULES,
+  bookingLabel,
+  zonedDateTimeToIso,
+  requestedPeriod,
+  slotsForDate,
+  availabilityForPackage,
   opportunityValues,
   opportunityCustomFieldValue,
+  getConfig,
+  ghlRequest,
+  assertSameOrigin,
+  readBody,
+  sendJson,
   resetMetadataCache: () => { metadataPromise = null; }
 };

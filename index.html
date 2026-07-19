@@ -132,7 +132,7 @@
             <h3 data-i18n="path.a.title">Vehicle Detailing</h3>
             <p data-i18n="path.a.desc">Maintenance washes, deep interior care, and paint-safe detailing for daily drivers, SUVs, trucks, and vans.</p>
             <div class="route-tags" aria-label="Vehicle detailing services">
-              <button type="button" class="route-chip build-service-btn" data-cat="cars" data-i18n="chip.cars">Cars &amp; SUVs</button>
+              <span class="route-tag" data-i18n="chip.cars">Cars &amp; SUVs</span>
             </div>
             <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="vehicles" data-i18n="path.a.cta">Start Vehicle Quote</a>
           </div>
@@ -148,7 +148,7 @@
             <h3 data-i18n="path.b.title">Paint Protection</h3>
             <p data-i18n="path.b.desc">Gloss enhancement, paint correction, sealants, ceramic protection, and surface prep for a deeper finish.</p>
             <div class="route-tags" aria-label="Paint protection services">
-              <button type="button" class="route-chip build-service-btn" data-cat="paint_correction" data-i18n="chip.correction">Correction</button>
+              <span class="route-tag" data-i18n="chip.correction">Correction</span>
             </div>
             <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="paint_protection" data-i18n="path.b.cta">Start Paint Quote</a>
           </div>
@@ -164,8 +164,8 @@
             <h3 data-i18n="path.c.title">Marine</h3>
             <p data-i18n="path.c.desc">Boat and jet ski washing, salt removal, marine-safe surface care, and cleanups after Southwest Florida water days.</p>
             <div class="route-tags" aria-label="Marine services">
-              <button type="button" class="route-chip build-service-btn" data-cat="boats" data-i18n="chip.boats">Boats</button>
-              <button type="button" class="route-chip build-service-btn" data-cat="jetski" data-i18n="chip.jetski">Jet Ski</button>
+              <span class="route-tag" data-i18n="chip.boats">Boats</span>
+              <span class="route-tag" data-i18n="chip.jetski">Jet Ski</span>
             </div>
             <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="marine" data-i18n="path.c.cta">Start Marine Quote</a>
           </div>
@@ -181,8 +181,8 @@
             <h3 data-i18n="path.d.title">Recreation</h3>
             <p data-i18n="path.d.desc">Golf cart and ATV cleaning for communities, weekend toys, trails, mud, dust, and outdoor storage buildup.</p>
             <div class="route-tags" aria-label="Recreation services">
-              <button type="button" class="route-chip build-service-btn" data-cat="golf_cart" data-i18n="chip.golf">Golf Cart</button>
-              <button type="button" class="route-chip build-service-btn" data-cat="atv" data-i18n="chip.atv">ATV</button>
+              <span class="route-tag" data-i18n="chip.golf">Golf Cart</span>
+              <span class="route-tag" data-i18n="chip.atv">ATV</span>
             </div>
             <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="recreation" data-i18n="path.d.cta">Start Recreation Quote</a>
           </div>
@@ -198,9 +198,9 @@
             <h3 data-i18n="path.e.title">Fleet &amp; Property</h3>
             <p data-i18n="path.e.desc">Commercial trucks, recurring fleet care, mobile home soft washing, driveways, patios, and pressure washing.</p>
             <div class="route-tags" aria-label="Fleet and property services">
-              <button type="button" class="route-chip build-service-btn" data-cat="heavy_trucks" data-i18n="chip.heavy">Heavy Trucks</button>
-              <button type="button" class="route-chip build-service-btn" data-cat="mobile_home" data-i18n="chip.mobilehome">Mobile Homes</button>
-              <button type="button" class="route-chip build-service-btn" data-cat="driveway" data-i18n="chip.driveway">Driveways</button>
+              <span class="route-tag" data-i18n="chip.heavy">Heavy Trucks</span>
+              <span class="route-tag" data-i18n="chip.mobilehome">Mobile Homes</span>
+              <span class="route-tag" data-i18n="chip.driveway">Driveways</span>
             </div>
             <a href="#quoter" class="btn btn-secondary build-route-btn" data-route="fleet_property" data-i18n="path.e.cta">Start Fleet Quote</a>
           </div>
@@ -215,11 +215,11 @@
       <div class="quoter-header reveal">
         <span class="section-label" data-i18n="quoter.label">Build Your Service</span>
         <h2 class="section-title"><span data-i18n="quoter.titleA">Build Your </span><span data-i18n="quoter.titleB">Quote</span></h2>
-        <p class="section-subtitle" data-i18n="quoter.subtitle">Choose a path, select the exact service, and send the finished request directly to WhatsApp.</p>
+        <p class="section-subtitle" data-i18n="quoter.subtitle">Choose a path, build your service, and reserve a live opening on our calendar.</p>
         <div class="quote-proof" aria-label="Quote builder steps">
           <span data-i18n="quoter.proof1">1. Pick a path</span>
           <span data-i18n="quoter.proof2">2. See your estimate</span>
-          <span data-i18n="quoter.proof3">3. Confirm availability</span>
+          <span data-i18n="quoter.proof3">3. Confirm your appointment</span>
         </div>
       </div>
 
@@ -243,6 +243,15 @@
           <span class="qbar-context" data-i18n="qbar.build">Build your service to see a live estimate</span>
         </div>
         <span class="qbar-price" data-val="">—</span>
+      </div>
+
+      <!-- Cart: services already added to this visit -->
+      <div class="cart-panel" id="cartPanel" hidden>
+        <div class="cart-head">
+          <span class="cart-title"><span data-i18n="cart.title">Services in this visit</span> <span class="cart-badge" id="cartBadge">0</span></span>
+          <span class="cart-hint" data-i18n="cart.hint">One visit — same address, date and time for every vehicle.</span>
+        </div>
+        <div class="cart-lines" id="cartLines"><!-- Rendered by JS --></div>
       </div>
 
       <!-- WIZARD -->
@@ -304,6 +313,15 @@
             </div>
             <p class="quoter-note" data-i18n="ws.extrasNote">Extras are optional — skip if you don't need any.</p>
           </div>
+
+          <!-- Multi-vehicle: commit this service and start another line -->
+          <div class="add-line-row">
+            <button type="button" class="btn-add-line" id="btnAddLine">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
+              <span data-i18n="btn.addAnother">Add another vehicle</span>
+            </button>
+            <span class="quoter-note" id="addLineHint" hidden data-i18n="cart.max">You've reached the limit of services per booking.</span>
+          </div>
         </div>
 
         <!-- STEP 4: Schedule & Details -->
@@ -329,25 +347,8 @@
             </div>
 
             <h4 class="form-section-title" data-i18n="form.vehicleDetails">Vehicle details</h4>
-            <div class="field">
-              <label for="vehicleMake"><span data-i18n="form.vehicleMake">Make</span> <span class="req">*</span></label>
-              <input type="text" id="vehicleMake" autocomplete="off" maxlength="60" placeholder="e.g. Toyota" data-i18n-ph="form.vehicleMakePh" />
-            </div>
-            <div class="field">
-              <label for="vehicleModel"><span data-i18n="form.vehicleModel">Model</span> <span class="req">*</span></label>
-              <input type="text" id="vehicleModel" autocomplete="off" maxlength="60" placeholder="e.g. Camry" data-i18n-ph="form.vehicleModelPh" />
-            </div>
-            <div class="field">
-              <label for="vehicleYear"><span data-i18n="form.vehicleYear">Year</span> <span class="req">*</span></label>
-              <input type="number" id="vehicleYear" inputmode="numeric" min="1900" max="2030" placeholder="e.g. 2024" data-i18n-ph="form.vehicleYearPh" />
-            </div>
-            <div class="field">
-              <label for="vehicleColor"><span data-i18n="form.vehicleColor">Color</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
-              <input type="text" id="vehicleColor" autocomplete="off" maxlength="40" placeholder="e.g. Electric blue" data-i18n-ph="form.vehicleColorPh" />
-            </div>
-            <div class="field field-full">
-              <label for="vehiclePlate"><span data-i18n="form.vehiclePlate">License plate</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
-              <input type="text" id="vehiclePlate" autocomplete="off" maxlength="16" placeholder="e.g. ABC 123" data-i18n-ph="form.vehiclePlatePh" />
+            <div class="vehicle-fields field-full" id="vehicleFields">
+              <!-- One fieldset per cart line, rendered by JS -->
             </div>
 
             <h4 class="form-section-title" data-i18n="form.serviceDetails">Service location and time</h4>
@@ -369,17 +370,21 @@
               <span class="coverage-msg" id="coverageMsg" aria-live="polite"></span>
             </div>
             <div class="field">
-              <label for="schedDate"><span data-i18n="form.date">Preferred date</span> <span class="req">*</span></label>
-              <input type="date" id="schedDate" />
+              <label for="schedDate"><span data-i18n="form.date">Available date</span> <span class="req">*</span></label>
+              <select id="schedDate" disabled>
+                <option value="" data-i18n="availability.loading">Loading availability…</option>
+              </select>
               <span class="field-hint" data-i18n="form.dateHint">Please book at least 24 hours ahead.</span>
+              <span class="availability-msg" id="availabilityMessage" role="status" aria-live="polite"></span>
             </div>
-            <div class="field field-full">
-              <label><span data-i18n="form.time">Preferred time</span> <span class="req">*</span></label>
-              <div class="time-row" role="group" aria-label="Preferred time window">
+            <div class="field field-full" id="timeWindowField">
+              <label><span data-i18n="form.time">Available time</span> <span class="req">*</span></label>
+              <div class="time-row" role="group" aria-label="Available time window">
                 <button type="button" class="time-chip" data-window="morning" data-i18n="time.morning">Morning</button>
                 <button type="button" class="time-chip" data-window="afternoon" data-i18n="time.afternoon">Afternoon</button>
                 <button type="button" class="time-chip" data-window="evening" data-i18n="time.evening">Evening</button>
               </div>
+              <span class="field-hint full-day-hint" id="fullDayHint" hidden data-i18n="availability.fullDay">This service reserves the complete day, from 8am to 7pm.</span>
             </div>
             <div class="field field-full">
               <label for="schedNotes"><span data-i18n="form.notes">Notes</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
@@ -409,7 +414,7 @@
             </label>
           </div>
           <div class="submission-status" id="submissionStatus" role="status" aria-live="polite"></div>
-          <button type="button" class="btn btn-ghost continue-whatsapp" id="continueWhatsApp" hidden data-i18n="btn.continueWhatsApp">Continue to WhatsApp anyway</button>
+          <button type="button" class="btn btn-ghost continue-whatsapp" id="continueWhatsApp" hidden data-i18n="btn.continueWhatsApp">Contact us on WhatsApp</button>
         </div>
       </div>
 

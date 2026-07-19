@@ -8,8 +8,12 @@ const { OPPORTUNITY_FIELDS } = require('../api/quote.js')._test;
 const BASE_URL = 'https://services.leadconnectorhq.com';
 const PIPELINE_NAME = 'Pipeline de Servicios';
 const STAGE_NAME = 'Pendiente de Información';
+const CONFIRMED_STAGE_NAME = 'Cita Confirmada';
+const CALENDAR_NAME = 'Website Bookings — Mobile Team';
 const token = process.env.GHL_PRIVATE_TOKEN;
 const locationId = process.env.GHL_LOCATION_ID;
+const configuredCalendarId = process.env.GHL_CALENDAR_ID || '';
+const assignedUserId = process.env.GHL_ASSIGNED_USER_ID || '';
 
 if (!token || !locationId) {
   console.error('Set GHL_PRIVATE_TOKEN and GHL_LOCATION_ID before running this setup.');
@@ -41,8 +45,77 @@ async function ensurePipeline() {
   const pipeline = pipelines.find(item => String(item.name || '').toLowerCase() === PIPELINE_NAME.toLowerCase());
   if (!pipeline) throw new Error(`Required pipeline "${PIPELINE_NAME}" does not exist.`);
   const stage = (pipeline.stages || []).find(item => String(item.name || '').toLowerCase() === STAGE_NAME.toLowerCase());
+  const confirmedStage = (pipeline.stages || []).find(item => String(item.name || '').toLowerCase() === CONFIRMED_STAGE_NAME.toLowerCase());
   if (!stage) throw new Error(`Required stage "${STAGE_NAME}" does not exist in "${PIPELINE_NAME}".`);
-  return { pipelineId: pipeline.id, pipelineStageId: stage.id };
+  if (!confirmedStage) throw new Error(`Create the stage "${CONFIRMED_STAGE_NAME}" in "${PIPELINE_NAME}" and run setup again.`);
+  return { pipelineId: pipeline.id, pipelineStageId: stage.id, confirmedPipelineStageId: confirmedStage.id };
+}
+
+async function ensureCalendar() {
+  const data = await request(`/calendars/?locationId=${encodeURIComponent(locationId)}&showDrafted=true`);
+  let calendar = (data.calendars || []).find(item =>
+    (configuredCalendarId && item.id === configuredCalendarId) ||
+    String(item.name || '').toLowerCase() === CALENDAR_NAME.toLowerCase()
+  );
+
+  if (!calendar) {
+    if (!assignedUserId) {
+      throw new Error(`Set GHL_ASSIGNED_USER_ID so setup can create "${CALENDAR_NAME}".`);
+    }
+    console.log(`Creating calendar "${CALENDAR_NAME}"…`);
+    const created = await request('/calendars/', {
+      method: 'POST',
+      body: {
+        locationId,
+        name: CALENDAR_NAME,
+        description: 'Confirmed bookings created by the L&B Elite Wash website.',
+        slug: 'website-bookings-mobile-team',
+        calendarType: 'round_robin',
+        eventType: 'RoundRobin_OptimizeForAvailability',
+        teamMembers: [{ userId: assignedUserId, priority: 1, isPrimary: true }],
+        eventTitle: '{{contact.name}} — Mobile Service',
+        slotDuration: 3,
+        slotDurationUnit: 'hours',
+        slotInterval: 4,
+        slotIntervalUnit: 'hours',
+        slotBuffer: 1,
+        slotBufferUnit: 'hours',
+        appoinmentPerSlot: 1,
+        appoinmentPerDay: 3,
+        allowBookingAfter: 24,
+        allowBookingAfterUnit: 'hours',
+        allowBookingFor: 60,
+        allowBookingForUnit: 'days',
+        autoConfirm: true,
+        allowReschedule: true,
+        allowCancellation: true,
+        shouldAssignContactToTeamMember: true,
+        shouldSkipAssigningContactForExisting: false,
+        shouldSendAlertEmailsToAssignedMember: true
+      }
+    });
+    calendar = created.calendar || created;
+    if (!calendar.id) throw new Error('HighLevel did not return an ID for the new calendar.');
+
+    const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    await request(`/calendars/schedules/event-calendar/${encodeURIComponent(calendar.id)}`, {
+      method: 'POST',
+      version: '2021-07-28',
+      body: {
+        timezone: 'America/New_York',
+        rules: weekdays.map(day => ({ type: 'wday', day, intervals: [{ from: '08:00', to: '20:00' }] }))
+      }
+    });
+  }
+
+  const members = calendar.teamMembers || [];
+  const resolvedUserId = assignedUserId || (members.find(member => member.isPrimary) || members[0] || {}).userId;
+  if (!resolvedUserId) throw new Error(`Calendar "${CALENDAR_NAME}" must have one assigned team member.`);
+  if (assignedUserId && members.length && !members.some(member => member.userId === assignedUserId)) {
+    throw new Error(`GHL_ASSIGNED_USER_ID is not assigned to calendar "${CALENDAR_NAME}".`);
+  }
+  if (calendar.isActive === false) throw new Error(`Calendar "${CALENDAR_NAME}" is not active.`);
+  return { calendarId: calendar.id, assignedUserId: resolvedUserId };
 }
 
 async function ensureCustomFields() {
@@ -74,10 +147,14 @@ try {
   console.log('Auditing the HighLevel sub-account…');
   const pipeline = await ensurePipeline();
   const fieldIds = await ensureCustomFields();
+  const calendar = await ensureCalendar();
   console.log('\nHighLevel setup complete. Add these server-only variables to Vercel:');
   console.log(`GHL_LOCATION_ID=${locationId}`);
   console.log(`GHL_PIPELINE_ID=${pipeline.pipelineId}`);
   console.log(`GHL_PIPELINE_STAGE_ID=${pipeline.pipelineStageId}`);
+  console.log(`GHL_CONFIRMED_PIPELINE_STAGE_ID=${pipeline.confirmedPipelineStageId}`);
+  console.log(`GHL_CALENDAR_ID=${calendar.calendarId}`);
+  console.log(`GHL_ASSIGNED_USER_ID=${calendar.assignedUserId}`);
   console.log(`Verified ${Object.keys(fieldIds).length} opportunity fields.`);
 } catch (error) {
   console.error(`HighLevel setup failed: ${error.message}`);

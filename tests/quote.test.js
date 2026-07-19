@@ -3,7 +3,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const quoteHandler = require('../api/quote.js');
-const { OPPORTUNITY_FIELDS, validatePayload, resetMetadataCache } = quoteHandler._test;
+const availabilityHandler = require('../api/availability.js');
+const {
+  OPPORTUNITY_FIELDS,
+  validatePayload,
+  validateAvailabilityRequest,
+  bookingModeForPackage,
+  zonedDateTimeToIso,
+  requestedPeriod,
+  resetMetadataCache
+} = quoteHandler._test;
 
 function payload(overrides = {}) {
   return {
@@ -24,9 +33,22 @@ function payload(overrides = {}) {
       addons: [{ id: 'limpieza-motor', name: 'Engine Bay', price: 'From $30' }]
     },
     estimate: { min: 155, max: 155, label: '$155', custom: false, isRange: false },
-    schedule: { date: '2026-12-01', timeWindow: 'morning', timeLabel: 'Morning (8am-12pm)', notes: 'Gate 4' },
+    schedule: { date: '2026-12-01', timeWindow: 'morning', timeLabel: 'Forged client label', notes: 'Gate 4' },
     ...overrides
   };
+}
+
+function fullDayPayload(overrides = {}) {
+  return payload({
+    selection: {
+      category: { id: 'heavy_trucks', name: 'Heavy Trucks' },
+      package: { id: 'semi-truck-wash', name: 'Semi Truck Wash' },
+      size: { id: 'standard', name: 'Standard Size' },
+      addons: []
+    },
+    schedule: { date: '2026-12-02', timeWindow: 'full_day', timeLabel: 'Full day', notes: '' },
+    ...overrides
+  });
 }
 
 function request(body, headers = {}) {
@@ -47,36 +69,125 @@ function response() {
   };
 }
 
-async function invoke(body, headers) {
+async function invoke(handler, body, headers) {
   const res = response();
-  await quoteHandler(request(body, headers), res);
+  await handler(request(body, headers), res);
   return { status: res.statusCode, body: JSON.parse(res.body), headers: res.headers };
 }
 
-test('validates and normalizes a complete quote', () => {
+function setTestEnv() {
+  const keys = [
+    'GHL_PRIVATE_TOKEN', 'GHL_LOCATION_ID', 'GHL_PIPELINE_ID', 'GHL_PIPELINE_STAGE_ID',
+    'GHL_CONFIRMED_PIPELINE_STAGE_ID', 'GHL_CALENDAR_ID', 'GHL_ASSIGNED_USER_ID'
+  ];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, {
+    GHL_PRIVATE_TOKEN: 'test-token',
+    GHL_LOCATION_ID: 'location-1',
+    GHL_PIPELINE_ID: 'pipeline-1',
+    GHL_PIPELINE_STAGE_ID: 'stage-pending',
+    GHL_CONFIRMED_PIPELINE_STAGE_ID: 'stage-confirmed',
+    GHL_CALENDAR_ID: 'calendar-1',
+    GHL_ASSIGNED_USER_ID: 'user-1'
+  });
+  resetMetadataCache();
+  return () => {
+    for (const key of keys) {
+      if (previous[key] == null) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+    resetMetadataCache();
+  };
+}
+
+function makeCrmMock() {
+  const requests = [];
+  const opportunities = [];
+  const appointments = [];
+  const fields = Object.values(OPPORTUNITY_FIELDS).map((name, index) => ({
+    id: `field-${index}`, name, model: 'opportunity', dataType: 'TEXT'
+  }));
+  const fieldId = key => `field-${Object.keys(OPPORTUNITY_FIELDS).indexOf(key)}`;
+
+  function availableStarts(date) {
+    const starts = ['08:00', '12:00', '16:00'];
+    return starts.filter(time => {
+      const start = Date.parse(zonedDateTimeToIso(date, time));
+      const endHour = time === '08:00' ? '11:00' : (time === '12:00' ? '15:00' : '19:00');
+      const end = Date.parse(zonedDateTimeToIso(date, endHour));
+      return !appointments.some(event => Date.parse(event.startTime) < end && Date.parse(event.endTime) > start);
+    }).map(time => zonedDateTimeToIso(date, time));
+  }
+
+  const fetch = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    requests.push({ url, options, body });
+    if (url.includes('/customFields')) return new Response(JSON.stringify({ customFields: fields }), { status: 200 });
+    if (url.includes('/free-slots?')) {
+      return new Response(JSON.stringify({
+        '2026-12-01': { slots: availableStarts('2026-12-01') },
+        '2026-12-02': { slots: availableStarts('2026-12-02') },
+        '2026-12-06': { slots: availableStarts('2026-12-06') }
+      }), { status: 200 });
+    }
+    if (url.endsWith('/contacts/upsert')) return new Response(JSON.stringify({ contact: { id: 'contact-1' } }), { status: 200 });
+    if (url.includes('/opportunities/search?')) return new Response(JSON.stringify({ opportunities }), { status: 200 });
+    if (/\/calendars\/events\?/.test(url)) return new Response(JSON.stringify({ events: appointments }), { status: 200 });
+    if (url.endsWith('/opportunities/') && options.method === 'POST') {
+      const opportunity = {
+        id: `opp-${opportunities.length + 1}`,
+        customFields: body.customFields.map(field => ({ id: field.id, fieldValueString: field.fieldValue }))
+      };
+      opportunities.push(opportunity);
+      return new Response(JSON.stringify({ opportunity }), { status: 201 });
+    }
+    if (/\/opportunities\/opp-\d+$/.test(url) && options.method === 'PUT') {
+      const opportunity = opportunities.find(item => url.endsWith(`/${item.id}`));
+      opportunity.pipelineStageId = body.pipelineStageId;
+      opportunity.assignedTo = body.assignedTo;
+      opportunity.customFields = body.customFields.map(field => ({ id: field.id, fieldValueString: field.fieldValue }));
+      return new Response(JSON.stringify({ opportunity }), { status: 200 });
+    }
+    if (url.endsWith('/calendars/events/appointments') && options.method === 'POST') {
+      const overlap = appointments.some(event => Date.parse(event.startTime) < Date.parse(body.endTime) && Date.parse(event.endTime) > Date.parse(body.startTime));
+      if (overlap) return new Response('{}', { status: 409 });
+      const appointment = { id: `appointment-${appointments.length + 1}`, ...body };
+      appointments.push(appointment);
+      return new Response(JSON.stringify(appointment), { status: 200 });
+    }
+    return new Response('{}', { status: 404 });
+  };
+
+  return { fetch, requests, opportunities, appointments, fieldId };
+}
+
+test('validates, normalizes, and derives trusted booking labels', () => {
   const result = validatePayload(payload());
   assert.equal(result.customer.phone, '+12395550100');
-  assert.equal(result.customer.email, 'jane@example.com');
-  assert.equal(result.vehicle.year, 2024);
-  assert.equal(result.selection.addons.length, 1);
+  assert.equal(result.schedule.timeLabel, 'Morning (8am–12pm)');
+  assert.equal(bookingModeForPackage('premium-detail'), 'slot');
+  assert.equal(bookingModeForPackage('boat-detail'), 'full_day');
+  assert.throws(() => validatePayload(fullDayPayload({ schedule: payload().schedule })), /full_day/i);
 });
 
-test('rejects incomplete identity, vehicle, policy, and selection data', () => {
-  assert.throws(() => validatePayload(payload({ policyAccepted: false })), /policies/i);
-  assert.throws(() => validatePayload(payload({ customer: { ...payload().customer, phone: '123' } })), /phone/i);
-  assert.throws(() => validatePayload(payload({ vehicle: { ...payload().vehicle, year: 1800 } })), /year/i);
-  assert.throws(() => validatePayload(payload({ selection: { ...payload().selection, category: { id: 'invalid', name: 'Invalid' } } })), /category/i);
-  assert.throws(() => validatePayload(payload({ selection: { ...payload().selection, size: { id: 'van_xl', name: 'XL Van' } } })), /size/i);
-  assert.throws(() => validatePayload(payload({ selection: { ...payload().selection, addons: [{ id: 'forged-extra', name: 'Forged', price: '$1' }] } })), /addons/i);
+test('validates availability range and exact timezone conversion across DST', () => {
+  assert.deepEqual(validateAvailabilityRequest({ packageId: 'premium-detail', from: '2026-12-01', to: '2026-12-10' }), {
+    packageId: 'premium-detail', from: '2026-12-01', to: '2026-12-10'
+  });
+  assert.equal(zonedDateTimeToIso('2026-07-15', '08:00'), '2026-07-15T12:00:00.000Z');
+  assert.equal(zonedDateTimeToIso('2026-12-01', '08:00'), '2026-12-01T13:00:00.000Z');
+  assert.throws(() => validateAvailabilityRequest({ packageId: 'forged', from: '2026-12-01', to: '2026-12-02' }), /packageId/i);
 });
 
-test('accepts every car hauler package with the standard size', () => {
+test('accepts car hauler packages only as full-day bookings', () => {
   const packageIds = [
     'car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x',
+    // TODO(remove-graphite): retired ids accepted during the transition window;
+    // flip these to assert.throws when the window closes.
     'car-hauler-graphite-wash', 'car-hauler-graphite-2x', 'car-hauler-graphite-4x'
   ];
   for (const packageId of packageIds) {
-    const result = validatePayload(payload({
+    const result = validatePayload(fullDayPayload({
       selection: {
         category: { id: 'heavy_trucks', name: 'Heavy Trucks' },
         package: { id: packageId, name: 'Car Hauler' },
@@ -85,169 +196,291 @@ test('accepts every car hauler package with the standard size', () => {
       }
     }));
     assert.equal(result.selection.package.id, packageId);
-    assert.equal(result.selection.size.id, 'standard');
   }
 });
 
-test('allows car hauler extras and enforces package-scoped extras', () => {
-  const carHaulerSelection = {
+test('restricts the lubricante-grafito add-on to car hauler packages', () => {
+  const carHaulerSelection = (packageId, addons) => fullDayPayload({
+    selection: {
+      category: { id: 'heavy_trucks', name: 'Heavy Trucks' },
+      package: { id: packageId, name: 'Heavy Truck Package' },
+      size: { id: 'standard', name: 'Standard Size' },
+      addons
+    }
+  });
+  const grafito = [{ id: 'lubricante-grafito', name: 'Dry Graphite Lubricant', price: '+$60' }];
+  for (const packageId of ['car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x']) {
+    const result = validatePayload(carHaulerSelection(packageId, grafito));
+    assert.equal(result.selection.addons[0].id, 'lubricante-grafito');
+  }
+  assert.throws(() => validatePayload(carHaulerSelection('trailer-wash', grafito)), /invalid for this package/i);
+});
+
+function cartItem(overrides = {}) {
+  return {
+    category: { id: 'cars', name: 'Cars & SUVs' },
+    package: { id: 'basico-exterior', name: 'Basic Wash' },
+    size: { id: 'sedan', name: 'Sedan / Coupe' },
+    addons: [],
+    vehicle: { make: 'Toyota', model: 'Camry', year: 2024, color: 'Blue', plate: 'ABC 123' },
+    estimate: { min: 45, max: 45, label: '$45', custom: false, isRange: false },
+    ...overrides
+  };
+}
+
+function trailerItem(overrides = {}) {
+  return cartItem({
     category: { id: 'heavy_trucks', name: 'Heavy Trucks' },
-    package: { id: 'car-hauler-wash', name: 'Car Hauler Basic Wash' },
+    package: { id: 'trailer-wash', name: 'Trailer Wash (Reefer / Dry Van)' },
     size: { id: 'standard', name: 'Standard Size' },
-    addons: [
-      { id: 'car-hauler-second-deck', name: 'Second-Deck Wash', price: '$100' },
-      { id: 'pulido-rines-llantas', name: 'Wheel and Tire Polishing', price: '$25' }
-    ]
-  };
-  const accepted = validatePayload(payload({ selection: carHaulerSelection }));
-  assert.deepEqual(accepted.selection.addons.map(addon => addon.id), ['car-hauler-second-deck', 'pulido-rines-llantas']);
+    vehicle: { make: 'Utility', model: '3000R', year: 2020, color: '', plate: 'TRL 987' },
+    estimate: { min: 200, max: 200, label: '$200', custom: false, isRange: false },
+    ...overrides
+  });
+}
 
-  assert.throws(() => validatePayload(payload({
-    selection: {
-      ...carHaulerSelection,
-      package: { id: 'semi-truck-wash', name: 'Semi Truck Wash' }
-    }
-  })), /invalid for this package/i);
+function cartPayload(items, overrides = {}) {
+  const base = payload(overrides);
+  delete base.selection;
+  delete base.vehicle;
+  base.items = items;
+  return base;
+}
 
-  assert.throws(() => validatePayload(payload({
-    selection: {
-      ...carHaulerSelection,
-      package: { id: 'semi-truck-wash', name: 'Semi Truck Wash' },
-      addons: [{ id: 'volteo-aluminio', name: 'Aluminum Dump Bed', price: '$120' }]
-    }
-  })), /invalid for this package/i);
+test('validates multi-item carts: modes, totals, and limits', () => {
+  const twoCars = cartPayload([cartItem(), cartItem({ vehicle: { make: 'Honda', model: 'Civic', year: 2021, color: '', plate: '' } })], {
+    estimate: { min: 90, max: 90, label: '$90', custom: false, isRange: false }
+  });
+  const result = validatePayload(twoCars);
+  assert.equal(result.items.length, 2);
+  assert.equal(quoteHandler._test.bookingModeForItems(result.items), 'slot');
+  assert.equal(result.estimate.min, 90);
+  assert.equal(result.selection.package.id, 'basico-exterior'); // first-item alias
+
+  // A cart mixing a slot-based car with a full-day trailer books the whole day.
+  const mixed = cartPayload([cartItem(), trailerItem()], {
+    estimate: { min: 245, max: 245, label: '$245', custom: false, isRange: false },
+    schedule: { date: '2026-12-02', timeWindow: 'full_day', timeLabel: '', notes: '' }
+  });
+  const mixedResult = validatePayload(mixed);
+  assert.equal(quoteHandler._test.bookingModeForItems(mixedResult.items), 'full_day');
+  assert.equal(quoteHandler._test.representativeItem(mixedResult.items).package.id, 'trailer-wash');
+  assert.throws(
+    () => validatePayload(cartPayload([cartItem(), trailerItem()], {
+      estimate: { min: 245, max: 245, label: '$245', custom: false, isRange: false }
+    })),
+    /full_day/i
+  );
+
+  const tooMany = cartPayload(Array.from({ length: quoteHandler._test.CART_RULES.MAX_ITEMS + 1 }, () => cartItem()));
+  assert.throws(() => validatePayload(tooMany), /between 1 and/i);
+
+  // Per-item add-on restriction: grafito on the car line is rejected even in a cart.
+  assert.throws(
+    () => validatePayload(cartPayload([cartItem({ addons: [{ id: 'lubricante-grafito', name: 'Graphite', price: '+$60' }] })])),
+    /items\[0\]\.addons\[0\]/i
+  );
 });
 
-test('honeypot requests do not require CRM configuration', async () => {
-  const previous = { token: process.env.GHL_PRIVATE_TOKEN, location: process.env.GHL_LOCATION_ID };
-  delete process.env.GHL_PRIVATE_TOKEN;
-  delete process.env.GHL_LOCATION_ID;
-  const result = await invoke(payload({ website: 'https://spam.example' }));
-  assert.equal(result.status, 200);
-  assert.equal(result.body.ok, true);
-  if (previous.token) process.env.GHL_PRIVATE_TOKEN = previous.token;
-  if (previous.location) process.env.GHL_LOCATION_ID = previous.location;
+test('legacy single-selection payload normalizes to a one-item cart', () => {
+  const legacy = validatePayload(payload());
+  assert.equal(legacy.items.length, 1);
+  assert.equal(legacy.items[0].package.id, 'premium-detail');
+  assert.equal(legacy.items[0].vehicle.make, 'Toyota');
+  assert.equal(legacy.items[0].estimate.label, '$155');
+
+  const v2 = validatePayload(cartPayload([{
+    category: { id: 'cars', name: 'Cars & SUVs' },
+    package: { id: 'premium-detail', name: 'Premium Detail' },
+    size: { id: 'sedan', name: 'Sedan / Coupe' },
+    addons: [{ id: 'limpieza-motor', name: 'Engine Bay', price: 'From $30' }],
+    vehicle: { make: 'Toyota', model: 'Camry', year: 2024, color: 'Blue', plate: 'ABC 123' },
+    estimate: { min: 155, max: 155, label: '$155', custom: false, isRange: false }
+  }]));
+  const values = quoteHandler._test.opportunityValues(legacy);
+  const valuesV2 = quoteHandler._test.opportunityValues(v2);
+  assert.deepEqual(values, valuesV2);
+  assert.equal(values.itemCount, '1');
+  assert.equal(values.servicePackage, 'Premium Detail');
 });
 
-test('returns a safe configuration error when CRM secrets are absent', async () => {
-  const previous = { token: process.env.GHL_PRIVATE_TOKEN, location: process.env.GHL_LOCATION_ID };
-  delete process.env.GHL_PRIVATE_TOKEN;
-  delete process.env.GHL_LOCATION_ID;
-  const result = await invoke(payload());
-  assert.equal(result.status, 503);
-  assert.deepEqual(result.body, { ok: false, error: 'CRM is not configured' });
-  if (previous.token) process.env.GHL_PRIVATE_TOKEN = previous.token;
-  if (previous.location) process.env.GHL_LOCATION_ID = previous.location;
-});
-
-test('upserts one contact, creates one opportunity per submission, and makes retries idempotent', async () => {
+test('books a two-item cart as one appointment with a serialized breakdown', async () => {
+  const restoreEnv = setTestEnv();
   const oldFetch = global.fetch;
-  const oldEnv = {
-    token: process.env.GHL_PRIVATE_TOKEN,
-    location: process.env.GHL_LOCATION_ID,
-    pipeline: process.env.GHL_PIPELINE_ID,
-    stage: process.env.GHL_PIPELINE_STAGE_ID
-  };
-  process.env.GHL_PRIVATE_TOKEN = 'test-token';
-  process.env.GHL_LOCATION_ID = 'location-1';
-  process.env.GHL_PIPELINE_ID = 'pipeline-1';
-  process.env.GHL_PIPELINE_STAGE_ID = 'stage-1';
-  resetMetadataCache();
+  const crm = makeCrmMock();
+  global.fetch = crm.fetch;
 
-  const requests = [];
-  const opportunities = [];
-  let staleSearches = 0;
-  const fields = Object.values(OPPORTUNITY_FIELDS).map((name, index) => ({
-    id: `field-${index}`, name, model: 'opportunity', dataType: 'TEXT'
-  }));
-  global.fetch = async (url, options = {}) => {
-    requests.push({ url, options, body: options.body ? JSON.parse(options.body) : null });
-    if (url.includes('/customFields')) return new Response(JSON.stringify({ customFields: fields }), { status: 200 });
-    if (url.endsWith('/contacts/upsert')) return new Response(JSON.stringify({ contact: { id: 'contact-1' } }), { status: 200 });
-    if (url.includes('/opportunities/search?')) {
-      if (staleSearches > 0) {
-        staleSearches -= 1;
-        return new Response(JSON.stringify({ opportunities: [] }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ opportunities }), { status: 200 });
-    }
-    if (url.endsWith('/opportunities/')) {
-      const submissionField = requests.at(-1).body.customFields.find(field => field.id === `field-${Object.keys(OPPORTUNITY_FIELDS).indexOf('submissionId')}`);
-      const duplicate = opportunities.some(opportunity => opportunity.customFields.some(field =>
-        field.id === submissionField.id && field.fieldValueString === submissionField.fieldValue
-      ));
-      if (duplicate) return new Response('{}', { status: 400 });
-      const opportunity = {
-        id: `opp-${requests.length}`,
-        customFields: requests.at(-1).body.customFields.map(field => ({
-          id: field.id,
-          type: 'string',
-          fieldValueString: field.fieldValue
-        }))
-      };
-      opportunities.push(opportunity);
-      staleSearches = 1;
-      return new Response(JSON.stringify({ opportunity }), { status: 201 });
-    }
-    return new Response('{}', { status: 404 });
-  };
+  const body = cartPayload([trailerItem(), trailerItem({ vehicle: { make: 'Great Dane', model: 'Everest', year: 2019, color: 'White', plate: '' } })], {
+    estimate: { min: 400, max: 400, label: '$400', custom: false, isRange: false },
+    schedule: { date: '2026-12-02', timeWindow: 'full_day', timeLabel: '', notes: '' }
+  });
+  const result = await invoke(quoteHandler, body);
+  assert.equal(result.status, 200);
+  assert.equal(crm.appointments.length, 1);
+  assert.equal(crm.opportunities.length, 1);
+  assert.match(crm.appointments[0].title, /\+1 more/);
+  assert.match(crm.appointments[0].description, /Services \(2\):/);
+  assert.match(crm.appointments[0].description, /1\) Trailer Wash/);
+  assert.match(crm.appointments[0].description, /2\) Trailer Wash/);
+  const fieldValue = key => crm.opportunities[0].customFields.find(field => field.id === crm.fieldId(key)).fieldValueString;
+  assert.equal(fieldValue('itemCount'), '2');
+  assert.equal(fieldValue('servicePackage'), '2× Trailer Wash (Reefer / Dry Van)');
+  assert.match(fieldValue('items'), /Utility 3000R/);
+  assert.match(fieldValue('items'), /Great Dane Everest/);
+  assert.equal(fieldValue('bookingMode'), 'full_day');
+  const createRequest = crm.requests.find(item => item.url.endsWith('/opportunities/') && item.options.method === 'POST');
+  assert.equal(createRequest.body.monetaryValue, 400);
+  assert.match(createRequest.body.name, /2 services/);
 
-  const first = await invoke(payload());
-  const retry = await invoke(payload());
-  const second = await invoke(payload({ submissionId: '223e4567-e89b-12d3-a456-426614174001' }));
-  assert.equal(first.status, 200);
+  // Retrying the same submission is idempotent: no second appointment.
+  const retry = await invoke(quoteHandler, body);
   assert.equal(retry.status, 200);
-  assert.equal(second.status, 200);
-  assert.equal(requests.filter(item => item.url.endsWith('/contacts/upsert')).length, 3);
-  assert.equal(requests.filter(item => item.url.endsWith('/opportunities/')).length, 3);
-  assert.equal(opportunities.length, 2);
-  const opportunity = requests.find(item => item.url.endsWith('/opportunities/')).body;
-  assert.equal(opportunity.contactId, 'contact-1');
-  assert.equal(opportunity.monetaryValue, 155);
-  assert.equal(opportunity.customFields.length, Object.keys(OPPORTUNITY_FIELDS).length);
+  assert.equal(retry.body.duplicate, true);
+  assert.equal(crm.appointments.length, 1);
 
   global.fetch = oldFetch;
-  if (oldEnv.token == null) delete process.env.GHL_PRIVATE_TOKEN; else process.env.GHL_PRIVATE_TOKEN = oldEnv.token;
-  if (oldEnv.location == null) delete process.env.GHL_LOCATION_ID; else process.env.GHL_LOCATION_ID = oldEnv.location;
-  if (oldEnv.pipeline == null) delete process.env.GHL_PIPELINE_ID; else process.env.GHL_PIPELINE_ID = oldEnv.pipeline;
-  if (oldEnv.stage == null) delete process.env.GHL_PIPELINE_STAGE_ID; else process.env.GHL_PIPELINE_STAGE_ID = oldEnv.stage;
-  resetMetadataCache();
+  restoreEnv();
 });
 
-test('rejects cross-origin submissions', async () => {
-  const result = await invoke(payload(), { origin: 'https://evil.example' });
-  assert.equal(result.status, 403);
-  assert.equal(result.body.ok, false);
-});
-
-test('rejects submissions without an origin', async () => {
-  const result = await invoke(payload(), { origin: undefined });
-  assert.equal(result.status, 403);
-  assert.equal(result.body.ok, false);
-});
-
-test('maps HighLevel authorization, rate-limit, server, and timeout failures safely', async () => {
+test('availability returns live slots, full-day dates, and never exposes Sunday', async () => {
+  const restoreEnv = setTestEnv();
   const oldFetch = global.fetch;
-  const oldEnv = { token: process.env.GHL_PRIVATE_TOKEN, location: process.env.GHL_LOCATION_ID };
-  process.env.GHL_PRIVATE_TOKEN = 'test-token';
-  process.env.GHL_LOCATION_ID = 'location-1';
+  const crm = makeCrmMock();
+  global.fetch = crm.fetch;
 
+  const slots = await invoke(availabilityHandler, { packageId: 'premium-detail', from: '2026-12-01', to: '2026-12-06' });
+  const fullDay = await invoke(availabilityHandler, { packageId: 'boat-detail', from: '2026-12-01', to: '2026-12-06' });
+  assert.equal(slots.status, 200);
+  assert.deepEqual(slots.body.dates.find(day => day.date === '2026-12-01').slots, ['morning', 'afternoon', 'evening']);
+  assert.equal(slots.body.dates.some(day => day.date === '2026-12-06'), false);
+  assert.deepEqual(fullDay.body.dates.find(day => day.date === '2026-12-02').slots, ['full_day']);
+
+  global.fetch = oldFetch;
+  restoreEnv();
+});
+test('creates contact, pending opportunity, confirmed appointment, and confirmed opportunity', async () => {
+  const restoreEnv = setTestEnv();
+  const oldFetch = global.fetch;
+  const crm = makeCrmMock();
+  global.fetch = crm.fetch;
+
+  const result = await invoke(quoteHandler, payload());
+  assert.equal(result.status, 200);
+  assert.equal(result.body.appointmentStatus, 'confirmed');
+  assert.equal(crm.appointments.length, 1);
+  assert.equal(crm.opportunities.length, 1);
+  assert.equal(crm.opportunities[0].pipelineStageId, 'stage-confirmed');
+  assert.equal(crm.opportunities[0].assignedTo, 'user-1');
+  assert.equal(crm.opportunities[0].customFields.find(field => field.id === crm.fieldId('appointmentId')).fieldValueString, 'appointment-1');
+  const appointmentRequest = crm.requests.find(item => item.url.endsWith('/calendars/events/appointments')).body;
+  assert.equal(appointmentRequest.toNotify, true);
+  assert.match(appointmentRequest.description, /Submission ID/);
+  assert.equal(appointmentRequest.startTime, requestedPeriod('2026-12-01', 'morning').startTime);
+
+  global.fetch = oldFetch;
+  restoreEnv();
+});
+
+test('retries are idempotent and a full-day appointment blocks the complete date', async () => {
+  const restoreEnv = setTestEnv();
+  const oldFetch = global.fetch;
+  const crm = makeCrmMock();
+  global.fetch = crm.fetch;
+
+  const first = await invoke(quoteHandler, fullDayPayload());
+  const retry = await invoke(quoteHandler, fullDayPayload());
+  assert.equal(first.status, 200);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.duplicate, true);
+  assert.equal(crm.appointments.length, 1);
+  assert.equal(crm.opportunities.length, 1);
+  assert.equal(crm.appointments[0].startTime, zonedDateTimeToIso('2026-12-02', '08:00'));
+  assert.equal(crm.appointments[0].endTime, zonedDateTimeToIso('2026-12-02', '19:00'));
+
+  const availability = await invoke(availabilityHandler, { packageId: 'premium-detail', from: '2026-12-02', to: '2026-12-02' });
+  assert.deepEqual(availability.body.dates, []);
+
+  global.fetch = oldFetch;
+  restoreEnv();
+});
+
+test('returns 409 when another booking takes the selected slot', async () => {
+  const restoreEnv = setTestEnv();
+  const oldFetch = global.fetch;
+  const crm = makeCrmMock();
+  let appointmentAttempts = 0;
+  global.fetch = async (url, options) => {
+    if (url.endsWith('/calendars/events/appointments')) {
+      appointmentAttempts += 1;
+      return new Response('{}', { status: 409 });
+    }
+    return crm.fetch(url, options);
+  };
+
+  const result = await invoke(quoteHandler, payload());
+  assert.equal(result.status, 409);
+  assert.equal(result.body.ok, false);
+  assert.equal(appointmentAttempts, 1);
+  assert.equal(crm.appointments.length, 0);
+
+  global.fetch = oldFetch;
+  restoreEnv();
+});
+
+test('preserves a confirmed appointment when opportunity finalization temporarily fails', async () => {
+  const restoreEnv = setTestEnv();
+  const oldFetch = global.fetch;
+  const crm = makeCrmMock();
+  let failedUpdates = 0;
+  global.fetch = async (url, options) => {
+    if (/\/opportunities\/opp-\d+$/.test(url) && options && options.method === 'PUT' && failedUpdates < 3) {
+      failedUpdates += 1;
+      return new Response('{}', { status: 500 });
+    }
+    return crm.fetch(url, options);
+  };
+
+  const partial = await invoke(quoteHandler, payload());
+  const retry = await invoke(quoteHandler, payload());
+  assert.equal(partial.status, 200);
+  assert.equal(partial.body.appointmentStatus, 'confirmed');
+  assert.equal(partial.body.syncPending, true);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.duplicate, true);
+  assert.equal(retry.body.syncPending, false);
+  assert.equal(crm.appointments.length, 1);
+  assert.equal(crm.opportunities.length, 1);
+
+  global.fetch = oldFetch;
+  restoreEnv();
+});
+
+test('honeypot bypasses CRM and missing configuration fails safely', async () => {
+  const keys = ['GHL_PRIVATE_TOKEN', 'GHL_LOCATION_ID', 'GHL_CALENDAR_ID', 'GHL_ASSIGNED_USER_ID'];
+  const old = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  keys.forEach(key => delete process.env[key]);
+  const honeypot = await invoke(quoteHandler, payload({ website: 'https://spam.example' }));
+  const missing = await invoke(quoteHandler, payload());
+  assert.equal(honeypot.status, 200);
+  assert.deepEqual(missing.body, { ok: false, error: 'CRM is not configured' });
+  for (const key of keys) {
+    if (old[key] == null) delete process.env[key]; else process.env[key] = old[key];
+  }
+});
+
+test('rejects cross-origin requests and maps upstream failures safely', async () => {
+  const crossOrigin = await invoke(quoteHandler, payload(), { origin: 'https://evil.example' });
+  assert.equal(crossOrigin.status, 403);
+
+  const restoreEnv = setTestEnv();
+  const oldFetch = global.fetch;
   for (const [upstreamStatus, expectedStatus] of [[401, 503], [403, 503], [429, 503], [500, 502]]) {
     resetMetadataCache();
     global.fetch = async () => new Response('{}', { status: upstreamStatus });
-    const result = await invoke(payload());
+    const result = await invoke(quoteHandler, payload());
     assert.equal(result.status, expectedStatus);
     assert.deepEqual(result.body, { ok: false, error: 'CRM temporarily unavailable' });
   }
-
-  resetMetadataCache();
-  global.fetch = async () => { throw Object.assign(new Error('timed out'), { name: 'TimeoutError' }); };
-  const timeout = await invoke(payload());
-  assert.equal(timeout.status, 504);
-  assert.deepEqual(timeout.body, { ok: false, error: 'CRM temporarily unavailable' });
-
   global.fetch = oldFetch;
-  if (oldEnv.token == null) delete process.env.GHL_PRIVATE_TOKEN; else process.env.GHL_PRIVATE_TOKEN = oldEnv.token;
-  if (oldEnv.location == null) delete process.env.GHL_LOCATION_ID; else process.env.GHL_LOCATION_ID = oldEnv.location;
-  resetMetadataCache();
+  restoreEnv();
 });

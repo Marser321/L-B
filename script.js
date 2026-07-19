@@ -38,10 +38,7 @@
   const CAR_HAULER_PACKAGE_IDS = Object.freeze([
     'car-hauler-wash',
     'car-hauler-2x',
-    'car-hauler-4x',
-    'car-hauler-graphite-wash',
-    'car-hauler-graphite-2x',
-    'car-hauler-graphite-4x'
+    'car-hauler-4x'
   ]);
   // Localized label for a stored time-window key (morning/afternoon/evening).
   function timeWindowLabel(key) { return key ? t('tw.' + key) : ''; }
@@ -429,7 +426,7 @@
           {
             id: 'car-hauler-wash',
             name: 'Car Hauler (Lavado Básico)',
-            description: 'Lavado completo para camiones y trailers transportadores de vehículos, con atención especial a chasis, estructura, rampas y plataformas.',
+            description: 'Lavado completo únicamente del remolque transportador de vehículos; no incluye el camión tractor. Atención especial a chasis, estructura, rampas y plataformas.',
             includes: [
               'Desengrasado de chasis y estructura',
               'Lavado completo con champú para vehículos comerciales',
@@ -447,7 +444,7 @@
           {
             id: 'car-hauler-2x',
             name: 'Car Hauler Membresía (2x al mes)',
-            description: 'Dos lavados mensuales completos para mantener limpio y listo para operar tu transportador de vehículos.',
+            description: 'Dos lavados mensuales completos del remolque transportador de vehículos; no incluyen el camión tractor.',
             includes: [
               '2 lavados básicos completos al mes',
               'Desengrasado de chasis, estructura, rampas y plataformas',
@@ -464,7 +461,7 @@
           {
             id: 'car-hauler-4x',
             name: 'Car Hauler Membresía (4x al mes)',
-            description: 'Lavado semanal recurrente para transportadores de vehículos con operación frecuente.',
+            description: 'Lavado semanal recurrente del remolque transportador de vehículos; no incluye el camión tractor.',
             includes: [
               '4 lavados básicos completos al mes',
               'Desengrasado de chasis, estructura, rampas y plataformas',
@@ -476,53 +473,6 @@
             ],
             prices: {
               standard: 400
-            }
-          },
-          {
-            id: 'car-hauler-graphite-wash',
-            name: 'Car Hauler + Lubricante de Grafito',
-            description: 'Lavado completo del car hauler más aplicación profesional de lubricante seco de grafito.',
-            includes: [
-              'Desengrasado de chasis y estructura',
-              'Lavado completo con champú para vehículos comerciales',
-              'Limpieza de rines, llantas y guardabarros',
-              'Enjuague a presión y secado para evitar manchas',
-              'Aplicación de brillo para neumáticos',
-              'Desengrasado profundo de rampas y plataformas',
-              'Aplicación de lubricante seco de grafito en plataformas deslizantes y componentes móviles compatibles'
-            ],
-            prices: {
-              standard: 180
-            }
-          },
-          {
-            id: 'car-hauler-graphite-2x',
-            name: 'Car Hauler + Grafito Membresía (2x al mes)',
-            description: 'Dos servicios mensuales de lavado completo y mantenimiento con lubricante seco de grafito.',
-            includes: [
-              '2 lavados completos al mes',
-              'Desengrasado de chasis, estructura, rampas y plataformas',
-              'Limpieza de rines, llantas y guardabarros',
-              'Enjuague, secado y brillo para neumáticos',
-              '2 aplicaciones de lubricante seco de grafito en plataformas deslizantes y componentes móviles compatibles'
-            ],
-            prices: {
-              standard: 320
-            }
-          },
-          {
-            id: 'car-hauler-graphite-4x',
-            name: 'Car Hauler + Grafito Membresía (4x al mes)',
-            description: 'Servicio semanal de lavado completo y mantenimiento con lubricante seco de grafito.',
-            includes: [
-              '4 lavados completos al mes',
-              'Desengrasado de chasis, estructura, rampas y plataformas',
-              'Limpieza de rines, llantas y guardabarros',
-              'Enjuague, secado y brillo para neumáticos',
-              '4 aplicaciones de lubricante seco de grafito en plataformas deslizantes y componentes móviles compatibles'
-            ],
-            prices: {
-              standard: 620
             }
           },
           {
@@ -615,6 +565,7 @@
           { id: 'rines-aluminio', name: 'Ácido para Rines de Aluminio', price: 25 },
           { id: 'pulido-rines-llantas', name: 'Pulido de Rines y Llantas', price: 25 },
           { id: 'car-hauler-second-deck', name: 'Lavado del Segundo Piso', price: 100, onlyFor: CAR_HAULER_PACKAGE_IDS },
+          { id: 'lubricante-grafito', name: 'Lubricante de Grafito', priceByPackage: { 'car-hauler-wash': 60, 'car-hauler-2x': 100, 'car-hauler-4x': 220 }, onlyFor: CAR_HAULER_PACKAGE_IDS },
           { id: 'pulido-tanques', name: 'Pulido Tanques de Aluminio (Cotiz.)', price: 0, range: 'Cotización personalizada' }
         ]
       },
@@ -1005,6 +956,7 @@
           'rines-aluminio': ['Aluminum Wheel Acid Cleaning'],
           'pulido-rines-llantas': ['Wheel and Tire Polishing'],
           'car-hauler-second-deck': ['Second-Deck Wash'],
+          'lubricante-grafito': ['Dry Graphite Lubricant'],
           'pulido-tanques': ['Aluminum Tank Polishing (Quote)', 'Custom quote']
         }
       },
@@ -1166,33 +1118,18 @@
       },
       'car-hauler-wash': {
         name: 'Car Hauler Basic Wash',
-        description: 'Complete wash for auto transport trucks and trailers, with special attention to the chassis, structure, ramps, and platforms.',
+        description: 'Complete wash of the auto-transport trailer only; the tractor truck is not included. Special attention is given to the chassis, structure, ramps, and platforms.',
         includes: ['Chassis and structure degreasing', 'Complete wash with commercial vehicle shampoo', 'Wheel and tire cleaning', 'Fender cleaning', 'Pressure rinse', 'Spot-prevention drying', 'Tire shine application', 'Deep degreasing of ramps and platforms']
       },
       'car-hauler-2x': {
         name: 'Car Hauler Membership (2x per month)',
-        description: 'Two complete monthly washes to keep your auto transporter clean and ready to work.',
+        description: 'Two complete monthly washes of the auto-transport trailer; the tractor truck is not included.',
         includes: ['2 complete basic washes per month', 'Chassis, structure, ramp, and platform degreasing', 'Commercial vehicle shampoo wash', 'Wheel, tire, and fender cleaning', 'Pressure rinse', 'Spot-prevention drying', 'Tire shine application']
       },
       'car-hauler-4x': {
         name: 'Car Hauler Membership (4x per month)',
-        description: 'Recurring weekly washing for frequently operated auto transporters.',
+        description: 'Recurring weekly washing of the auto-transport trailer; the tractor truck is not included.',
         includes: ['4 complete basic washes per month', 'Chassis, structure, ramp, and platform degreasing', 'Commercial vehicle shampoo wash', 'Wheel, tire, and fender cleaning', 'Pressure rinse', 'Spot-prevention drying', 'Tire shine application']
-      },
-      'car-hauler-graphite-wash': {
-        name: 'Car Hauler Wash + Dry Graphite Lubricant',
-        description: 'Complete car hauler wash plus professional application of dry graphite lubricant.',
-        includes: ['Chassis and structure degreasing', 'Complete wash with commercial vehicle shampoo', 'Wheel, tire, and fender cleaning', 'Pressure rinse and spot-prevention drying', 'Tire shine application', 'Deep degreasing of ramps and platforms', 'Dry graphite lubricant application on compatible sliding platforms and moving components']
-      },
-      'car-hauler-graphite-2x': {
-        name: 'Car Hauler + Graphite Membership (2x per month)',
-        description: 'Two monthly complete washes with dry graphite lubricant maintenance.',
-        includes: ['2 complete washes per month', 'Chassis, structure, ramp, and platform degreasing', 'Wheel, tire, and fender cleaning', 'Pressure rinse, drying, and tire shine', '2 dry graphite lubricant applications on compatible sliding platforms and moving components']
-      },
-      'car-hauler-graphite-4x': {
-        name: 'Car Hauler + Graphite Membership (4x per month)',
-        description: 'Weekly complete washing with dry graphite lubricant maintenance.',
-        includes: ['4 complete washes per month', 'Chassis, structure, ramp, and platform degreasing', 'Wheel, tire, and fender cleaning', 'Pressure rinse, drying, and tire shine', '4 dry graphite lubricant applications on compatible sliding platforms and moving components']
       },
       'dump-truck-wash': {
         name: 'Dump Truck Wash',
@@ -1441,6 +1378,7 @@
     'rines-aluminio': 'assets/extras/rines-aluminio.jpg',
     'pulido-rines-llantas': 'assets/extras/pulido-rines-llantas.jpg',
     'car-hauler-second-deck': 'assets/extras/car-hauler-second-deck.jpg',
+    'lubricante-grafito': 'assets/extras/lubricante-grafito.jpg',
     'pulido-tanques': 'assets/extras/pulido-tanques.jpg',
     'eliminacion-sal': 'assets/extras/eliminacion-sal.jpg',
     'brillo-plasticos': 'assets/extras/brillo-plasticos.jpg',
@@ -1466,11 +1404,13 @@
   const HEAVY_GROUPS = [
     { id: 'box-truck', label: { en: 'Box Truck', es: 'Camión de Caja' } },
     { id: 'semi-truck', label: { en: 'Semi Truck', es: 'Tractocamión' } },
-    { id: 'trailer', label: { en: 'Trailer', es: 'Tráiler' } },
-    { id: 'car-hauler', label: { en: 'Car Hauler', es: 'Transportador de Autos' } },
+    { id: 'trailer', label: { en: 'Trailers', es: 'Tráilers' } },
     { id: 'dump-truck', label: { en: 'Dump Truck', es: 'Camión de Volteo' } },
     { id: 'garbage-truck', label: { en: 'Garbage Truck', es: 'Camión de Basura' } }
   ];
+  // Packages whose id prefix doesn't match their HEAVY_GROUPS group:
+  // car haulers are a type of trailer, so they live under the "trailer" chip.
+  const PACKAGE_GROUP_OVERRIDES = { 'car-hauler': 'trailer' };
 
   // Per-category recommender config — references add-on ids that already exist
   const RECO = {
@@ -1585,10 +1525,10 @@
     'quoter.label': { en: 'Build Your Service', es: 'Arma tu Servicio' },
     'quoter.titleA': { en: 'Build Your ', es: 'Arma tu ' },
     'quoter.titleB': { en: 'Quote', es: 'Cotización' },
-    'quoter.subtitle': { en: 'Choose a path, select the exact service, and send the finished request directly to WhatsApp.', es: 'Elige una ruta, selecciona el servicio exacto y envía la solicitud lista directamente a WhatsApp.' },
+    'quoter.subtitle': { en: 'Choose a path, build your service, and reserve a live opening on our calendar.', es: 'Elige una ruta, arma tu servicio y reserva una disponibilidad real en nuestro calendario.' },
     'quoter.proof1': { en: '1. Pick a path', es: '1. Elige una ruta' },
     'quoter.proof2': { en: '2. See your estimate', es: '2. Mira tu estimado' },
-    'quoter.proof3': { en: '3. Confirm availability', es: '3. Confirma disponibilidad' },
+    'quoter.proof3': { en: '3. Confirm your appointment', es: '3. Confirma tu cita' },
     'step.service': { en: 'Service', es: 'Servicio' },
     'step.package': { en: 'Package', es: 'Paquete' },
     'step.extras': { en: 'Extras', es: 'Extras' },
@@ -1608,7 +1548,7 @@
     'ws.addExtras': { en: 'Add Extras', es: 'Agrega Extras' },
     'ws.extrasNote': { en: "Extras are optional — skip if you don't need any.", es: 'Los extras son opcionales — omítelos si no los necesitas.' },
     'ws.scheduleTitle': { en: 'Schedule & Details', es: 'Agenda y Detalles' },
-    'ws.scheduleIntro': { en: "We're a mobile service — tell us where and when, and we'll confirm on WhatsApp.", es: 'Somos un servicio móvil — dinos dónde y cuándo, y confirmamos por WhatsApp.' },
+    'ws.scheduleIntro': { en: "Choose a live opening from our mobile team's calendar.", es: 'Elige una disponibilidad real del calendario de nuestro equipo móvil.' },
     'ws.reviewTitle': { en: 'Review & Book', es: 'Revisa y Reserva' },
     // Schedule form
     'form.contactDetails': { en: 'Contact details', es: 'Datos de contacto' },
@@ -1637,15 +1577,22 @@
     'form.unitPh': { en: 'e.g. Apt 2B', es: 'ej. Apto 2B' },
     'form.city': { en: 'City', es: 'Ciudad' },
     'form.cityPh': { en: 'e.g. Fort Myers', es: 'ej. Fort Myers' },
-    'form.date': { en: 'Preferred date', es: 'Fecha preferida' },
+    'form.date': { en: 'Available date', es: 'Fecha disponible' },
     'form.dateHint': { en: 'Please book at least 24 hours ahead.', es: 'Reserva con al menos 24 horas de anticipación.' },
-    'form.time': { en: 'Preferred time', es: 'Horario preferido' },
+    'form.time': { en: 'Available time', es: 'Horario disponible' },
     'time.morning': { en: 'Morning', es: 'Mañana' },
     'time.afternoon': { en: 'Afternoon', es: 'Tarde' },
     'time.evening': { en: 'Evening', es: 'Noche' },
     'tw.morning': { en: 'Morning (8am–12pm)', es: 'Mañana (8am–12pm)' },
     'tw.afternoon': { en: 'Afternoon (12pm–4pm)', es: 'Tarde (12pm–4pm)' },
     'tw.evening': { en: 'Evening (4pm–7pm)', es: 'Noche (4pm–7pm)' },
+    'tw.full_day': { en: 'Full day (8am–7pm)', es: 'Día completo (8am–7pm)' },
+    'availability.loading': { en: 'Loading availability…', es: 'Cargando disponibilidad…' },
+    'availability.chooseDate': { en: 'Choose an available date', es: 'Elige una fecha disponible' },
+    'availability.ready': { en: 'Live availability loaded from our calendar.', es: 'Disponibilidad actualizada desde nuestro calendario.' },
+    'availability.empty': { en: 'No online openings are available in the next 60 days. Contact us for help.', es: 'No hay turnos online disponibles en los próximos 60 días. Contáctanos para ayudarte.' },
+    'availability.error': { en: 'We could not load the calendar. Please retry in a moment.', es: 'No pudimos cargar el calendario. Intenta nuevamente en un momento.' },
+    'availability.fullDay': { en: 'This service reserves the complete day, from 8am to 7pm.', es: 'Este servicio reserva el día completo, de 8am a 7pm.' },
     'form.notes': { en: 'Notes', es: 'Notas' },
     'form.notesOpt': { en: '(optional)', es: '(opcional)' },
     'form.notesPh': { en: 'Gate code, vehicle condition, special requests…', es: 'Código de portón, estado del vehículo, pedidos especiales…' },
@@ -1654,10 +1601,11 @@
     'btn.back': { en: 'Back', es: 'Atrás' },
     'btn.next': { en: 'Next', es: 'Siguiente' },
     'btn.review': { en: 'Review', es: 'Revisar' },
-    'btn.book': { en: 'Book on WhatsApp', es: 'Reservar por WhatsApp' },
-    'btn.saving': { en: 'Saving to CRM…', es: 'Guardando en el CRM…' },
-    'btn.retry': { en: 'Retry and save', es: 'Reintentar y guardar' },
-    'btn.continueWhatsApp': { en: 'Continue to WhatsApp anyway', es: 'Continuar a WhatsApp de todos modos' },
+    'btn.book': { en: 'Confirm booking', es: 'Confirmar reserva' },
+    'btn.booked': { en: 'Booking confirmed', es: 'Reserva confirmada' },
+    'btn.saving': { en: 'Confirming appointment…', es: 'Confirmando cita…' },
+    'btn.retry': { en: 'Retry booking', es: 'Reintentar reserva' },
+    'btn.continueWhatsApp': { en: 'Contact us on WhatsApp', es: 'Contactarnos por WhatsApp' },
     // Policies header
     'policies.label': { en: 'Important Information', es: 'Información Importante' },
     'policies.titleA': { en: 'Service ', es: 'Políticas de ' },
@@ -1701,7 +1649,7 @@
     'sum.plate': { en: 'License plate', es: 'Matrícula' },
     'sum.address': { en: 'Address', es: 'Dirección' },
     'sum.area': { en: 'Service area', es: 'Zona de servicio' },
-    'sum.time': { en: 'Preferred time', es: 'Horario preferido' },
+    'sum.time': { en: 'Confirmed time', es: 'Horario confirmado' },
     'sum.notes': { en: 'Notes', es: 'Notas' },
     'sum.total': { en: 'Estimated Total', es: 'Total Estimado' },
     'sum.disclaimer': { en: '*Reference estimate. Final pricing may vary based on the real condition of the vehicle or surface.', es: '*Estimado de referencia. El precio final puede variar según el estado real del vehículo o la superficie.' },
@@ -1710,7 +1658,18 @@
     'cov.enterZip': { en: 'Enter a 5-digit ZIP code.', es: 'Ingresa un código postal de 5 dígitos.' },
     'cov.inRange': { en: 'In range — within our Southwest Florida service area.', es: 'En cobertura — dentro de nuestra zona del Suroeste de Florida.' },
     'cov.confirm': { en: "We'll confirm coverage for this ZIP when we reach out.", es: 'Confirmaremos la cobertura de este código postal al contactarte.' },
+    'cov.accepted': { en: 'Service address recorded for this appointment.', es: 'Dirección de servicio registrada para esta cita.' },
     'qbar.build': { en: 'Build your service to see a live estimate', es: 'Arma tu servicio para ver un estimado en vivo' },
+    'cart.title': { en: 'Services in this visit', es: 'Servicios en esta visita' },
+    'cart.hint': { en: 'One visit — same address, date and time for every vehicle.', es: 'Una sola visita — misma dirección, fecha y horario para todos los vehículos.' },
+    'cart.edit': { en: 'Edit', es: 'Editar' },
+    'cart.remove': { en: 'Remove', es: 'Quitar' },
+    'cart.count': { en: '{n} services in this visit', es: '{n} servicios en esta visita' },
+    'cart.max': { en: 'You\'ve reached the limit of services per booking — contact us for larger fleets.', es: 'Llegaste al límite de servicios por reserva — contáctanos para flotas más grandes.' },
+    'btn.addAnother': { en: 'Add another vehicle', es: 'Agregar otro vehículo' },
+    'form.vehicleN': { en: 'Vehicle {n}', es: 'Vehículo {n}' },
+    'wa.serviceN': { en: 'Service {n}', es: 'Servicio {n}' },
+    'availability.cartChanged': { en: 'Your services changed — please pick a date again.', es: 'Cambiaron los servicios de la visita — vuelve a elegir la fecha.' },
     'customQuote': { en: '+ Custom Quote', es: '+ Cotización personalizada' },
     // WhatsApp message
     'wa.title': { en: 'New Booking — L&B Elite Wash & Detail', es: 'Nueva Reserva — L&B Elite Wash & Detail' },
@@ -1727,13 +1686,14 @@
     'wa.address': { en: 'Address', es: 'Dirección' },
     'wa.city': { en: 'City', es: 'Ciudad' },
     'wa.area': { en: 'Service area / ZIP', es: 'Zona / Código Postal' },
-    'wa.date': { en: 'Preferred date', es: 'Fecha preferida' },
-    'wa.time': { en: 'Preferred time', es: 'Horario preferido' },
+    'wa.date': { en: 'Confirmed date', es: 'Fecha confirmada' },
+    'wa.time': { en: 'Confirmed time', es: 'Horario confirmado' },
     'wa.notes': { en: 'Notes', es: 'Notas' },
-    'wa.closing': { en: "Hi, I'd like to book this mobile service. Please confirm availability for my preferred time. Thank you!", es: 'Hola, me gustaría reservar este servicio móvil. Por favor confirmen disponibilidad para mi horario preferido. ¡Gracias!' },
-    'submit.saving': { en: 'Saving your quote securely before opening WhatsApp…', es: 'Guardando tu cotización de forma segura antes de abrir WhatsApp…' },
-    'submit.success': { en: 'Saved. Opening WhatsApp…', es: 'Guardado. Abriendo WhatsApp…' },
-    'submit.error': { en: "We couldn't save the quote to the CRM. Your information is still here; retry or continue to WhatsApp.", es: 'No pudimos guardar la cotización en el CRM. Tus datos siguen aquí; reintenta o continúa a WhatsApp.' },
+    'wa.closing': { en: 'My appointment is confirmed. I have a question about this booking.', es: 'Mi cita está confirmada. Tengo una consulta sobre esta reserva.' },
+    'submit.saving': { en: 'Confirming your appointment securely…', es: 'Confirmando tu cita de forma segura…' },
+    'submit.success': { en: 'Appointment confirmed. Reservation number:', es: 'Cita confirmada. Número de reserva:' },
+    'submit.slotTaken': { en: 'That opening was just booked. Choose another available time; all your information is still here.', es: 'Ese turno acaba de ocuparse. Elige otro horario disponible; todos tus datos siguen aquí.' },
+    'submit.error': { en: "We couldn't create the appointment. No booking was confirmed; your information is still here so you can retry or contact us.", es: 'No pudimos crear la cita. No hay una reserva confirmada; tus datos siguen aquí para reintentar o contactarnos.' },
     'wa.quick': { en: "Hi L&B Elite! I'd like to book a service.", es: 'Hola L&B Elite, me gustaría reservar un servicio.' },
     'waFloat.aria': { en: 'Contact us on WhatsApp', es: 'Contactar por WhatsApp' }
   };
@@ -1758,8 +1718,9 @@
         normalizePackagePricing(pkg);
         pkg.type = /membresia|membership|-2x$|-4x$/.test(pkg.id) ? 'membership' : 'onetime';
         if (cat.id === 'heavy_trucks') {
-          const g = HEAVY_GROUPS.find(grp => pkg.id.startsWith(grp.id));
-          pkg.group = g ? g.id : 'other';
+          const overridePrefix = Object.keys(PACKAGE_GROUP_OVERRIDES).find(prefix => pkg.id.startsWith(prefix));
+          const g = overridePrefix ? null : HEAVY_GROUPS.find(grp => pkg.id.startsWith(grp.id));
+          pkg.group = overridePrefix ? PACKAGE_GROUP_OVERRIDES[overridePrefix] : (g ? g.id : 'other');
         }
       });
 
@@ -1842,6 +1803,14 @@
   }
 
   function normalizeAddonPricing(addon) {
+    if (addon.priceByPackage) {
+      const values = Object.values(addon.priceByPackage).map(Number);
+      addon.customQuote = false;
+      addon.priceMin = Math.min(...values);
+      addon.priceMax = Math.max(...values);
+      addon.priceFrom = false;
+      return;
+    }
     const parsed = addon.range ? parsePriceText(addon.range) : null;
     const base = Number(addon.price || 0);
     addon.customQuote = Boolean(parsed && parsed.custom);
@@ -1862,7 +1831,13 @@
     return { min: base, max: base, from: false, custom: false };
   }
 
-  function addonPriceBounds(addon) {
+  function addonPriceBounds(addon, pkg = state.selectedPackage) {
+    if (addon.priceByPackage) {
+      const exact = Number(pkg && addon.priceByPackage[pkg.id]);
+      if (exact) return { min: exact, max: exact, from: false, custom: false };
+      // No package context (or one outside the map): show the spread as a "from" price.
+      return { min: addon.priceMin, max: addon.priceMax, from: true, custom: false };
+    }
     return {
       min: Number(addon.priceMin != null ? addon.priceMin : addon.price || 0),
       max: Number(addon.priceMax != null ? addon.priceMax : addon.price || 0),
@@ -1908,11 +1883,7 @@
   const IMG_ERR_ATTR = imgErrAttr();
 
   // Single source of truth for pricing (summary, live bar & WhatsApp all use this)
-  function computeEstimate() {
-    const pkg = state.selectedPackage;
-    const size = state.selectedSize;
-    if (!pkg || !size) return null;
-
+  function estimateFor(pkg, size, addons) {
     const base = packagePriceBounds(pkg, size.id);
     let min = base.min;
     let max = base.max;
@@ -1920,8 +1891,8 @@
     let isFrom = base.from;
     let custom = false;
 
-    state.selectedAddons.forEach(addon => {
-      const p = addonPriceBounds(addon);
+    addons.forEach(addon => {
+      const p = addonPriceBounds(addon, pkg);
       if (p.custom) {
         custom = true; // e.g. aluminum tank polishing — custom quote
         return;
@@ -1935,7 +1906,198 @@
     const showRange = isRange && max > min;
     let label = showRange ? `${fmt(min)} - ${fmt(max)}` : (isFrom ? `${t('from')} ${fmt(min)}` : fmt(min));
     if (custom) label += ' ' + t('customQuote');
-    return { min, max, isRange: showRange, custom, label };
+    return { min, max, isRange: showRange, custom, isFrom, label };
+  }
+
+  // Estimate for the draft line the wizard is currently building.
+  function computeEstimate() {
+    const pkg = state.selectedPackage;
+    const size = state.selectedSize;
+    if (!pkg || !size) return null;
+    return estimateFor(pkg, size, state.selectedAddons);
+  }
+
+  // ── Multi-vehicle cart ──
+  // Cart rules (mirror of api/quote.js CART_RULES): every line shares one visit
+  // (same address, date and time window → one appointment), duplicate lines are
+  // allowed, restricted add-ons apply per line, and the visit books the full
+  // day when ANY line uses a full-day package.
+  const CART_MAX_ITEMS = 6;
+  // Mirror of FULL_DAY_PACKAGES in api/quote.js.
+  const FULL_DAY_CATEGORY_IDS = new Set(['heavy_trucks', 'boats', 'mobile_home', 'driveway']);
+  const FULL_DAY_PACKAGE_IDS = new Set(['paint-correction', 'ceramic-protection']);
+
+  function isFullDayLine(line) {
+    return FULL_DAY_CATEGORY_IDS.has(line.categoryId) || FULL_DAY_PACKAGE_IDS.has(line.packageId);
+  }
+
+  // Resolve a stored cart line against the live catalog (null when stale).
+  function resolveLine(line) {
+    if (!line) return null;
+    const cat = SERVICES_DATA.categories.find(c => c.id === line.categoryId);
+    if (!cat) return null;
+    const pkg = cat.packages.find(p => p.id === line.packageId);
+    if (!pkg) return null;
+    const sizes = validSizesForPackage(cat, pkg);
+    const size = sizes.find(sz => sz.id === line.sizeId) || (sizes.length === 1 ? sizes[0] : null);
+    if (!size) return null;
+    const addons = (line.addonIds || [])
+      .map(id => (cat.extras || []).find(extra => extra.id === id))
+      .filter(Boolean)
+      .filter(addon => !(addon.onlyFor && !addon.onlyFor.includes(pkg.id)));
+    return { cat, pkg, size, addons };
+  }
+
+  function lineEstimate(line) {
+    const resolved = resolveLine(line);
+    return resolved ? estimateFor(resolved.pkg, resolved.size, resolved.addons) : null;
+  }
+
+  // Total across committed lines plus the draft under construction.
+  function cartEstimate() {
+    const parts = state.cart.map(lineEstimate).filter(Boolean);
+    const draft = computeEstimate();
+    if (draft) parts.push(draft);
+    if (!parts.length) return null;
+    let min = 0, max = 0, isRange = false, isFrom = false, custom = false;
+    parts.forEach(part => {
+      min += part.min;
+      max += part.max;
+      if (part.isRange) isRange = true;
+      if (part.isFrom) isFrom = true;
+      if (part.custom) custom = true;
+    });
+    const showRange = isRange && max > min;
+    let label = showRange ? `${fmt(min)} - ${fmt(max)}` : (isFrom ? `${t('from')} ${fmt(min)}` : fmt(min));
+    if (custom) label += ' ' + t('customQuote');
+    return { min, max, isRange: showRange, custom, isFrom, label };
+  }
+
+  // The package whose booking mode drives the calendar for the whole visit:
+  // the first full-day line wins; otherwise the first line (draft included).
+  function representativePackageId() {
+    const lines = state.cart.slice();
+    if (state.selectedCategory && state.selectedPackage) {
+      lines.push({ categoryId: state.selectedCategory.id, packageId: state.selectedPackage.id });
+    }
+    if (!lines.length) return '';
+    const fullDay = lines.find(isFullDayLine);
+    return (fullDay || lines[0]).packageId;
+  }
+
+  // Commit the wizard draft as a cart line and reset the draft.
+  function commitDraftToCart() {
+    const cat = state.selectedCategory;
+    const pkg = state.selectedPackage;
+    if (!cat || !pkg || state.cart.length >= CART_MAX_ITEMS) return false;
+    const sizes = validSizesForPackage(cat, pkg);
+    const size = state.selectedSize || (sizes.length === 1 ? sizes[0] : null);
+    if (!size) return false;
+    state.cart.push({
+      lineId: newLineId(),
+      categoryId: cat.id,
+      packageId: pkg.id,
+      sizeId: size.id,
+      addonIds: state.selectedAddons.map(addon => addon.id),
+      vehicle: state.draftVehicle || blankVehicle()
+    });
+    state.draftVehicle = blankVehicle();
+    clearServiceSelection();
+    renderCartPanel();
+    saveState();
+    return true;
+  }
+
+  function removeCartLine(lineId) {
+    const index = state.cart.findIndex(line => line.lineId === lineId);
+    if (index === -1) return;
+    state.cart.splice(index, 1);
+    renderCartPanel();
+    updateQuoteBar();
+    if (state.currentStep >= 4) {
+      renderVehicleFields();
+      if (!state.cart.length) goToStep(1);
+      else loadAvailability();
+    }
+    validateStep();
+    saveState();
+  }
+
+  // Pull a committed line back into the wizard draft for editing.
+  function editCartLine(lineId, step = 2) {
+    const index = state.cart.findIndex(line => line.lineId === lineId);
+    if (index === -1) return;
+    const line = state.cart[index];
+    const resolved = resolveLine(line);
+    state.cart.splice(index, 1);
+    renderCartPanel();
+    if (!resolved) { updateQuoteBar(); return; }
+    state.selectedCategory = resolved.cat;
+    state.selectedPackage = resolved.pkg;
+    state.selectedSize = resolved.size;
+    state.selectedAddons = resolved.addons.slice();
+    state.pkgType = resolved.pkg.type || 'onetime';
+    state.heavyGroup = resolved.cat.id === 'heavy_trucks' ? (resolved.pkg.group || null) : null;
+    state.draftVehicle = line.vehicle || blankVehicle();
+    state.quizYes = [];
+    state.quizPicks = [];
+    state.quizOpen = false;
+    renderCatFilter();
+    renderCategories();
+    goToStep(step);
+  }
+
+  function renderCartPanel() {
+    const panel = document.getElementById('cartPanel');
+    if (!panel) return;
+    const entries = state.cart
+      .map(line => ({ line, resolved: resolveLine(line), est: lineEstimate(line) }))
+      .filter(entry => entry.resolved);
+    panel.hidden = entries.length === 0;
+    const badge = document.getElementById('cartBadge');
+    if (badge) badge.textContent = String(entries.length);
+    const box = document.getElementById('cartLines');
+    if (!box) return;
+    box.innerHTML = entries.map(({ line, resolved, est }) => {
+      const showSize = validSizesForPackage(resolved.cat, resolved.pkg).length > 1;
+      const sub = [showSize ? resolved.size.name : resolved.cat.name]
+        .concat(resolved.addons.length ? [resolved.addons.map(a => a.name).join(', ')] : [])
+        .join(' · ');
+      return `
+        <div class="cart-line" data-line-id="${line.lineId}">
+          <div class="cart-line-info">
+            <span class="cart-line-name">${escapeHTML(resolved.pkg.name)}</span>
+            <span class="cart-line-sub">${escapeHTML(sub)}</span>
+          </div>
+          <span class="cart-line-price">${est ? est.label : ''}</span>
+          <div class="cart-line-actions">
+            <button type="button" class="cart-line-btn cart-edit" data-line-id="${line.lineId}">${t('cart.edit')}</button>
+            <button type="button" class="cart-line-btn cart-remove" data-line-id="${line.lineId}" aria-label="${t('cart.remove')}">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function setupCart() {
+    const box = document.getElementById('cartLines');
+    if (box) {
+      box.addEventListener('click', event => {
+        const btn = event.target.closest('button[data-line-id]');
+        if (!btn) return;
+        if (btn.classList.contains('cart-remove')) removeCartLine(btn.dataset.lineId);
+        else editCartLine(btn.dataset.lineId);
+      });
+    }
+    const addBtn = document.getElementById('btnAddLine');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        if (addBtn.disabled) return;
+        if (!commitDraftToCart()) return;
+        renderCatFilter();
+        renderCategories();
+        goToStep(1);
+      });
+    }
   }
 
   // ── Live sticky price bar ──
@@ -1971,20 +2133,27 @@
     const ctxEl = bar.querySelector('.qbar-context');
     const cat = state.selectedCategory;
     const pkg = state.selectedPackage;
+    const cartCount = state.cart.length;
 
-    if (!cat) {
+    if (!cat && !cartCount) {
       bar.classList.remove('active');
       if (ctxEl) ctxEl.textContent = t('qbar.build');
       setPriceText(valEl, '—', null);
       return;
     }
     bar.classList.add('active');
-    if (ctxEl) ctxEl.textContent = pkg ? `${cat.name} · ${pkg.name}` : cat.name;
+    if (ctxEl) {
+      const draftLabel = pkg ? `${cat.name} · ${pkg.name}` : (cat ? cat.name : '');
+      ctxEl.textContent = cartCount
+        ? t('cart.count').replace('{n}', String(cartCount + (pkg ? 1 : 0))) + (draftLabel ? ` · ${draftLabel}` : '')
+        : draftLabel;
+    }
 
-    const est = computeEstimate();
+    const est = cartEstimate();
     if (est) animatePrice(valEl, est);
     else if (pkg) setPriceText(valEl, packageFromLabel(pkg), null);
-    else setPriceText(valEl, t('from') + ' ' + cat.from, null);
+    else if (cat) setPriceText(valEl, t('from') + ' ' + cat.from, null);
+    else setPriceText(valEl, '—', null);
   }
 
   // ── Add-on bundle pricing ──
@@ -2005,17 +2174,17 @@
     return (hasVariable ? t('from') + ' ' : '') + fmt(sum) + (custom ? ' ' + t('customQuote') : '');
   }
 
-  function addonDisplayPrice(addon) {
+  function addonDisplayPrice(addon, pkg) {
     if (addon.customQuote) return t('customQuote');
     if (addon.range) return '+ ' + addon.range;
-    const p = addonPriceBounds(addon);
+    const p = addonPriceBounds(addon, pkg);
     return '+ ' + (p.from ? `${t('from')} ${fmt(p.min)}` : fmt(p.min));
   }
 
-  function addonWhatsAppPrice(addon) {
+  function addonWhatsAppPrice(addon, pkg) {
     if (addon.customQuote) return t('customQuote');
     if (addon.range) return addon.range;
-    const p = addonPriceBounds(addon);
+    const p = addonPriceBounds(addon, pkg);
     return p.from ? `${t('from')} ${fmt(p.min)}` : '+' + fmt(p.min);
   }
 
@@ -2033,6 +2202,11 @@
     d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   }
+  function addDaysISO(iso, days) {
+    const d = new Date(`${iso}T12:00:00`);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().split('T')[0];
+  }
   function prettyDate(iso) {
     if (!iso) return '';
     const d = new Date(iso + 'T00:00:00');
@@ -2041,9 +2215,7 @@
   function checkCoverage(zip) {
     if (!zip) return { msg: '' };
     if (!/^\d{5}$/.test(zip)) return { msg: t('cov.enterZip') };
-    return /^(33|34)\d{3}$/.test(zip)
-      ? { msg: t('cov.inRange') }
-      : { msg: t('cov.confirm') };
+    return { msg: t('cov.accepted') };
   }
   function validName(name) {
     const n = (name || '').trim();
@@ -2083,22 +2255,36 @@
     if (d.length !== 10) return (phone || '').trim();
     return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
   }
+  function vehicleValid(vehicle) {
+    const v = vehicle || {};
+    return validVehicleText(v.make) && validVehicleText(v.model) && validVehicleYear(v.year);
+  }
+  function allVehiclesValid() {
+    return state.cart.length > 0 && state.cart.every(line => vehicleValid(line.vehicle));
+  }
+  function contactValid() {
+    const s = state.schedule;
+    return !!(validName(s.name) && validPhone(s.phone) && validEmail(s.email) &&
+      validZip(s.zip) && validStreet(s.address) && validCity(s.city));
+  }
   function scheduleValid() {
     const s = state.schedule;
-    return !!(
-      validName(s.name) && validPhone(s.phone) && validEmail(s.email) &&
-      validVehicleText(s.vehicleMake) && validVehicleText(s.vehicleModel) && validVehicleYear(s.vehicleYear) &&
-      validZip(s.zip) && validStreet(s.address) && validCity(s.city) &&
-      s.date && s.date >= tomorrowISO() && s.timeWindow
-    );
+    return !!(contactValid() && allVehiclesValid() && s.date && s.date >= tomorrowISO() && s.timeWindow);
   }
 
   function blankSchedule() {
     return {
       name: '', phone: '', email: '',
-      vehicleMake: '', vehicleModel: '', vehicleYear: '', vehicleColor: '', vehiclePlate: '',
       address: '', unit: '', city: '', zip: '', date: '', timeWindow: '', notes: '', website: ''
     };
+  }
+
+  function blankVehicle() {
+    return { make: '', model: '', year: '', color: '', plate: '' };
+  }
+
+  function newLineId() {
+    return `ln-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
   }
 
   function newSubmissionId() {
@@ -2107,15 +2293,22 @@
   }
 
   // ── Persistence ──
+  // Storage key is versioned: v2 invalidates drafts that referenced the retired
+  // car-hauler graphite packages / group (now the lubricante-grafito add-on).
+  const STORAGE_KEY = 'lyb-quote-v2';
   function saveState() {
     try {
-      localStorage.setItem('lyb-quote', JSON.stringify({
-        catId: state.selectedCategory ? state.selectedCategory.id : null,
-        pkgType: state.pkgType,
-        heavyGroup: state.heavyGroup,
-        pkgId: state.selectedPackage ? state.selectedPackage.id : null,
-        sizeId: state.selectedSize ? state.selectedSize.id : null,
-        addonIds: state.selectedAddons.map(a => a.id),
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        cart: state.cart,
+        draft: {
+          catId: state.selectedCategory ? state.selectedCategory.id : null,
+          pkgType: state.pkgType,
+          heavyGroup: state.heavyGroup,
+          pkgId: state.selectedPackage ? state.selectedPackage.id : null,
+          sizeId: state.selectedSize ? state.selectedSize.id : null,
+          addonIds: state.selectedAddons.map(a => a.id),
+          vehicle: state.draftVehicle
+        },
         submissionId: state.submissionId,
         schedule: state.schedule
       }));
@@ -2123,24 +2316,47 @@
   }
   function restoreState() {
     let s;
-    try { s = JSON.parse(localStorage.getItem('lyb-quote') || 'null'); } catch (e) { return; }
+    try {
+      localStorage.removeItem('lyb-quote'); // pre-v2 drafts may reference retired packages
+      s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    } catch (e) { return; }
     if (!s) return;
-    if (s.schedule) Object.assign(state.schedule, s.schedule);
+    if (s.schedule) {
+      // Vehicle fields lived inside schedule before the cart refactor; keep
+      // only the keys the current schedule shape knows about.
+      Object.keys(state.schedule).forEach(key => {
+        if (s.schedule[key] != null) state.schedule[key] = s.schedule[key];
+      });
+    }
     if (s.submissionId) state.submissionId = s.submissionId;
-    if (!s.catId) return;
-    const cat = SERVICES_DATA.categories.find(c => c.id === s.catId);
+    if (Array.isArray(s.cart)) {
+      state.cart = s.cart
+        .filter(line => line && resolveLine(line))
+        .map(line => ({
+          lineId: line.lineId || newLineId(),
+          categoryId: line.categoryId,
+          packageId: line.packageId,
+          sizeId: line.sizeId,
+          addonIds: Array.isArray(line.addonIds) ? line.addonIds : [],
+          vehicle: { ...blankVehicle(), ...(line.vehicle || {}) }
+        }));
+    }
+    const draft = s.draft || s; // pre-cart saves kept the draft at the top level
+    if (draft.vehicle) state.draftVehicle = { ...blankVehicle(), ...draft.vehicle };
+    if (!draft.catId) return;
+    const cat = SERVICES_DATA.categories.find(c => c.id === draft.catId);
     if (!cat) return;
     state.selectedCategory = cat;
-    state.pkgType = s.pkgType || 'onetime';
-    state.heavyGroup = s.heavyGroup || null;
-    if (s.pkgId) state.selectedPackage = cat.packages.find(p => p.id === s.pkgId) || null;
-    if (s.sizeId && state.selectedPackage) {
+    state.pkgType = draft.pkgType || 'onetime';
+    state.heavyGroup = HEAVY_GROUPS.some(g => g.id === draft.heavyGroup) ? draft.heavyGroup : null;
+    if (draft.pkgId) state.selectedPackage = cat.packages.find(p => p.id === draft.pkgId) || null;
+    if (draft.sizeId && state.selectedPackage) {
       const vs = validSizesForPackage(cat, state.selectedPackage);
-      state.selectedSize = vs.find(sz => sz.id === s.sizeId) || null;
+      state.selectedSize = vs.find(sz => sz.id === draft.sizeId) || null;
     }
-    if (Array.isArray(s.addonIds)) {
+    if (Array.isArray(draft.addonIds)) {
       const valid = currentValidAddons();
-      state.selectedAddons = s.addonIds.map(id => valid.find(a => a.id === id)).filter(Boolean);
+      state.selectedAddons = draft.addonIds.map(id => valid.find(a => a.id === id)).filter(Boolean);
     }
   }
 
@@ -2157,6 +2373,8 @@
     selectedPackage: null,
     selectedSize: null,
     selectedAddons: [],
+    cart: [],
+    draftVehicle: { make: '', model: '', year: '', color: '', plate: '' },
     quizYes: [],
     quizPicks: [],
     quizOpen: false,
@@ -2164,6 +2382,8 @@
     submitting: false,
     submitError: false,
     completed: false,
+    confirmedBooking: null,
+    availability: { packageId: '', loading: false, error: '', bookingMode: '', dates: [] },
     submissionId: newSubmissionId(),
     schedule: blankSchedule()
   };
@@ -2299,6 +2519,7 @@
     });
   }
 
+  // Both resets touch only the wizard draft — never state.cart.
   function resetFromCategory(category) {
     state.selectedCategory = category;
     state.selectedPackage = null;
@@ -2309,6 +2530,7 @@
     state.quizYes = [];
     state.quizPicks = [];
     state.quizOpen = false;
+    state.draftVehicle = blankVehicle();
   }
 
   function clearServiceSelection() {
@@ -2321,6 +2543,7 @@
     state.quizYes = [];
     state.quizPicks = [];
     state.quizOpen = false;
+    state.draftVehicle = blankVehicle();
   }
 
   // Step 1: Render Categories (filtered by intent)
@@ -2717,12 +2940,151 @@
     updateQuoteBar();
   }
 
+  function selectedAvailabilityDay() {
+    return state.availability.dates.find(item => item.date === state.schedule.date) || null;
+  }
+
+  function renderAvailability() {
+    const dateEl = document.getElementById('schedDate');
+    const messageEl = document.getElementById('availabilityMessage');
+    const timeField = document.getElementById('timeWindowField');
+    const timeRow = timeField && timeField.querySelector('.time-row');
+    const fullDayHint = document.getElementById('fullDayHint');
+    if (!dateEl) return;
+
+    dateEl.disabled = state.availability.loading || Boolean(state.availability.error) || !state.availability.dates.length;
+    const options = [`<option value="">${escapeHTML(state.availability.loading ? t('availability.loading') : t('availability.chooseDate'))}</option>`];
+    state.availability.dates.forEach(item => {
+      options.push(`<option value="${item.date}">${escapeHTML(prettyDate(item.date))}</option>`);
+    });
+    dateEl.innerHTML = options.join('');
+    if (state.availability.dates.some(item => item.date === state.schedule.date)) dateEl.value = state.schedule.date;
+    else {
+      state.schedule.date = '';
+      state.schedule.timeWindow = '';
+    }
+
+    if (messageEl) {
+      const empty = !state.availability.loading && !state.availability.error && !state.availability.dates.length;
+      messageEl.textContent = state.availability.error || (empty ? t('availability.empty') : (state.availability.dates.length ? t('availability.ready') : ''));
+      messageEl.className = `availability-msg${state.availability.error ? ' error' : (state.availability.dates.length ? ' success' : '')}`;
+    }
+
+    const fullDay = state.availability.bookingMode === 'full_day';
+    if (timeRow) timeRow.hidden = fullDay;
+    if (fullDayHint) fullDayHint.hidden = !fullDay;
+    if (fullDay) state.schedule.timeWindow = state.schedule.date ? 'full_day' : '';
+
+    const day = selectedAvailabilityDay();
+    document.querySelectorAll('.time-chip').forEach(chip => {
+      const available = !fullDay && day && day.slots.includes(chip.dataset.window);
+      chip.disabled = !available;
+      chip.classList.toggle('active', available && chip.dataset.window === state.schedule.timeWindow);
+    });
+    if (!fullDay && (!day || !day.slots.includes(state.schedule.timeWindow))) state.schedule.timeWindow = '';
+    validateStep();
+  }
+
+  async function loadAvailability(force = false) {
+    // Availability is driven by the cart's representative package: the first
+    // full-day line if any (its mode covers the whole visit), else the first line.
+    const packageId = representativePackageId();
+    if (!packageId) return;
+    if (!force && state.availability.packageId === packageId && (state.availability.loading || state.availability.dates.length)) {
+      renderAvailability();
+      return;
+    }
+
+    let cartChangedNotice = false;
+    if (state.availability.packageId !== packageId) {
+      cartChangedNotice = Boolean(state.availability.packageId && state.schedule.date);
+      state.schedule.date = '';
+      state.schedule.timeWindow = '';
+    }
+    state.availability = { packageId, loading: true, error: '', bookingMode: '', dates: [] };
+    renderAvailability();
+    try {
+      const from = tomorrowISO();
+      const response = await fetch('/api/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ packageId, from, to: addDaysISO(from, 59) })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.error || `Calendar request failed (${response.status})`);
+      if (representativePackageId() !== packageId) return; // cart changed mid-flight
+      state.availability = {
+        packageId,
+        loading: false,
+        error: '',
+        bookingMode: result.bookingMode,
+        dates: Array.isArray(result.dates) ? result.dates : []
+      };
+    } catch (error) {
+      state.availability = { packageId, loading: false, error: t('availability.error'), bookingMode: '', dates: [] };
+    }
+    renderAvailability();
+    if (cartChangedNotice) {
+      const messageEl = document.getElementById('availabilityMessage');
+      if (messageEl) {
+        messageEl.textContent = t('availability.cartChanged');
+        messageEl.className = 'availability-msg error';
+      }
+    }
+  }
+
+  // Step 4: one vehicle fieldset per cart line.
+  function renderVehicleFields() {
+    const box = document.getElementById('vehicleFields');
+    if (!box) return;
+    const maxYear = String(new Date().getFullYear() + 1);
+    box.innerHTML = state.cart.map((line, index) => {
+      const resolved = resolveLine(line);
+      const v = line.vehicle || blankVehicle();
+      const lid = line.lineId;
+      const legend = `${t('form.vehicleN').replace('{n}', String(index + 1))}${resolved ? ` — ${resolved.pkg.name}` : ''}`;
+      const field = (key, labelKey, phKey, opts = {}) => `
+        <div class="field ${opts.full ? 'field-full' : ''}">
+          <label for="vf-${key}-${lid}"><span>${t(labelKey)}</span> ${opts.optional ? `<span class="opt">${t('form.notesOpt')}</span>` : '<span class="req">*</span>'}</label>
+          <input type="${opts.type || 'text'}" id="vf-${key}-${lid}" data-line-id="${lid}" data-vkey="${key}"
+            value="${escapeHTML(v[key])}" autocomplete="off" maxlength="${opts.maxlength || 60}"
+            ${opts.type === 'number' ? `inputmode="numeric" min="1900" max="${maxYear}"` : ''}
+            placeholder="${escapeHTML(t(phKey))}" />
+        </div>`;
+      return `
+        <fieldset class="vehicle-fieldset" data-line-id="${lid}">
+          <legend>${escapeHTML(legend)}</legend>
+          <div class="vehicle-fieldset-grid">
+            ${field('make', 'form.vehicleMake', 'form.vehicleMakePh')}
+            ${field('model', 'form.vehicleModel', 'form.vehicleModelPh')}
+            ${field('year', 'form.vehicleYear', 'form.vehicleYearPh', { type: 'number', maxlength: 4 })}
+            ${field('color', 'form.vehicleColor', 'form.vehicleColorPh', { optional: true, maxlength: 40 })}
+            ${field('plate', 'form.vehiclePlate', 'form.vehiclePlatePh', { optional: true, maxlength: 16, full: true })}
+          </div>
+        </fieldset>`;
+    }).join('');
+  }
+
   // Step 4: Schedule & details form wiring (bound once)
   function setupSchedule() {
-    const dateEl = document.getElementById('schedDate');
-    if (dateEl) dateEl.min = tomorrowISO();
-    const yearEl = document.getElementById('vehicleYear');
-    if (yearEl) yearEl.max = String(new Date().getFullYear() + 1);
+    const vehicleBox = document.getElementById('vehicleFields');
+    if (vehicleBox) {
+      vehicleBox.addEventListener('input', event => {
+        const el = event.target;
+        const lid = el.dataset && el.dataset.lineId;
+        const key = el.dataset && el.dataset.vkey;
+        if (!lid || !key) return;
+        const line = state.cart.find(item => item.lineId === lid);
+        if (!line) return;
+        let value = el.value;
+        if (key === 'year') value = value.replace(/\D/g, '').slice(0, 4);
+        if (key === 'plate') value = value.toUpperCase().replace(/[^A-Z0-9 -]/g, '').slice(0, 16);
+        if (!line.vehicle) line.vehicle = blankVehicle();
+        line.vehicle[key] = value;
+        if (el.value !== value) el.value = value;
+        validateStep();
+      });
+    }
 
     const bind = (id, key) => {
       const el = document.getElementById(id);
@@ -2730,8 +3092,6 @@
       el.addEventListener('input', () => {
         let value = el.value;
         if (key === 'zip') value = value.replace(/\D/g, '').slice(0, 5);
-        if (key === 'vehicleYear') value = value.replace(/\D/g, '').slice(0, 4);
-        if (key === 'vehiclePlate') value = value.toUpperCase().replace(/[^A-Z0-9 -]/g, '').slice(0, 16);
         state.schedule[key] = value;
         if (el.value !== value) el.value = value;
         if (key === 'zip') updateCoverage();
@@ -2749,21 +3109,23 @@
     bind('schedName', 'name');
     bind('schedPhone', 'phone');
     bind('schedEmail', 'email');
-    bind('vehicleMake', 'vehicleMake');
-    bind('vehicleModel', 'vehicleModel');
-    bind('vehicleYear', 'vehicleYear');
-    bind('vehicleColor', 'vehicleColor');
-    bind('vehiclePlate', 'vehiclePlate');
     bind('schedAddress', 'address');
     bind('schedUnit', 'unit');
     bind('schedCity', 'city');
     bind('schedZip', 'zip');
-    bind('schedDate', 'date');
     bind('schedNotes', 'notes');
     bind('schedWebsite', 'website');
 
+    const dateEl = document.getElementById('schedDate');
+    if (dateEl) dateEl.addEventListener('change', () => {
+      state.schedule.date = dateEl.value;
+      state.schedule.timeWindow = state.availability.bookingMode === 'full_day' && dateEl.value ? 'full_day' : '';
+      renderAvailability();
+    });
+
     document.querySelectorAll('.time-chip').forEach(c => {
       c.addEventListener('click', () => {
+        if (c.disabled) return;
         state.schedule.timeWindow = c.dataset.window;
         document.querySelectorAll('.time-chip').forEach(x => x.classList.toggle('active', x === c));
         validateStep();
@@ -2791,14 +3153,10 @@
   function restoreScheduleInputs() {
     const s = state.schedule;
     const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v || ''; };
+    renderVehicleFields();
     set('schedName', s.name);
     set('schedPhone', s.phone);
     set('schedEmail', s.email);
-    set('vehicleMake', s.vehicleMake);
-    set('vehicleModel', s.vehicleModel);
-    set('vehicleYear', s.vehicleYear);
-    set('vehicleColor', s.vehicleColor);
-    set('vehiclePlate', s.vehiclePlate);
     set('schedAddress', s.address);
     set('schedUnit', s.unit);
     set('schedCity', s.city);
@@ -2810,49 +3168,56 @@
     updateCoverage();
   }
 
-  // Step 5: Render Review & Estimate
+  // Step 5: Render Review & Estimate — one block per cart line plus shared visit data.
   function renderSummary() {
-    if (!state.selectedCategory || !state.selectedPackage || !state.selectedSize) {
+    const entries = state.cart
+      .map(line => ({ line, resolved: resolveLine(line), est: lineEstimate(line) }))
+      .filter(entry => entry.resolved);
+    if (!entries.length) {
       summaryBox.innerHTML = `<div class="empty-state">${t('sum.empty')}</div>`;
       return;
     }
 
-    const cat = state.selectedCategory;
-    const pkg = state.selectedPackage;
-    const size = state.selectedSize;
     const s = state.schedule;
-    const est = computeEstimate();
-
-    const inclusionsHtml = pkg.includes.map(inc => `<li>${CHECK_SVG}<span>${inc}</span></li>`).join('');
-    const showSizeRow = validSizesForPackage(cat, pkg).length > 1;
+    const total = cartEstimate();
+    const many = entries.length > 1;
     const row = (lab, val) => val ? `<div class="summary-row"><span class="lab">${escapeHTML(lab)}</span><span class="val">${escapeHTML(val)}</span></div>` : '';
     const scheduleVal = [prettyDate(s.date), timeWindowLabel(s.timeWindow)].filter(Boolean).join(' · ');
-    const vehIcon = sizeIconHTML(cat.id, size.id);
+
+    const lineBlocks = entries.map(({ line, resolved, est }, index) => {
+      const { cat, pkg, size, addons } = resolved;
+      const v = line.vehicle || blankVehicle();
+      const showSizeRow = validSizesForPackage(cat, pkg).length > 1;
+      const vehIcon = sizeIconHTML(cat.id, size.id);
+      const name = `${many ? `${index + 1}. ` : ''}${pkg.name}`;
+      const inclusionsHtml = pkg.includes.map(inc => `<li>${CHECK_SVG}<span>${inc}</span></li>`).join('');
+      return `
+      <div class="summary-line">
+        <div class="summary-vehicle">${vehIcon || ''}<div class="summary-vehicle-text"><span class="sv-name">${escapeHTML(name)}</span><span class="sv-sub">${escapeHTML(showSizeRow ? size.name : cat.name)}</span></div><span class="sv-price">${est ? est.label : ''}</span></div>
+        ${addons.length ? row(t('sum.addons'), addons.map(a => `${a.name} (${addonDisplayPrice(a, pkg).replace(/^\+ /, '+')})`).join(', ')) : ''}
+        ${row(t('sum.vehicle'), [v.year, v.make, v.model, v.color].filter(Boolean).join(' · '))}
+        ${row(t('sum.plate'), v.plate)}
+        <details class="summary-includes">
+          <summary>${t('sum.included')}</summary>
+          <ul class="includes-list">${inclusionsHtml}</ul>
+        </details>
+      </div>`;
+    }).join('');
 
     summaryBox.innerHTML = `
-      ${vehIcon ? `<div class="summary-vehicle">${vehIcon}<div class="summary-vehicle-text"><span class="sv-name">${pkg.name}</span><span class="sv-sub">${showSizeRow ? size.name : cat.name}</span></div></div>` : ''}
-      ${row(t('sum.category'), cat.name)}
-      ${row(t('sum.service'), pkg.name)}
-      ${showSizeRow ? row(t('sum.size'), size.name) : ''}
-      ${state.selectedAddons.length ? row(t('sum.addons'), state.selectedAddons.map(a => a.name).join(', ')) : ''}
+      ${lineBlocks}
       ${row(t('sum.name'), s.name)}
       ${row(t('sum.email'), s.email)}
-      ${row(t('sum.vehicle'), [s.vehicleYear, s.vehicleMake, s.vehicleModel, s.vehicleColor].filter(Boolean).join(' · '))}
-      ${row(t('sum.plate'), s.vehiclePlate)}
       ${row(t('sum.address'), [s.address, s.unit].filter(Boolean).join(', '))}
       ${row(t('sum.area'), [s.city, s.zip].filter(Boolean).join(' '))}
       ${row(t('sum.time'), scheduleVal)}
       ${row(t('sum.notes'), s.notes)}
       <div class="summary-total">
         <span class="lab">${t('sum.total')}</span>
-        <span class="val">${est ? est.label : '—'}</span>
+        <span class="val">${total ? total.label : '—'}</span>
       </div>
       <div class="summary-note">
         ${t('sum.disclaimer')}
-      </div>
-      <div class="summary-includes">
-        <h4>${t('sum.included')}</h4>
-        <ul class="includes-list">${inclusionsHtml}</ul>
       </div>`;
   }
 
@@ -2882,7 +3247,7 @@
         break;
     }
 
-    btnNext.disabled = !valid || state.submitting;
+    btnNext.disabled = !valid || state.submitting || state.completed;
     if (!state.completed) saveState();
   }
 
@@ -2912,8 +3277,17 @@
 
     btnBack.style.display = state.currentStep > 1 ? 'inline-flex' : 'none';
 
+    const addBtn = document.getElementById('btnAddLine');
+    if (addBtn) {
+      // Committing the draft adds one more line; block when that would exceed the cap.
+      const atCap = state.cart.length + 1 >= CART_MAX_ITEMS;
+      addBtn.disabled = atCap;
+      const hint = document.getElementById('addLineHint');
+      if (hint) hint.hidden = !atCap;
+    }
+
     if (state.currentStep === state.totalSteps) {
-      const buttonLabel = state.submitting ? t('btn.saving') : (state.submitError ? t('btn.retry') : t('btn.book'));
+      const buttonLabel = state.completed ? t('btn.booked') : (state.submitting ? t('btn.saving') : (state.submitError ? t('btn.retry') : t('btn.book')));
       btnNext.innerHTML = `
         ${buttonLabel}
         <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon" width="18" height="18">
@@ -2937,6 +3311,7 @@
     if (step !== state.totalSteps) {
       if (state.completed) {
         state.completed = false;
+        state.confirmedBooking = null;
         state.submissionId = newSubmissionId();
       }
       state.submitError = false;
@@ -2945,7 +3320,10 @@
 
     if (step === 2) renderPackages();
     else if (step === 3) renderSizesAndAddons();
-    else if (step === 4) restoreScheduleInputs();
+    else if (step === 4) {
+      restoreScheduleInputs();
+      loadAvailability();
+    }
     else if (step === 5) renderSummary();
 
     updateStepUI();
@@ -2957,15 +3335,21 @@
     if (btnNext.disabled) return;
 
     if (state.currentStep === state.totalSteps) {
-      const pendingWindow = window.open('about:blank', '_blank');
-      await submitQuoteAndContinue(pendingWindow);
+      await submitQuoteAndContinue();
       return;
     }
 
+    // Leaving step 3 commits the draft as a cart line; step 4 works on the cart.
+    if (state.currentStep === 3 && !commitDraftToCart()) return;
     goToStep(state.currentStep + 1);
   });
 
   btnBack.addEventListener('click', () => {
+    if (state.currentStep === 4 && state.cart.length) {
+      // Reopen the last committed line as the draft so "back" feels natural.
+      editCartLine(state.cart[state.cart.length - 1].lineId, 3);
+      return;
+    }
     if (state.currentStep > 1) {
       goToStep(state.currentStep - 1);
     }
@@ -2981,44 +3365,63 @@
       statusEl.className = 'submission-status' + (type ? ` ${type}` : '');
     }
     const continueBtn = document.getElementById('continueWhatsApp');
-    if (continueBtn) continueBtn.hidden = type !== 'error';
+    if (continueBtn) continueBtn.hidden = type !== 'error' && type !== 'success';
   }
 
   function buildWhatsAppUrl() {
     if (!state.policiesAccepted) return;
-    const cat = state.selectedCategory;
-    const pkg = state.selectedPackage;
-    const size = state.selectedSize;
+    const entries = state.cart
+      .map(line => ({ line, resolved: resolveLine(line), est: lineEstimate(line) }))
+      .filter(entry => entry.resolved);
+    if (!entries.length) return;
     const s = state.schedule;
-    const est = computeEstimate();
+    const total = cartEstimate();
+    const many = entries.length > 1;
 
-    let message = `*${t('wa.title')}*\n\n`;
-    message += `*${t('wa.category')}:* ${cat.name}\n`;
-    message += `*${t('wa.service')}:* ${pkg.name}\n`;
-    if (validSizesForPackage(cat, pkg).length > 1) message += `*${t('wa.size')}:* ${size.name}\n`;
-    if (state.selectedAddons.length > 0) {
-      const addonsStr = state.selectedAddons.map(a => `${a.name} (${addonWhatsAppPrice(a)})`).join(', ');
-      message += `*${t('wa.addons')}:* ${addonsStr}\n`;
-    }
+    // compact=true drops per-line add-on/vehicle detail to fit WhatsApp's URL limit.
+    const build = (compact) => {
+      let message = `*${t('wa.title')}*\n\n`;
+      entries.forEach(({ line, resolved, est }, index) => {
+        const { cat, pkg, size, addons } = resolved;
+        const label = many ? t('wa.serviceN').replace('{n}', String(index + 1)) : t('wa.service');
+        message += `*${label}:* ${pkg.name}`;
+        if (validSizesForPackage(cat, pkg).length > 1) message += ` (${size.name})`;
+        if (est) message += ` — ${est.label}`;
+        message += '\n';
+        if (compact) return;
+        if (addons.length) {
+          message += `  ${t('wa.addons')}: ${addons.map(a => `${a.name} (${addonWhatsAppPrice(a, pkg)})`).join(', ')}\n`;
+        }
+        const v = line.vehicle || blankVehicle();
+        const vehicleText = [v.year, v.make, v.model, v.color].filter(Boolean).join(' ');
+        if (vehicleText) message += `  ${t('wa.vehicle')}: ${vehicleText}${v.plate ? ` (${v.plate})` : ''}\n`;
+      });
 
-    message += `\n*${t('wa.total')}:* ${est ? est.label : '—'}\n\n`;
+      message += `\n*${t('wa.total')}:* ${total ? total.label : '—'}\n\n`;
 
-    message += `*${t('wa.contact')}:* ${s.name || '—'}\n`;
-    if (s.phone) message += `*${t('wa.phone')}:* ${normalizedPhone(s.phone)}\n`;
-    if (s.email) message += `*${t('wa.email')}:* ${s.email.trim()}\n`;
-    message += `*${t('wa.vehicle')}:* ${[s.vehicleYear, s.vehicleMake, s.vehicleModel, s.vehicleColor].filter(Boolean).join(' · ')}\n`;
-    if (s.vehiclePlate) message += `*${t('wa.plate')}:* ${s.vehiclePlate}\n`;
-    if (s.address) message += `*${t('wa.address')}:* ${s.address}${s.unit ? ', ' + s.unit : ''}\n`;
-    if (s.city) message += `*${t('wa.city')}:* ${s.city}\n`;
-    if (s.zip) message += `*${t('wa.area')}:* ${s.zip}\n`;
-    if (s.date) message += `*${t('wa.date')}:* ${prettyDate(s.date)}\n`;
-    if (s.timeWindow) message += `*${t('wa.time')}:* ${timeWindowLabel(s.timeWindow)}\n`;
-    if (s.notes) message += `*${t('wa.notes')}:* ${s.notes}\n`;
+      message += `*${t('wa.contact')}:* ${s.name || '—'}\n`;
+      if (s.phone) message += `*${t('wa.phone')}:* ${normalizedPhone(s.phone)}\n`;
+      if (s.email) message += `*${t('wa.email')}:* ${s.email.trim()}\n`;
+      if (s.address) message += `*${t('wa.address')}:* ${s.address}${s.unit ? ', ' + s.unit : ''}\n`;
+      if (s.city) message += `*${t('wa.city')}:* ${s.city}\n`;
+      if (s.zip) message += `*${t('wa.area')}:* ${s.zip}\n`;
+      if (s.date) message += `*${t('wa.date')}:* ${prettyDate(s.date)}\n`;
+      if (s.timeWindow) message += `*${t('wa.time')}:* ${timeWindowLabel(s.timeWindow)}\n`;
+      if (s.notes) message += `*${t('wa.notes')}:* ${s.notes}\n`;
+      if (state.confirmedBooking && state.confirmedBooking.appointmentId) {
+        message += `*Reservation #:* ${state.confirmedBooking.appointmentId}\n`;
+      }
+      message += `\n${t('wa.closing')}`;
+      return message;
+    };
 
-    message += `\n${t('wa.closing')}`;
-
-    // Guard against WhatsApp's URL length limit; trim notes if necessary.
+    // Guard against WhatsApp's URL length limit: full → compact → without notes.
+    let message = build(false);
     let encoded = encodeURIComponent(message);
+    if (encoded.length > 1900) {
+      message = build(true);
+      encoded = encodeURIComponent(message);
+    }
     if (encoded.length > 1900 && s.notes) {
       message = message.replace(`*${t('wa.notes')}:* ${s.notes}\n`, '');
       encoded = encodeURIComponent(message);
@@ -3036,11 +3439,29 @@
   }
 
   function quotePayload() {
-    const cat = state.selectedCategory;
-    const pkg = state.selectedPackage;
-    const size = state.selectedSize;
     const s = state.schedule;
-    const est = computeEstimate();
+    const items = state.cart
+      .map(line => ({ line, resolved: resolveLine(line), est: lineEstimate(line) }))
+      .filter(entry => entry.resolved)
+      .map(({ line, resolved, est }) => {
+        const { cat, pkg, size, addons } = resolved;
+        const v = line.vehicle || blankVehicle();
+        return {
+          category: { id: cat.id, name: cat.name },
+          package: { id: pkg.id, name: pkg.name },
+          size: { id: size.id, name: size.name },
+          addons: addons.map(addon => ({ id: addon.id, name: addon.name, price: addonWhatsAppPrice(addon, pkg) })),
+          vehicle: {
+            make: String(v.make || '').trim(),
+            model: String(v.model || '').trim(),
+            year: Number(v.year),
+            color: String(v.color || '').trim(),
+            plate: String(v.plate || '').trim()
+          },
+          estimate: est ? { min: est.min, max: est.max, label: est.label, custom: est.custom, isRange: est.isRange } : null
+        };
+      });
+    const total = cartEstimate();
     return {
       submissionId: state.submissionId,
       language: LANG,
@@ -3056,25 +3477,13 @@
         city: s.city.trim(),
         zip: s.zip.trim()
       },
-      vehicle: {
-        make: s.vehicleMake.trim(),
-        model: s.vehicleModel.trim(),
-        year: Number(s.vehicleYear),
-        color: s.vehicleColor.trim(),
-        plate: s.vehiclePlate.trim()
-      },
-      selection: {
-        category: { id: cat.id, name: cat.name },
-        package: { id: pkg.id, name: pkg.name },
-        size: { id: size.id, name: size.name },
-        addons: state.selectedAddons.map(addon => ({ id: addon.id, name: addon.name, price: addonWhatsAppPrice(addon) }))
-      },
-      estimate: est ? { min: est.min, max: est.max, label: est.label, custom: est.custom, isRange: est.isRange } : null,
+      items,
+      estimate: total ? { min: total.min, max: total.max, label: total.label, custom: total.custom, isRange: total.isRange } : null,
       schedule: { date: s.date, timeWindow: s.timeWindow, timeLabel: timeWindowLabel(s.timeWindow), notes: s.notes.trim() }
     };
   }
 
-  async function submitQuoteAndContinue(pendingWindow) {
+  async function submitQuoteAndContinue() {
     if (!state.policiesAccepted || state.submitting) return;
     state.submitting = true;
     state.submitError = false;
@@ -3088,16 +3497,30 @@
         body: JSON.stringify(quotePayload())
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.ok) throw new Error(result.error || `CRM request failed (${response.status})`);
+      if (!response.ok || !result.ok) {
+        const requestError = new Error(result.error || `CRM request failed (${response.status})`);
+        requestError.status = response.status;
+        throw requestError;
+      }
 
-      const whatsappUrl = buildWhatsAppUrl();
-      setSubmissionStatus(t('submit.success'), 'success');
-      try { localStorage.removeItem('lyb-quote'); } catch (e) { /* storage unavailable */ }
+      state.confirmedBooking = result;
+      setSubmissionStatus(`${t('submit.success')} ${result.appointmentId}`, 'success');
+      try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* storage unavailable */ }
       state.completed = true;
-      state.submissionId = newSubmissionId();
-      openWhatsApp(whatsappUrl, pendingWindow);
     } catch (error) {
-      if (pendingWindow && !pendingWindow.closed) pendingWindow.close();
+      if (error.status === 409) {
+        state.submitError = false;
+        state.schedule.date = '';
+        state.schedule.timeWindow = '';
+        await loadAvailability(true);
+        goToStep(4);
+        const messageEl = document.getElementById('availabilityMessage');
+        if (messageEl) {
+          messageEl.textContent = t('submit.slotTaken');
+          messageEl.className = 'availability-msg error';
+        }
+        return;
+      }
       state.submitError = true;
       setSubmissionStatus(t('submit.error'), 'error');
     } finally {
@@ -3110,23 +3533,10 @@
   if (continueWhatsApp) continueWhatsApp.addEventListener('click', () => openWhatsApp(buildWhatsAppUrl(), null));
 
   // ──────────────────────────────────────────────
-  // EXTERNAL SERVICES LINKING (Landing Page Cards)
+  // ROUTE CARDS (Landing Page → wizard step 1)
+  // The landing is marketing only: each card's single CTA opens the wizard
+  // with its cluster filter applied. The wizard is the only selection surface.
   // ──────────────────────────────────────────────
-  function setupExternalServiceCards() {
-    document.querySelectorAll('.build-service-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const category = SERVICES_DATA.categories.find(c => c.id === btn.dataset.cat);
-        if (!category) return;
-        state.catFilter = category.cluster || 'all';
-        resetFromCategory(category);
-        renderCatFilter();
-        renderCategories();
-        goToStep(2);
-      });
-    });
-  }
-
   function setupRouteCards() {
     document.querySelectorAll('.build-route-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -3160,7 +3570,7 @@
     const btn = document.getElementById('btnReset');
     if (!btn) return;
     btn.addEventListener('click', () => {
-      try { localStorage.removeItem('lyb-quote'); } catch (e) {}
+      try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
       state.catFilter = 'all';
       state.pkgType = 'onetime';
       state.heavyGroup = null;
@@ -3171,15 +3581,20 @@
       state.quizYes = [];
       state.quizPicks = [];
       state.quizOpen = false;
+      state.cart = [];
+      state.draftVehicle = blankVehicle();
       state.policiesAccepted = false;
       state.submitting = false;
       state.submitError = false;
       state.completed = false;
+      state.confirmedBooking = null;
+      state.availability = { packageId: '', loading: false, error: '', bookingMode: '', dates: [] };
       state.submissionId = newSubmissionId();
       state.schedule = blankSchedule();
       const policyEl = document.getElementById('policyAccept');
       if (policyEl) policyEl.checked = false;
       setSubmissionStatus('', '');
+      renderCartPanel();
       renderCatFilter();
       renderCategories();
       restoreScheduleInputs();
@@ -3261,6 +3676,7 @@
   function refreshAfterLang() {
     renderCatFilter();
     renderCategories();
+    renderCartPanel();
     if (state.currentStep >= 2) renderPackages();
     if (state.currentStep >= 3) renderSizesAndAddons();
     if (state.currentStep === 5) renderSummary();
@@ -3310,11 +3726,12 @@
     restoreState();
     renderCatFilter();
     renderCategories();
+    renderCartPanel();
+    setupCart();
     setupSchedule();
     restoreScheduleInputs();
     setupReset();
     setupRouteCards();
-    setupExternalServiceCards();
     document.querySelectorAll('.route-card').forEach(attachSpotlight);
     updateStepUI();
     updateQuoteBar();
