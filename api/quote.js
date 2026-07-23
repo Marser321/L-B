@@ -866,10 +866,7 @@ async function createAppointment(config, payload, contact) {
         calendarId: config.calendarId,
         locationId: config.locationId,
         contactId: contact.id,
-        // No assignedUserId on purpose: the calendar is round robin and its team
-        // members are the vans, so HighLevel picks the next free one. Passing an
-        // assignee here would pin every booking to one user and defeat that.
-        // The contact and opportunity still belong to GHL_ASSIGNED_USER_ID.
+        assignedUserId: config.assignedUserId,
         title: `${payload.items[0].package.name}${payload.items.length > 1 ? ` +${payload.items.length - 1} more` : ''} — ${payload.customer.name}`.slice(0, 160),
         appointmentStatus: 'confirmed',
         description: appointmentDescription(payload),
