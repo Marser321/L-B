@@ -9,6 +9,7 @@ const BOOKING_WINDOW_DAYS = 60;
 const MIN_BOOKING_NOTICE_MS = 24 * 60 * 60 * 1000;
 const MAX_BODY_BYTES = 32 * 1024;
 const GHL_REQUEST_TIMEOUT_MS = 10 * 1000;
+const BOOKING_WEBHOOK_TIMEOUT_MS = 4 * 1000;
 
 const CATEGORY_IDS = new Set([
   'cars', 'paint_correction', 'heavy_trucks', 'boats', 'jetski',
@@ -865,7 +866,10 @@ async function createAppointment(config, payload, contact) {
         calendarId: config.calendarId,
         locationId: config.locationId,
         contactId: contact.id,
-        assignedUserId: config.assignedUserId,
+        // No assignedUserId on purpose: the calendar is round robin and its team
+        // members are the vans, so HighLevel picks the next free one. Passing an
+        // assignee here would pin every booking to one user and defeat that.
+        // The contact and opportunity still belong to GHL_ASSIGNED_USER_ID.
         title: `${payload.items[0].package.name}${payload.items.length > 1 ? ` +${payload.items.length - 1} more` : ''} — ${payload.customer.name}`.slice(0, 160),
         appointmentStatus: 'confirmed',
         description: appointmentDescription(payload),
@@ -958,6 +962,50 @@ async function createBookingInHighLevel(config, metadata, payload) {
   };
 }
 
+// The opportunity is created straight into the confirmed stage, so HighLevel's
+// "pipeline stage changed" triggers never fire for a website booking. This posts
+// to an Inbound Webhook trigger instead, which a workflow can listen to.
+// The booking already succeeded by this point: a failed notification is logged
+// and swallowed so it can never turn a confirmed booking into an error.
+async function notifyBookingWebhook(payload, booking) {
+  const url = process.env.GHL_BOOKING_WEBHOOK_URL;
+  if (!url) return;
+
+  const lines = payload.items.map((item, index) => {
+    const vehicle = `${item.vehicle.year} ${item.vehicle.make} ${item.vehicle.model}`;
+    const addons = item.addons.length ? item.addons.map(addon => addon.name).join(', ') : 'None';
+    return `${index + 1}) ${item.package.name} — ${item.size.name} — ${item.estimate.label} — ${vehicle} — Add-ons: ${addons}`;
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BOOKING_WEBHOOK_TIMEOUT_MS);
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        submissionId: payload.submissionId,
+        name: payload.customer.name,
+        email: payload.customer.email,
+        phone: payload.customer.phone,
+        address: payload.customer.address,
+        itemCount: payload.items.length,
+        items: lines.join('\n'),
+        estimate: payload.estimate.label,
+        date: payload.schedule.date,
+        timeLabel: payload.schedule.timeLabel,
+        opportunityId: booking.opportunityId,
+        appointmentId: booking.appointmentId
+      })
+    });
+  } catch (error) {
+    console.error('[quote] booking webhook failed', payload.submissionId, error.name || 'Error');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -977,6 +1025,7 @@ async function handler(req, res) {
     const config = getConfig();
     const metadata = await resolveMetadata(config);
     const booking = await createBookingInHighLevel(config, metadata, payload);
+    await notifyBookingWebhook(payload, booking);
     return sendJson(res, 200, {
       ok: true,
       submissionId: payload.submissionId,
