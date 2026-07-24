@@ -374,17 +374,14 @@
               <select id="schedDate" disabled>
                 <option value="" data-i18n="availability.loading">Loading availability…</option>
               </select>
-              <span class="field-hint" data-i18n="form.dateHint">Please book at least 24 hours ahead.</span>
+              <span class="field-hint" data-i18n="form.dateHint">Please book at least 1 hour ahead.</span>
               <span class="availability-msg" id="availabilityMessage" role="status" aria-live="polite"></span>
             </div>
             <div class="field field-full" id="timeWindowField">
-              <label><span data-i18n="form.time">Available time</span> <span class="req">*</span></label>
-              <div class="time-row" role="group" aria-label="Available time window">
-                <button type="button" class="time-chip" data-window="morning" data-i18n="time.morning">Morning</button>
-                <button type="button" class="time-chip" data-window="afternoon" data-i18n="time.afternoon">Afternoon</button>
-                <button type="button" class="time-chip" data-window="evening" data-i18n="time.evening">Evening</button>
-              </div>
-              <span class="field-hint full-day-hint" id="fullDayHint" hidden data-i18n="availability.fullDay">This service reserves the complete day, from 8am to 7pm.</span>
+              <label><span data-i18n="form.time">Start time</span> <span class="req">*</span></label>
+              <span class="field-hint" id="durationHint" hidden></span>
+              <div class="time-row" id="timeRow" role="group" aria-label="Available start times"></div>
+              <span class="field-hint full-day-hint" id="fullDayHint" hidden data-i18n="availability.fullDay">This service reserves the complete day, from 8am to 6pm.</span>
             </div>
             <div class="field field-full">
               <label for="schedNotes"><span data-i18n="form.notes">Notes</span> <span class="opt" data-i18n="form.notesOpt">(optional)</span></label>
@@ -414,6 +411,7 @@
             </label>
           </div>
           <div class="submission-status" id="submissionStatus" role="status" aria-live="polite"></div>
+          <a href="#" class="btn btn-primary deposit-cta" id="depositCta" hidden target="_blank" rel="noopener"></a>
           <button type="button" class="btn btn-ghost continue-whatsapp" id="continueWhatsApp" hidden data-i18n="btn.continueWhatsApp">Contact us on WhatsApp</button>
         </div>
       </div>
@@ -524,10 +522,10 @@
           </summary>
           <div class="accordion-content">
             <p class="i18n-en">Monthly membership plans are billed automatically to the payment method on file.</p>
-            <p class="i18n-en"><strong>Scheduling:</strong> Membership visits must be scheduled at least 24 hours in advance and are subject to availability. Unused services from the current month do not roll over and are not transferable.</p>
+            <p class="i18n-en"><strong>Scheduling:</strong> Membership visits must be scheduled at least 48 hours in advance and are subject to availability. Unused services from the current month do not roll over and are not transferable.</p>
             <p class="i18n-en"><strong>Cancellation:</strong> You may request cancellation before the next billing cycle begins. Refunds are not issued for billing periods already in progress.</p>
             <p class="i18n-es">Los planes de membresía mensual se facturan automáticamente al medio de pago registrado.</p>
-            <p class="i18n-es"><strong>Programación:</strong> Las visitas de la membresía deben agendarse con al menos 24 horas de anticipación y están sujetas a disponibilidad. Los servicios no utilizados del mes en curso no se acumulan ni son transferibles.</p>
+            <p class="i18n-es"><strong>Programación:</strong> Las visitas de la membresía deben agendarse con al menos 48 horas de anticipación y están sujetas a disponibilidad. Los servicios no utilizados del mes en curso no se acumulan ni son transferibles.</p>
             <p class="i18n-es"><strong>Cancelación:</strong> Puedes solicitar la baja antes de que comience el siguiente ciclo de facturación. No se emiten reembolsos por periodos de facturación ya en curso.</p>
           </div>
         </details>

@@ -6,10 +6,13 @@ const PIPELINE_STAGE_NAME = 'Pendiente de Información';
 const CONFIRMED_PIPELINE_STAGE_NAME = 'Cita Confirmada';
 const BOOKING_TIMEZONE = 'America/New_York';
 const BOOKING_WINDOW_DAYS = 60;
-const MIN_BOOKING_NOTICE_MS = 24 * 60 * 60 * 1000;
+// One hour of notice for a normal booking; memberships must be booked 48h out.
+const MIN_BOOKING_NOTICE_MS = 60 * 60 * 1000;
+const MEMBERSHIP_BOOKING_NOTICE_MS = 48 * 60 * 60 * 1000;
 const MAX_BODY_BYTES = 32 * 1024;
 const GHL_REQUEST_TIMEOUT_MS = 10 * 1000;
 const BOOKING_WEBHOOK_TIMEOUT_MS = 4 * 1000;
+const DEPOSIT_PAYMENT_TIMEOUT_MS = 6 * 1000;
 
 const CATEGORY_IDS = new Set([
   'cars', 'paint_correction', 'heavy_trucks', 'boats', 'jetski',
@@ -114,20 +117,54 @@ const PACKAGES_BY_RESTRICTED_ADDON = Object.freeze({
   ]),
   'lubricante-grafito': new Set(['car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x'])
 });
-const SLOT_DEFINITIONS = Object.freeze({
-  morning: Object.freeze({ start: '08:00', end: '11:00', label: 'Morning (8am–12pm)' }),
-  afternoon: Object.freeze({ start: '12:00', end: '15:00', label: 'Afternoon (12pm–4pm)' }),
-  evening: Object.freeze({ start: '16:00', end: '19:00', label: 'Evening (4pm–7pm)' })
+// Crew working hours and the grid of start times offered to customers.
+const BUSINESS_DAY = Object.freeze({ start: '08:00', end: '18:00' });
+const SLOT_GRID_MINUTES = 30;
+const START_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+// TODO(remove-legacy-windows): retired named windows, transition window only.
+const LEGACY_TIME_WINDOWS = Object.freeze({ morning: '08:00', afternoon: '12:00', evening: '16:00' });
+
+// Per-category block length: the service itself plus the travel/setup buffer
+// the crew needs afterwards. An appointment reserves service + buffer, so two
+// bookings can never be scheduled back to back without the gap.
+const CATEGORY_DURATIONS = Object.freeze({
+  cars: Object.freeze({ service: 60, buffer: 30 }),
+  heavy_trucks: Object.freeze({ service: 90, buffer: 30 }),
+  boats: Object.freeze({ service: 120, buffer: 60 }),
+  jetski: Object.freeze({ service: 120, buffer: 60 }),
+  mobile_home: Object.freeze({ service: 90, buffer: 30 }),
+  golf_cart: Object.freeze({ service: 30, buffer: 30 }),
+  atv: Object.freeze({ service: 30, buffer: 30 }),
+  driveway: Object.freeze({ service: 120, buffer: 30 }),
+  // Paint correction and ceramic coating take the whole day; see FULL_DAY_PACKAGES.
+  paint_correction: Object.freeze({ service: 0, buffer: 0 })
 });
-const TIME_WINDOWS = new Set([...Object.keys(SLOT_DEFINITIONS), 'full_day']);
-const FULL_DAY_PACKAGES = new Set([
-  ...PACKAGES_BY_CATEGORY.heavy_trucks,
-  ...PACKAGES_BY_CATEGORY.boats,
-  ...PACKAGES_BY_CATEGORY.mobile_home,
-  ...PACKAGES_BY_CATEGORY.driveway,
-  'paint-correction',
-  'ceramic-protection'
-]);
+
+// Deposit charged once per booking. Compact vehicles pay the small deposit;
+// anything the crew treats as a large unit pays the larger one.
+const DEPOSIT_SMALL = 30;
+const DEPOSIT_LARGE = 50;
+const DEPOSIT_BY_CATEGORY = Object.freeze({
+  cars: DEPOSIT_SMALL,
+  golf_cart: DEPOSIT_SMALL,
+  atv: DEPOSIT_SMALL,
+  jetski: DEPOSIT_SMALL,
+  heavy_trucks: DEPOSIT_LARGE,
+  boats: DEPOSIT_LARGE,
+  mobile_home: DEPOSIT_LARGE,
+  driveway: DEPOSIT_LARGE,
+  paint_correction: DEPOSIT_LARGE
+});
+
+const CATEGORY_BY_PACKAGE = Object.freeze(Object.fromEntries(
+  Object.entries(PACKAGES_BY_CATEGORY).flatMap(([categoryId, packages]) =>
+    [...packages].map(packageId => [packageId, categoryId])
+  )
+));
+
+const MEMBERSHIP_PACKAGE_PATTERN = /membresia|membership|-2x$|-4x$/;
+
+const FULL_DAY_PACKAGES = new Set(['paint-correction', 'ceramic-protection']);
 const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,79}$/;
 const SUBMISSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{7,99}$/;
 
@@ -157,6 +194,8 @@ const OPPORTUNITY_FIELDS = Object.freeze({
   preferredDate: 'Website Quote - Preferred Date',
   preferredTime: 'Website Quote - Preferred Time',
   estimate: 'Website Quote - Estimate',
+  deposit: 'Website Quote - Deposit Due',
+  duration: 'Website Quote - Service Duration',
   notes: 'Website Quote - Customer Notes',
   language: 'Website Quote - Language',
   policyAcceptedAt: 'Website Quote - Policy Accepted At',
@@ -165,8 +204,17 @@ const OPPORTUNITY_FIELDS = Object.freeze({
   bookingMode: 'Website Quote - Booking Mode',
   confirmedStart: 'Website Quote - Confirmed Start',
   confirmedEnd: 'Website Quote - Confirmed End',
-  bookingStatus: 'Website Quote - Booking Status'
+  bookingStatus: 'Website Quote - Booking Status',
+  depositStatus: 'Website Quote - Deposit Status',
+  depositLink: 'Website Quote - Deposit Link'
 });
+
+// Custom fields that only need to exist in HighLevel once online deposit
+// payments are turned on. Keeping them optional otherwise means Phase B can
+// ship without forcing an immediate re-run of scripts/setup-ghl.mjs, and a
+// flag left off behaves byte-for-byte like Phase A even if the fields are
+// still missing upstream.
+const DEPOSIT_PAYMENT_ONLY_FIELDS = new Set(['depositStatus', 'depositLink']);
 
 let metadataPromise = null;
 
@@ -357,15 +405,25 @@ function validatePayload(body) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
     throw new RequestError('schedule.date is invalid');
   }
-  if (date < new Date().toISOString().slice(0, 10)) throw new RequestError('schedule.date is in the past');
-  const timeWindow = text(schedule.timeWindow, 'schedule.timeWindow', 1, 20);
-  if (!TIME_WINDOWS.has(timeWindow)) throw new RequestError('schedule.timeWindow is invalid');
+  const today = new Date().toISOString().slice(0, 10);
+  if (date < today) throw new RequestError('schedule.date is in the past');
+  if (date > addDays(today, BOOKING_WINDOW_DAYS)) throw new RequestError('schedule.date is too far ahead');
+  const requestedWindow = text(schedule.timeWindow, 'schedule.timeWindow', 1, 20);
+  // TODO(remove-legacy-windows): long-lived open tabs still post the retired
+  // morning/afternoon/evening keys; map them onto the new start-time grid.
+  const timeWindow = LEGACY_TIME_WINDOWS[requestedWindow] || requestedWindow;
+  const packageIds = packageIdsOf(items);
   const bookingMode = bookingModeForItems(items);
+  const durationMinutes = visitDurationMinutes(packageIds);
   if (bookingMode === 'full_day' && timeWindow !== 'full_day') {
     throw new RequestError('schedule.timeWindow must be full_day for this booking');
   }
-  if (bookingMode === 'slot' && timeWindow === 'full_day') {
-    throw new RequestError('schedule.timeWindow is invalid for this booking');
+  if (bookingMode === 'slot') {
+    if (timeWindow === 'full_day') throw new RequestError('schedule.timeWindow is invalid for this booking');
+    if (!START_TIME_PATTERN.test(timeWindow)) throw new RequestError('schedule.timeWindow is invalid');
+    if (minutesFromTime(timeWindow) % SLOT_GRID_MINUTES !== 0) throw new RequestError('schedule.timeWindow is invalid');
+    // Surfaces a start time that cannot finish before the crew's day ends.
+    requestedPeriod(date, timeWindow, durationMinutes);
   }
 
   const policyAcceptedAt = text(body.policyAcceptedAt, 'policyAcceptedAt', 20, 40);
@@ -396,9 +454,11 @@ function validatePayload(body) {
     schedule: {
       date,
       timeWindow,
-      timeLabel: bookingLabel(timeWindow, body.language),
+      timeLabel: bookingLabel(timeWindow, body.language, durationMinutes),
+      durationMinutes,
       notes: optionalText(schedule.notes, 'schedule.notes', 1000)
-    }
+    },
+    deposit: depositForPackages(packageIds)
   };
 }
 
@@ -408,14 +468,27 @@ function getConfig() {
   const calendarId = process.env.GHL_CALENDAR_ID;
   const assignedUserId = process.env.GHL_ASSIGNED_USER_ID;
   if (!token || !locationId || !calendarId || !assignedUserId) throw new RequestError('CRM is not configured', 503);
+  // The crews that can actually take a website booking today. Adding a van is a
+  // matter of appending its user id here — no code change.
+  const crewUserIds = String(process.env.GHL_CREW_USER_IDS || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
   return {
     token,
     locationId,
     calendarId,
     assignedUserId,
+    crewUserIds: crewUserIds.length ? crewUserIds : [assignedUserId],
     pipelineId: process.env.GHL_PIPELINE_ID || '',
     pipelineStageId: process.env.GHL_PIPELINE_STAGE_ID || '',
-    confirmedPipelineStageId: process.env.GHL_CONFIRMED_PIPELINE_STAGE_ID || ''
+    confirmedPipelineStageId: process.env.GHL_CONFIRMED_PIPELINE_STAGE_ID || '',
+    // Phase B: online deposit collection. Off unless explicitly turned on, and
+    // no other env var below is required unless it is.
+    depositPaymentsEnabled: process.env.GHL_DEPOSIT_PAYMENTS === 'on',
+    // Stripe is connected in both test and live mode on the sub-account; default
+    // to test mode so turning the flag on can never move real money by accident.
+    depositPaymentsLiveMode: process.env.GHL_DEPOSIT_LIVE_MODE === 'true'
   };
 }
 
@@ -476,7 +549,9 @@ async function resolveMetadata(config) {
       Object.entries(OPPORTUNITY_FIELDS).forEach(([key, name]) => {
         const match = fields.find(field => field.model === 'opportunity' && String(field.name || '').toLowerCase() === name.toLowerCase());
         if (match) fieldIds[key] = match.id;
-        else missing.push(name);
+        // Deposit-payment fields are only required once the flag is on; a
+        // location that hasn't re-run setup-ghl.mjs yet must still book normally.
+        else if (config.depositPaymentsEnabled || !DEPOSIT_PAYMENT_ONLY_FIELDS.has(key)) missing.push(name);
       });
       if (missing.length) throw new RequestError('Website quote custom fields are not configured', 503);
       return { pipelineId, pipelineStageId, confirmedPipelineStageId, fieldIds };
@@ -498,14 +573,64 @@ function bookingModeForPackage(packageId) {
   return FULL_DAY_PACKAGES.has(packageId) ? 'full_day' : 'slot';
 }
 
-function bookingLabel(timeWindow, language = 'en') {
-  const labels = {
-    morning: { en: 'Morning (8am–12pm)', es: 'Mañana (8am–12pm)' },
-    afternoon: { en: 'Afternoon (12pm–4pm)', es: 'Tarde (12pm–4pm)' },
-    evening: { en: 'Evening (4pm–7pm)', es: 'Noche (4pm–7pm)' },
-    full_day: { en: 'Full day (8am–7pm)', es: 'Día completo (8am–7pm)' }
+function minutesFromTime(time) {
+  const [hour, minute] = time.split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function timeFromMinutes(minutes) {
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+function isMembershipPackage(packageId) {
+  return MEMBERSHIP_PACKAGE_PATTERN.test(packageId);
+}
+
+function durationForPackage(packageId) {
+  const duration = CATEGORY_DURATIONS[CATEGORY_BY_PACKAGE[packageId]];
+  return duration || CATEGORY_DURATIONS.cars;
+}
+
+// Total minutes a cart occupies: every line's service time plus its buffer.
+// Two vehicles in one visit are washed one after the other by the same crew.
+function durationForPackages(packageIds) {
+  return packageIds.reduce((total, packageId) => {
+    const duration = durationForPackage(packageId);
+    return total + duration.service + duration.buffer;
+  }, 0);
+}
+
+function packageIdsOf(items) {
+  return items.map(item => item.package.id);
+}
+
+// One deposit per booking: the largest one any line in the cart requires.
+function depositForPackages(packageIds) {
+  return packageIds.reduce(
+    (amount, packageId) => Math.max(amount, DEPOSIT_BY_CATEGORY[CATEGORY_BY_PACKAGE[packageId]] || DEPOSIT_SMALL),
+    0
+  );
+}
+
+function noticeMsForPackages(packageIds) {
+  return packageIds.some(isMembershipPackage) ? MEMBERSHIP_BOOKING_NOTICE_MS : MIN_BOOKING_NOTICE_MS;
+}
+
+function bookingLabel(timeWindow, language = 'en', durationMinutes = 0) {
+  if (timeWindow === 'full_day') {
+    return language === 'es' ? 'Día completo (8am–6pm)' : 'Full day (8am–6pm)';
+  }
+  if (!START_TIME_PATTERN.test(timeWindow || '')) return '';
+  const start = minutesFromTime(timeWindow);
+  const end = start + durationMinutes;
+  const clock = minutes => {
+    const hour = Math.floor(minutes / 60);
+    const minute = minutes % 60;
+    const suffix = hour >= 12 ? 'pm' : 'am';
+    const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+    return minute ? `${hour12}:${String(minute).padStart(2, '0')}${suffix}` : `${hour12}${suffix}`;
   };
-  return labels[timeWindow] ? labels[timeWindow][language] : '';
+  return durationMinutes ? `${clock(start)}–${clock(end)}` : clock(start);
 }
 
 function isValidDateOnly(value) {
@@ -550,84 +675,110 @@ function zonedDateTimeToIso(date, time, timezone = BOOKING_TIMEZONE) {
   return new Date(guess).toISOString();
 }
 
-function requestedPeriod(date, timeWindow) {
+function requestedPeriod(date, timeWindow, durationMinutes) {
   if (timeWindow === 'full_day') {
     return {
-      startTime: zonedDateTimeToIso(date, '08:00'),
-      endTime: zonedDateTimeToIso(date, '19:00')
+      startTime: zonedDateTimeToIso(date, BUSINESS_DAY.start),
+      endTime: zonedDateTimeToIso(date, BUSINESS_DAY.end)
     };
   }
-  const definition = SLOT_DEFINITIONS[timeWindow];
-  if (!definition) throw new RequestError('schedule.timeWindow is invalid');
+  if (!START_TIME_PATTERN.test(timeWindow || '')) throw new RequestError('schedule.timeWindow is invalid');
+  const start = minutesFromTime(timeWindow);
+  const end = start + durationMinutes;
+  if (start < minutesFromTime(BUSINESS_DAY.start) || end > minutesFromTime(BUSINESS_DAY.end)) {
+    throw new RequestError('schedule.timeWindow does not fit in the working day');
+  }
   return {
-    startTime: zonedDateTimeToIso(date, definition.start),
-    endTime: zonedDateTimeToIso(date, definition.end)
+    startTime: zonedDateTimeToIso(date, timeWindow),
+    endTime: zonedDateTimeToIso(date, timeFromMinutes(end))
   };
 }
 
 function validateAvailabilityRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new RequestError('Invalid request body');
-  const packageId = validateId(body.packageId, 'packageId');
-  if (!SIZES_BY_PACKAGE[packageId]) throw new RequestError('packageId is invalid');
+  // v2 asks for the whole cart so the grid reflects the combined duration;
+  // a single packageId is still accepted for one-service lookups.
+  const input = Array.isArray(body.packageIds) ? body.packageIds : [body.packageId];
+  if (!input.length || input.length > CART_RULES.MAX_ITEMS) throw new RequestError('packageIds is invalid');
+  const packageIds = input.map((value, index) => {
+    const packageId = validateId(value, `packageIds[${index}]`);
+    if (!SIZES_BY_PACKAGE[packageId]) throw new RequestError(`packageIds[${index}] is invalid`);
+    return packageId;
+  });
   const from = text(body.from, 'from', 10, 10);
   const to = text(body.to, 'to', 10, 10);
   if (!isValidDateOnly(from) || !isValidDateOnly(to) || to < from) throw new RequestError('date range is invalid');
   if (datesBetween(from, to).length > BOOKING_WINDOW_DAYS) throw new RequestError('date range is too large');
-  return { packageId, from, to };
+  return { packageIds, from, to };
 }
 
-function slotsForDate(response, date) {
-  const day = response && (response[date] || (response.slots && response.slots[date]) || (response.availability && response.availability[date]));
-  if (Array.isArray(day)) return day;
-  if (day && Array.isArray(day.slots)) return day.slots;
-  return [];
+// Every commitment already on a crew's calendar, including appointments booked
+// by hand in HighLevel, so the website never offers a time the crew is out.
+async function busyIntervalsByCrew(config, from, to) {
+  const startTime = Date.parse(zonedDateTimeToIso(from, '00:00'));
+  const endTime = Date.parse(zonedDateTimeToIso(addDays(to, 1), '00:00')) - 1;
+  return Promise.all(config.crewUserIds.map(async userId => {
+    const query = new URLSearchParams({
+      locationId: config.locationId,
+      userId,
+      startTime: String(startTime),
+      endTime: String(endTime)
+    });
+    const data = await ghlRequest(config, `/calendars/events?${query}`, { version: '2021-07-28' });
+    return (data.events || [])
+      .filter(event => !event.deleted && String(event.appointmentStatus || '') !== 'cancelled')
+      .map(event => ({ start: Date.parse(event.startTime), end: Date.parse(event.endTime) }))
+      .filter(interval => Number.isFinite(interval.start) && Number.isFinite(interval.end));
+  }));
 }
 
-function slotStart(slot) {
-  if (typeof slot === 'string') return slot;
-  if (!slot || typeof slot !== 'object') return '';
-  return slot.startTime || slot.start || slot.slot || '';
+function crewIsFree(intervals, start, end) {
+  return !intervals.some(interval => interval.start < end && start < interval.end);
 }
 
-function slotKeyFromStart(value) {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return '';
-  const parts = zonedParts(timestamp);
-  const time = `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
-  return Object.keys(SLOT_DEFINITIONS).find(key => SLOT_DEFINITIONS[key].start === time) || '';
+function bookingModeForPackages(packageIds) {
+  return packageIds.some(id => bookingModeForPackage(id) === 'full_day') ? 'full_day' : 'slot';
 }
 
-async function availabilityForPackage(config, packageId, from, to, now = Date.now()) {
-  const startDate = Date.parse(zonedDateTimeToIso(from, '00:00'));
-  const endDate = Date.parse(zonedDateTimeToIso(addDays(to, 1), '00:00')) - 1;
-  const query = new URLSearchParams({
-    startDate: String(startDate),
-    endDate: String(endDate),
-    timezone: BOOKING_TIMEZONE,
-    userId: config.assignedUserId
-  });
-  const freeSlotData = await ghlRequest(config, `/calendars/${encodeURIComponent(config.calendarId)}/free-slots?${query}`);
-  const bookingMode = bookingModeForPackage(packageId);
+function visitDurationMinutes(packageIds) {
+  return bookingModeForPackages(packageIds) === 'full_day'
+    ? minutesFromTime(BUSINESS_DAY.end) - minutesFromTime(BUSINESS_DAY.start)
+    : durationForPackages(packageIds);
+}
+
+// Start times on a 30-minute grid that still finish inside the working day and
+// that at least one crew can take. A visit is one crew from start to finish.
+async function availabilityForCart(config, packageIds, from, to, now = Date.now()) {
+  const bookingMode = bookingModeForPackages(packageIds);
+  const durationMinutes = visitDurationMinutes(packageIds);
+  const noticeMs = noticeMsForPackages(packageIds);
+  const crews = await busyIntervalsByCrew(config, from, to);
+  const dayStart = minutesFromTime(BUSINESS_DAY.start);
+  const dayEnd = minutesFromTime(BUSINESS_DAY.end);
   const dates = [];
 
   for (const date of datesBetween(from, to)) {
     if (new Date(`${date}T00:00:00Z`).getUTCDay() === 0) continue;
-    const available = new Set(
-      slotsForDate(freeSlotData, date)
-        .map(slotStart)
-        .filter(value => Date.parse(value) >= now + MIN_BOOKING_NOTICE_MS)
-        .map(slotKeyFromStart)
-        .filter(Boolean)
-    );
-    if (bookingMode === 'full_day') {
-      if (Object.keys(SLOT_DEFINITIONS).every(key => available.has(key))) dates.push({ date, slots: ['full_day'] });
-    } else {
-      const slots = Object.keys(SLOT_DEFINITIONS).filter(key => available.has(key));
-      if (slots.length) dates.push({ date, slots });
+    const slots = [];
+    for (let start = dayStart; start + durationMinutes <= dayEnd; start += SLOT_GRID_MINUTES) {
+      const time = timeFromMinutes(start);
+      const startsAt = Date.parse(zonedDateTimeToIso(date, time));
+      if (startsAt < now + noticeMs) continue;
+      const endsAt = Date.parse(zonedDateTimeToIso(date, timeFromMinutes(start + durationMinutes)));
+      if (crews.some(intervals => crewIsFree(intervals, startsAt, endsAt))) {
+        slots.push(bookingMode === 'full_day' ? 'full_day' : time);
+      }
     }
+    if (slots.length) dates.push({ date, slots });
   }
 
-  return { timezone: BOOKING_TIMEZONE, bookingMode, dates };
+  return {
+    timezone: BOOKING_TIMEZONE,
+    bookingMode,
+    durationMinutes,
+    deposit: depositForPackages(packageIds),
+    dates
+  };
 }
 
 // GHL custom fields are single-value TEXT; keep serialized cart values bounded.
@@ -662,7 +813,11 @@ function itemsBreakdown(items) {
   ).join('\n');
 }
 
-function opportunityValues(payload, appointment = null) {
+// depositPayment is only ever passed on the follow-up update issued right
+// after a deposit invoice link is created (see recordDepositPayment); every
+// other caller leaves it null, so depositStatus/depositLink stay '' and no
+// custom-field value is written when Phase B's flag is off.
+function opportunityValues(payload, appointment = null, depositPayment = null) {
   const { customer, items, estimate, schedule } = payload;
   const single = items.length === 1;
   const values = {
@@ -681,6 +836,8 @@ function opportunityValues(payload, appointment = null) {
     preferredDate: schedule.date,
     preferredTime: schedule.timeLabel,
     estimate: estimate.label,
+    deposit: `$${payload.deposit}`,
+    duration: `${Math.floor(schedule.durationMinutes / 60)}h ${schedule.durationMinutes % 60}m`,
     notes: schedule.notes,
     language: payload.language,
     policyAcceptedAt: payload.policyAcceptedAt,
@@ -689,7 +846,9 @@ function opportunityValues(payload, appointment = null) {
     bookingMode: bookingModeForItems(items),
     confirmedStart: appointment ? appointment.startTime : '',
     confirmedEnd: appointment ? appointment.endTime : '',
-    bookingStatus: appointment ? 'confirmed' : 'pending'
+    bookingStatus: appointment ? 'confirmed' : 'pending',
+    depositStatus: depositPayment ? 'unpaid' : '',
+    depositLink: depositPayment && depositPayment.depositUrl ? depositPayment.depositUrl : ''
   };
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, truncateField(value)]));
 }
@@ -844,19 +1003,22 @@ async function findAppointmentBySubmission(config, payload, contactId) {
   );
 }
 
-async function ensureRequestedAvailability(config, payload) {
-  const availability = await availabilityForPackage(
-    config,
-    representativeItem(payload.items).package.id,
-    payload.schedule.date,
-    payload.schedule.date
-  );
-  const day = availability.dates.find(item => item.date === payload.schedule.date);
-  if (!day || !day.slots.includes(payload.schedule.timeWindow)) throw new SlotUnavailableError();
+// Re-checks the requested period right before booking and returns the crew that
+// will take it. Throws when the visit no longer fits anywhere.
+async function assignCrewForVisit(config, payload) {
+  const period = requestedPeriod(payload.schedule.date, payload.schedule.timeWindow, payload.schedule.durationMinutes);
+  const startsAt = Date.parse(period.startTime);
+  const endsAt = Date.parse(period.endTime);
+  if (startsAt < Date.now() + noticeMsForPackages(packageIdsOf(payload.items))) throw new SlotUnavailableError();
+
+  const crews = await busyIntervalsByCrew(config, payload.schedule.date, payload.schedule.date);
+  const index = crews.findIndex(intervals => crewIsFree(intervals, startsAt, endsAt));
+  if (index === -1) throw new SlotUnavailableError();
+  return config.crewUserIds[index];
 }
 
-async function createAppointment(config, payload, contact) {
-  const period = requestedPeriod(payload.schedule.date, payload.schedule.timeWindow);
+async function createAppointment(config, payload, contact, crewUserId) {
+  const period = requestedPeriod(payload.schedule.date, payload.schedule.timeWindow, payload.schedule.durationMinutes);
   let result;
   try {
     result = await ghlRequest(config, '/calendars/events/appointments', {
@@ -866,7 +1028,7 @@ async function createAppointment(config, payload, contact) {
         calendarId: config.calendarId,
         locationId: config.locationId,
         contactId: contact.id,
-        assignedUserId: config.assignedUserId,
+        assignedUserId: crewUserId,
         title: `${payload.items[0].package.name}${payload.items.length > 1 ? ` +${payload.items.length - 1} more` : ''} — ${payload.customer.name}`.slice(0, 160),
         appointmentStatus: 'confirmed',
         description: appointmentDescription(payload),
@@ -875,8 +1037,11 @@ async function createAppointment(config, payload, contact) {
         overrideLocationConfig: true,
         startTime: period.startTime,
         endTime: period.endTime,
-        ignoreDateRange: false,
-        ignoreFreeSlotValidation: false,
+        // The website owns the grid now: start times sit on a 30-minute grid and
+        // the length varies per cart, neither of which HighLevel's own slot
+        // validation can express. assignCrewForVisit re-checks the crew instead.
+        ignoreDateRange: true,
+        ignoreFreeSlotValidation: true,
         toNotify: true
       }
     });
@@ -947,13 +1112,18 @@ async function createBookingInHighLevel(config, metadata, payload) {
     opportunity = await createPendingOpportunity(config, metadata, contact, payload);
   }
 
-  await ensureRequestedAvailability(config, payload);
-  const appointment = await createAppointment(config, payload, contact);
+  const crewUserId = await assignCrewForVisit(config, payload);
+  const appointment = await createAppointment(config, payload, contact, crewUserId);
   const finalized = await finalizeOpportunitySafely(config, metadata, opportunity, payload, appointment);
   return {
     contactId: contact.id,
     opportunityId: finalized.opportunity.id,
     appointmentId: appointment.id,
+    // Kept only on a freshly-created booking so a follow-up deposit-link update
+    // (see recordDepositPayment) can resend the full custom-field set without
+    // re-fetching the appointment. Duplicate/retry branches above never set
+    // this, which is what keeps deposit-payment creation from being retried.
+    appointment,
     duplicate: false,
     syncPending: finalized.syncPending
   };
@@ -1003,6 +1173,81 @@ async function notifyBookingWebhook(payload, booking) {
   }
 }
 
+// PHASE B — online deposit collection (see PHASE-B-DECISIONS.md).
+//
+// CONFIRM-THEN-PAY: the appointment is already confirmed by the time this
+// runs, so a failure here can never downgrade a confirmed booking. It creates
+// a GHL "text2pay" invoice for the deposit and returns its hosted payment URL,
+// the same primitive the CRM's own Payments UI uses to text/email a paylink.
+// Entirely gated behind GHL_DEPOSIT_PAYMENTS=on; callers must not invoke this
+// when the flag is off.
+async function createDepositPayment(config, payload, booking) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEPOSIT_PAYMENT_TIMEOUT_MS);
+  try {
+    const email = payload.customer.email;
+    const result = await ghlRequest(config, '/invoices/text2pay', {
+      method: 'POST',
+      version: 'v3',
+      signal: controller.signal,
+      body: {
+        altId: config.locationId,
+        altType: 'location',
+        name: `Booking Deposit — ${payload.submissionId}`.slice(0, 160),
+        currency: 'USD',
+        items: [{ name: 'Booking Deposit', currency: 'USD', amount: payload.deposit, qty: 1 }],
+        contactDetails: {
+          id: booking.contactId,
+          name: payload.customer.name,
+          phoneNo: payload.customer.phone,
+          email
+        },
+        issueDate: new Date().toISOString().slice(0, 10),
+        sentTo: { email: email ? [email] : [] },
+        liveMode: config.depositPaymentsLiveMode,
+        // 'draft' avoids GHL sending its own invoice email/SMS on top of the
+        // booking's own confirmation notifications; the site surfaces the link.
+        action: 'draft',
+        userId: config.assignedUserId
+      }
+    });
+    const depositUrl = result && typeof result.invoiceUrl === 'string' ? result.invoiceUrl : '';
+    const depositRef = result && result.invoice && result.invoice._id ? String(result.invoice._id) : '';
+    if (!depositUrl) return null;
+    return { depositUrl, depositRef };
+  } catch (error) {
+    console.error('[quote] deposit payment failed', payload.submissionId, error.name || 'Error');
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// The deposit link only exists after createDepositPayment resolves, which is
+// after the opportunity was already finalized once (see
+// finalizeOpportunitySafely). This resends the full custom-field set — the
+// same shape finalizeOpportunity used — rather than a partial patch, since a
+// partial customFields array would otherwise overwrite the fields already
+// stored on the opportunity. A failure here is logged and swallowed: the
+// booking and its confirmation already succeeded.
+async function recordDepositPayment(config, metadata, booking, payload, depositPayment) {
+  try {
+    const customFields = customFieldsForValues(metadata, opportunityValues(payload, booking.appointment, depositPayment));
+    await ghlRequest(config, `/opportunities/${encodeURIComponent(booking.opportunityId)}`, {
+      method: 'PUT',
+      version: 'v3',
+      body: {
+        pipelineStageId: metadata.confirmedPipelineStageId,
+        assignedTo: config.assignedUserId,
+        monetaryValue: Math.round(payload.estimate.min),
+        customFields
+      }
+    });
+  } catch (error) {
+    console.error('[quote] deposit field update failed', payload.submissionId, error.name || 'Error');
+  }
+}
+
 async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -1023,6 +1268,19 @@ async function handler(req, res) {
     const metadata = await resolveMetadata(config);
     const booking = await createBookingInHighLevel(config, metadata, payload);
     await notifyBookingWebhook(payload, booking);
+
+    // Phase B: create a deposit payment link only for a freshly-confirmed
+    // booking (never on a duplicate/retry, which would mint a second invoice
+    // for the same appointment) and only when the flag is on.
+    let depositUrl;
+    if (config.depositPaymentsEnabled && !booking.duplicate) {
+      const depositPayment = await createDepositPayment(config, payload, booking);
+      if (depositPayment) {
+        depositUrl = depositPayment.depositUrl;
+        await recordDepositPayment(config, metadata, booking, payload, depositPayment);
+      }
+    }
+
     return sendJson(res, 200, {
       ok: true,
       submissionId: payload.submissionId,
@@ -1035,7 +1293,8 @@ async function handler(req, res) {
         date: payload.schedule.date,
         timeWindow: payload.schedule.timeWindow,
         timeLabel: payload.schedule.timeLabel
-      }
+      },
+      ...(depositUrl ? { depositUrl } : {})
     });
   } catch (error) {
     const statusCode = error instanceof RequestError || error instanceof HighLevelError ? error.statusCode : 502;
@@ -1050,7 +1309,10 @@ async function handler(req, res) {
 module.exports = handler;
 module.exports._test = {
   OPPORTUNITY_FIELDS,
-  SLOT_DEFINITIONS,
+  BUSINESS_DAY,
+  SLOT_GRID_MINUTES,
+  CATEGORY_DURATIONS,
+  DEPOSIT_BY_CATEGORY,
   FULL_DAY_PACKAGES,
   RequestError,
   HighLevelError,
@@ -1066,8 +1328,12 @@ module.exports._test = {
   bookingLabel,
   zonedDateTimeToIso,
   requestedPeriod,
-  slotsForDate,
-  availabilityForPackage,
+  durationForPackages,
+  visitDurationMinutes,
+  depositForPackages,
+  noticeMsForPackages,
+  isMembershipPackage,
+  availabilityForCart,
   opportunityValues,
   opportunityCustomFieldValue,
   getConfig,
@@ -1075,5 +1341,7 @@ module.exports._test = {
   assertSameOrigin,
   readBody,
   sendJson,
+  createDepositPayment,
+  recordDepositPayment,
   resetMetadataCache: () => { metadataPromise = null; }
 };

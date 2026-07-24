@@ -10,7 +10,7 @@ const {
   sendJson,
   getConfig,
   validateAvailabilityRequest,
-  availabilityForPackage
+  availabilityForCart
 } = quote._test;
 
 async function handler(req, res) {
@@ -23,7 +23,7 @@ async function handler(req, res) {
     assertSameOrigin(req);
     const input = validateAvailabilityRequest(readBody(req));
     const config = getConfig();
-    const availability = await availabilityForPackage(config, input.packageId, input.from, input.to);
+    const availability = await availabilityForCart(config, input.packageIds, input.from, input.to);
     return sendJson(res, 200, { ok: true, ...availability });
   } catch (error) {
     const statusCode = error instanceof RequestError || error instanceof HighLevelError ? error.statusCode : 502;

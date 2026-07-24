@@ -40,8 +40,36 @@
     'car-hauler-2x',
     'car-hauler-4x'
   ]);
-  // Localized label for a stored time-window key (morning/afternoon/evening).
-  function timeWindowLabel(key) { return key ? t('tw.' + key) : ''; }
+  // Minutes past midnight → "8am" / "1:30pm".
+  function clockLabel(minutes) {
+    const hour = Math.floor(minutes / 60);
+    const minute = minutes % 60;
+    const suffix = hour >= 12 ? 'pm' : 'am';
+    const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+    return minute ? `${hour12}:${String(minute).padStart(2, '0')}${suffix}` : `${hour12}${suffix}`;
+  }
+
+  function minutesFromTime(time) {
+    const [hour, minute] = String(time).split(':').map(Number);
+    return hour * 60 + minute;
+  }
+
+  // "1h 30m" / "2h" — how long the crew is on site for the whole cart.
+  function durationLabel(minutes) {
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    if (!hours) return `${rest}m`;
+    return rest ? `${hours}h ${rest}m` : `${hours}h`;
+  }
+
+  // Localized label for a stored start time ("08:30") or the full-day key.
+  function timeWindowLabel(key) {
+    if (!key) return '';
+    if (key === 'full_day') return t('tw.full_day');
+    const duration = state.availability.durationMinutes || 0;
+    const start = minutesFromTime(key);
+    return duration ? `${clockLabel(start)}–${clockLabel(start + duration)}` : clockLabel(start);
+  }
 
   // ──────────────────────────────────────────────
   // SERVICES DATA (Extracted from Context & PDF)
@@ -1578,21 +1606,19 @@
     'form.city': { en: 'City', es: 'Ciudad' },
     'form.cityPh': { en: 'e.g. Fort Myers', es: 'ej. Fort Myers' },
     'form.date': { en: 'Available date', es: 'Fecha disponible' },
-    'form.dateHint': { en: 'Please book at least 24 hours ahead.', es: 'Reserva con al menos 24 horas de anticipación.' },
-    'form.time': { en: 'Available time', es: 'Horario disponible' },
-    'time.morning': { en: 'Morning', es: 'Mañana' },
-    'time.afternoon': { en: 'Afternoon', es: 'Tarde' },
-    'time.evening': { en: 'Evening', es: 'Noche' },
-    'tw.morning': { en: 'Morning (8am–12pm)', es: 'Mañana (8am–12pm)' },
-    'tw.afternoon': { en: 'Afternoon (12pm–4pm)', es: 'Tarde (12pm–4pm)' },
-    'tw.evening': { en: 'Evening (4pm–7pm)', es: 'Noche (4pm–7pm)' },
-    'tw.full_day': { en: 'Full day (8am–7pm)', es: 'Día completo (8am–7pm)' },
+    'form.dateHint': { en: 'Please book at least 1 hour ahead.', es: 'Reserva con al menos 1 hora de anticipación.' },
+    'form.dateHintMembership': { en: 'Membership visits must be booked at least 48 hours ahead.', es: 'Las visitas de membresía deben reservarse con al menos 48 horas de anticipación.' },
+    'form.time': { en: 'Start time', es: 'Hora de inicio' },
+    'tw.full_day': { en: 'Full day (8am–6pm)', es: 'Día completo (8am–6pm)' },
+    'form.duration': { en: 'Estimated on site: {duration}', es: 'Tiempo estimado en sitio: {duration}' },
     'availability.loading': { en: 'Loading availability…', es: 'Cargando disponibilidad…' },
     'availability.chooseDate': { en: 'Choose an available date', es: 'Elige una fecha disponible' },
     'availability.ready': { en: 'Live availability loaded from our calendar.', es: 'Disponibilidad actualizada desde nuestro calendario.' },
     'availability.empty': { en: 'No online openings are available in the next 60 days. Contact us for help.', es: 'No hay turnos online disponibles en los próximos 60 días. Contáctanos para ayudarte.' },
     'availability.error': { en: 'We could not load the calendar. Please retry in a moment.', es: 'No pudimos cargar el calendario. Intenta nuevamente en un momento.' },
-    'availability.fullDay': { en: 'This service reserves the complete day, from 8am to 7pm.', es: 'Este servicio reserva el día completo, de 8am a 7pm.' },
+    'availability.fullDay': { en: 'This service reserves the complete day, from 8am to 6pm.', es: 'Este servicio reserva el día completo, de 8am a 6pm.' },
+    'deposit.label': { en: 'Deposit to confirm', es: 'Depósito para confirmar' },
+    'deposit.hint': { en: 'A ${amount} deposit confirms this booking. We invoice it from our CRM; it is credited to your final total.', es: 'Un depósito de ${amount} confirma esta reserva. Lo facturamos desde nuestro CRM y se descuenta del total final.' },
     'form.notes': { en: 'Notes', es: 'Notas' },
     'form.notesOpt': { en: '(optional)', es: '(opcional)' },
     'form.notesPh': { en: 'Gate code, vehicle condition, special requests…', es: 'Código de portón, estado del vehículo, pedidos especiales…' },
@@ -1694,6 +1720,8 @@
     'submit.success': { en: 'Appointment confirmed. Reservation number:', es: 'Cita confirmada. Número de reserva:' },
     'submit.slotTaken': { en: 'That opening was just booked. Choose another available time; all your information is still here.', es: 'Ese turno acaba de ocuparse. Elige otro horario disponible; todos tus datos siguen aquí.' },
     'submit.error': { en: "We couldn't create the appointment. No booking was confirmed; your information is still here so you can retry or contact us.", es: 'No pudimos crear la cita. No hay una reserva confirmada; tus datos siguen aquí para reintentar o contactarnos.' },
+    'submit.depositCta': { en: 'Pay your ${amount} deposit', es: 'Pagar depósito de ${amount}' },
+    'submit.depositHint': { en: 'Lock in your booking now — this deposit is credited to your final total.', es: 'Asegura tu reserva ahora — este depósito se descuenta del total final.' },
     'wa.quick': { en: "Hi L&B Elite! I'd like to book a service.", es: 'Hola L&B Elite, me gustaría reservar un servicio.' },
     'waFloat.aria': { en: 'Contact us on WhatsApp', es: 'Contactar por WhatsApp' }
   };
@@ -1923,12 +1951,12 @@
   // allowed, restricted add-ons apply per line, and the visit books the full
   // day when ANY line uses a full-day package.
   const CART_MAX_ITEMS = 6;
-  // Mirror of FULL_DAY_PACKAGES in api/quote.js.
-  const FULL_DAY_CATEGORY_IDS = new Set(['heavy_trucks', 'boats', 'mobile_home', 'driveway']);
+  // Mirror of FULL_DAY_PACKAGES in api/quote.js. Trucks, boats, mobile homes and
+  // driveways now book by duration; only paint work still takes the whole day.
   const FULL_DAY_PACKAGE_IDS = new Set(['paint-correction', 'ceramic-protection']);
 
   function isFullDayLine(line) {
-    return FULL_DAY_CATEGORY_IDS.has(line.categoryId) || FULL_DAY_PACKAGE_IDS.has(line.packageId);
+    return FULL_DAY_PACKAGE_IDS.has(line.packageId);
   }
 
   // Resolve a stored cart line against the live catalog (null when stale).
@@ -1973,16 +2001,12 @@
     return { min, max, isRange: showRange, custom, isFrom, label };
   }
 
-  // The package whose booking mode drives the calendar for the whole visit:
-  // the first full-day line wins; otherwise the first line (draft included).
-  function representativePackageId() {
-    const lines = state.cart.slice();
-    if (state.selectedCategory && state.selectedPackage) {
-      lines.push({ categoryId: state.selectedCategory.id, packageId: state.selectedPackage.id });
-    }
-    if (!lines.length) return '';
-    const fullDay = lines.find(isFullDayLine);
-    return (fullDay || lines[0]).packageId;
+  // Every package in the visit, the uncommitted draft included: the calendar has
+  // to reserve enough time for all of them back to back.
+  function cartPackageIds() {
+    const ids = state.cart.map(line => line.packageId);
+    if (state.selectedCategory && state.selectedPackage) ids.push(state.selectedPackage.id);
+    return ids;
   }
 
   // Commit the wizard draft as a cart line and reset the draft.
@@ -2197,10 +2221,10 @@
   }
 
   // ── Scheduling helpers ──
-  function tomorrowISO() {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
+  // Same-day bookings are allowed now that notice is one hour, so the calendar
+  // opens today. The server still decides which start times are far enough out.
+  function todayISO() {
+    return new Date().toISOString().split('T')[0];
   }
   function addDaysISO(iso, days) {
     const d = new Date(`${iso}T12:00:00`);
@@ -2269,7 +2293,7 @@
   }
   function scheduleValid() {
     const s = state.schedule;
-    return !!(contactValid() && allVehiclesValid() && s.date && s.date >= tomorrowISO() && s.timeWindow);
+    return !!(contactValid() && allVehiclesValid() && s.date && s.date >= todayISO() && s.timeWindow);
   }
 
   function blankSchedule() {
@@ -2383,7 +2407,7 @@
     submitError: false,
     completed: false,
     confirmedBooking: null,
-    availability: { packageId: '', loading: false, error: '', bookingMode: '', dates: [] },
+    availability: { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, deposit: 0, dates: [] },
     submissionId: newSubmissionId(),
     schedule: blankSchedule()
   };
@@ -2975,53 +2999,71 @@
     if (fullDayHint) fullDayHint.hidden = !fullDay;
     if (fullDay) state.schedule.timeWindow = state.schedule.date ? 'full_day' : '';
 
+    // Memberships need 48h of notice; reflect that in the date hint.
+    const dateHint = document.querySelector('#timeWindowField')?.parentElement?.querySelector('[data-i18n="form.dateHint"]')
+      || document.querySelector('[data-i18n="form.dateHint"]');
+    if (dateHint) {
+      const membership = cartPackageIds().some(id => /membresia|membership|-2x$|-4x$/.test(id));
+      dateHint.textContent = t(membership ? 'form.dateHintMembership' : 'form.dateHint');
+    }
+
+    const durationHint = document.getElementById('durationHint');
+    if (durationHint) {
+      const minutes = state.availability.durationMinutes || 0;
+      durationHint.hidden = fullDay || !minutes;
+      durationHint.textContent = minutes ? t('form.duration').replace('{duration}', durationLabel(minutes)) : '';
+    }
+
     const day = selectedAvailabilityDay();
-    document.querySelectorAll('.time-chip').forEach(chip => {
-      const available = !fullDay && day && day.slots.includes(chip.dataset.window);
-      chip.disabled = !available;
-      chip.classList.toggle('active', available && chip.dataset.window === state.schedule.timeWindow);
-    });
-    if (!fullDay && (!day || !day.slots.includes(state.schedule.timeWindow))) state.schedule.timeWindow = '';
+    // Start times come from the calendar, so the chips are rebuilt per day.
+    if (timeRow && !fullDay) {
+      const slots = day ? day.slots : [];
+      if (!slots.includes(state.schedule.timeWindow)) state.schedule.timeWindow = '';
+      timeRow.innerHTML = slots.map(slot =>
+        `<button type="button" class="time-chip${slot === state.schedule.timeWindow ? ' active' : ''}" data-window="${escapeHTML(slot)}">${escapeHTML(clockLabel(minutesFromTime(slot)))}</button>`
+      ).join('');
+    }
     validateStep();
   }
 
   async function loadAvailability(force = false) {
-    // Availability is driven by the cart's representative package: the first
-    // full-day line if any (its mode covers the whole visit), else the first line.
-    const packageId = representativePackageId();
-    if (!packageId) return;
-    if (!force && state.availability.packageId === packageId && (state.availability.loading || state.availability.dates.length)) {
+    const packageIds = cartPackageIds();
+    if (!packageIds.length) return;
+    const cartKey = packageIds.join('|');
+    if (!force && state.availability.cartKey === cartKey && (state.availability.loading || state.availability.dates.length)) {
       renderAvailability();
       return;
     }
 
     let cartChangedNotice = false;
-    if (state.availability.packageId !== packageId) {
-      cartChangedNotice = Boolean(state.availability.packageId && state.schedule.date);
+    if (state.availability.cartKey !== cartKey) {
+      cartChangedNotice = Boolean(state.availability.cartKey && state.schedule.date);
       state.schedule.date = '';
       state.schedule.timeWindow = '';
     }
-    state.availability = { packageId, loading: true, error: '', bookingMode: '', dates: [] };
+    state.availability = { cartKey, loading: true, error: '', bookingMode: '', durationMinutes: 0, deposit: 0, dates: [] };
     renderAvailability();
     try {
-      const from = tomorrowISO();
+      const from = todayISO();
       const response = await fetch('/api/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packageId, from, to: addDaysISO(from, 59) })
+        body: JSON.stringify({ packageIds, from, to: addDaysISO(from, 59) })
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.error || `Calendar request failed (${response.status})`);
-      if (representativePackageId() !== packageId) return; // cart changed mid-flight
+      if (cartPackageIds().join('|') !== cartKey) return; // cart changed mid-flight
       state.availability = {
-        packageId,
+        cartKey,
         loading: false,
         error: '',
         bookingMode: result.bookingMode,
+        durationMinutes: Number(result.durationMinutes) || 0,
+        deposit: Number(result.deposit) || 0,
         dates: Array.isArray(result.dates) ? result.dates : []
       };
     } catch (error) {
-      state.availability = { packageId, loading: false, error: t('availability.error'), bookingMode: '', dates: [] };
+      state.availability = { cartKey, loading: false, error: t('availability.error'), bookingMode: '', durationMinutes: 0, deposit: 0, dates: [] };
     }
     renderAvailability();
     if (cartChangedNotice) {
@@ -3123,13 +3165,14 @@
       renderAvailability();
     });
 
-    document.querySelectorAll('.time-chip').forEach(c => {
-      c.addEventListener('click', () => {
-        if (c.disabled) return;
-        state.schedule.timeWindow = c.dataset.window;
-        document.querySelectorAll('.time-chip').forEach(x => x.classList.toggle('active', x === c));
-        validateStep();
-      });
+    // Start-time chips are rebuilt whenever the day changes, so listen on the row.
+    const timeRow = document.getElementById('timeRow');
+    if (timeRow) timeRow.addEventListener('click', event => {
+      const chip = event.target.closest('.time-chip');
+      if (!chip || chip.disabled) return;
+      state.schedule.timeWindow = chip.dataset.window;
+      timeRow.querySelectorAll('.time-chip').forEach(x => x.classList.toggle('active', x === chip));
+      validateStep();
     });
 
     const policyEl = document.getElementById('policyAccept');
@@ -3164,7 +3207,7 @@
     set('schedDate', s.date);
     set('schedNotes', s.notes);
     set('schedWebsite', s.website);
-    document.querySelectorAll('.time-chip').forEach(x => x.classList.toggle('active', x.dataset.window === s.timeWindow));
+    renderAvailability();
     updateCoverage();
   }
 
@@ -3180,6 +3223,7 @@
 
     const s = state.schedule;
     const total = cartEstimate();
+    const deposit = state.availability.deposit || 0;
     const many = entries.length > 1;
     const row = (lab, val) => val ? `<div class="summary-row"><span class="lab">${escapeHTML(lab)}</span><span class="val">${escapeHTML(val)}</span></div>` : '';
     const scheduleVal = [prettyDate(s.date), timeWindowLabel(s.timeWindow)].filter(Boolean).join(' · ');
@@ -3216,6 +3260,10 @@
         <span class="lab">${t('sum.total')}</span>
         <span class="val">${total ? total.label : '—'}</span>
       </div>
+      ${deposit ? `<div class="summary-deposit">
+        <div class="summary-row"><span class="lab">${escapeHTML(t('deposit.label'))}</span><span class="val">$${deposit}</span></div>
+        <div class="summary-note">${escapeHTML(t('deposit.hint').replace('{amount}', String(deposit)))}</div>
+      </div>` : ''}
       <div class="summary-note">
         ${t('sum.disclaimer')}
       </div>`;
@@ -3366,6 +3414,27 @@
     }
     const continueBtn = document.getElementById('continueWhatsApp');
     if (continueBtn) continueBtn.hidden = type !== 'error' && type !== 'success';
+    renderDepositCta(type);
+  }
+
+  // Phase B: the success response may include a hosted GHL payment link for
+  // the deposit (only when GHL_DEPOSIT_PAYMENTS=on server-side). Shown as a
+  // prominent CTA on the success screen; absent entirely otherwise, leaving
+  // the success screen unchanged from Phase A.
+  function renderDepositCta(type) {
+    const depositEl = document.getElementById('depositCta');
+    if (!depositEl) return;
+    const depositUrl = type === 'success' && state.confirmedBooking ? state.confirmedBooking.depositUrl : '';
+    if (!depositUrl) {
+      depositEl.hidden = true;
+      depositEl.removeAttribute('href');
+      depositEl.innerHTML = '';
+      return;
+    }
+    const amount = state.availability.deposit || 0;
+    depositEl.href = depositUrl;
+    depositEl.innerHTML = `${escapeHTML(t('submit.depositCta').replace('{amount}', String(amount)))}<span class="deposit-cta-hint">${escapeHTML(t('submit.depositHint'))}</span>`;
+    depositEl.hidden = false;
   }
 
   function buildWhatsAppUrl() {
@@ -3588,7 +3657,7 @@
       state.submitError = false;
       state.completed = false;
       state.confirmedBooking = null;
-      state.availability = { packageId: '', loading: false, error: '', bookingMode: '', dates: [] };
+      state.availability = { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, deposit: 0, dates: [] };
       state.submissionId = newSubmissionId();
       state.schedule = blankSchedule();
       const policyEl = document.getElementById('policyAccept');
