@@ -1644,6 +1644,9 @@
     'pol.5.h': { en: 'Monthly Membership Terms', es: 'Términos de la Membresía Mensual' },
     'pol.6.h': { en: 'Personal Items and Liability', es: 'Objetos Personales y Responsabilidad' },
     // Footer
+    'footer.contact': { en: 'Contact', es: 'Contacto' },
+    'footer.terms': { en: 'Terms', es: 'Términos' },
+    'footer.privacy': { en: 'Privacy Policy', es: 'Política de Privacidad' },
     'footer.copy': { en: '© 2026 L&B Elite Wash & Detail. All rights reserved.', es: '© 2026 L&B Elite Wash & Detail. Todos los derechos reservados.' },
     // Dynamic wizard labels
     'from': { en: 'From', es: 'Desde' },
