@@ -515,6 +515,8 @@ async function ghlRequest(config, path, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const statusCode = response.status === 401 || response.status === 403 || response.status === 429 ? 503 : 502;
+    // Server-side diagnostics: which GHL call failed and the upstream envelope.
+    console.error('[ghl-fail]', options.method || 'GET', path, response.status, JSON.stringify(data).slice(0, 400));
     throw new HighLevelError(response.status, statusCode);
   }
   return data;
@@ -1205,9 +1207,12 @@ async function createDepositPayment(config, payload, booking) {
         issueDate: new Date().toISOString().slice(0, 10),
         sentTo: { email: email ? [email] : [] },
         liveMode: config.depositPaymentsLiveMode,
-        // 'draft' avoids GHL sending its own invoice email/SMS on top of the
-        // booking's own confirmation notifications; the site surfaces the link.
-        action: 'draft',
+        // 'send' publishes the invoice so the hosted link is actually payable.
+        // ('draft' returns a URL but the page reads "Draft invoice cannot be
+        // paid" — verified against the live sub-account.) Trade-off: GHL also
+        // emails/SMSes the invoice to the customer on top of the booking's own
+        // confirmation. Accepted because a non-payable link is worse.
+        action: 'send',
         userId: config.assignedUserId
       }
     });
