@@ -11,6 +11,14 @@ const MIN_BOOKING_NOTICE_MS = 60 * 60 * 1000;
 const MEMBERSHIP_BOOKING_NOTICE_MS = 48 * 60 * 60 * 1000;
 const MAX_BODY_BYTES = 32 * 1024;
 const GHL_REQUEST_TIMEOUT_MS = 10 * 1000;
+// Backoff (ms) before each GET attempt when the previous one hit a transient
+// HighLevel error; first entry is 0 (no wait before the initial try). Three
+// attempts total. See ghlRequest / isTransientGhlError.
+const GHL_READ_RETRY_BACKOFF_MS = [0, 400, 1200];
+// After claiming a crew we re-read its calendar to detect a booking that landed
+// on the same crew in the same instant; this brief pause lets that concurrent
+// write become visible before we check. See reserveCrewSlot / crewSlotIsOurs.
+const CREW_CLAIM_SETTLE_MS = 400;
 const BOOKING_WEBHOOK_TIMEOUT_MS = 4 * 1000;
 const DEPOSIT_PAYMENT_TIMEOUT_MS = 6 * 1000;
 
@@ -492,7 +500,7 @@ function getConfig() {
   };
 }
 
-async function ghlRequest(config, path, options = {}) {
+async function ghlRequestOnce(config, path, options = {}) {
   let response;
   try {
     response = await fetch(`${GHL_BASE_URL}${path}`, {
@@ -520,6 +528,33 @@ async function ghlRequest(config, path, options = {}) {
     throw new HighLevelError(response.status, statusCode);
   }
   return data;
+}
+
+// A timeout, a 429, or a gateway blip from HighLevel is usually transient — it
+// spikes when several bookings arrive at once and fan out concurrent calendar
+// reads. Retry idempotent GETs a couple of times with backoff before surfacing
+// the error. Writes (POST/PUT/DELETE) are NEVER auto-retried: a timed-out write
+// may have already landed upstream, so retrying could double-book or duplicate.
+function isTransientGhlError(error) {
+  return error instanceof HighLevelError &&
+    (error.upstreamStatus === 'timeout' || [429, 502, 503].includes(error.upstreamStatus));
+}
+
+async function ghlRequest(config, path, options = {}) {
+  if ((options.method || 'GET') !== 'GET') return ghlRequestOnce(config, path, options);
+  let lastError;
+  for (let attempt = 0; attempt < GHL_READ_RETRY_BACKOFF_MS.length; attempt += 1) {
+    const backoffMs = GHL_READ_RETRY_BACKOFF_MS[attempt];
+    if (backoffMs) await wait(backoffMs);
+    try {
+      return await ghlRequestOnce(config, path, options);
+    } catch (error) {
+      lastError = error;
+      const lastAttempt = attempt === GHL_READ_RETRY_BACKOFF_MS.length - 1;
+      if (lastAttempt || !isTransientGhlError(error)) throw error;
+    }
+  }
+  throw lastError;
 }
 
 async function resolveMetadata(config) {
@@ -1005,18 +1040,82 @@ async function findAppointmentBySubmission(config, payload, contactId) {
   );
 }
 
-// Re-checks the requested period right before booking and returns the crew that
-// will take it. Throws when the visit no longer fits anywhere.
-async function assignCrewForVisit(config, payload) {
+// Reserves a crew for the visit and returns { crewUserId, appointment }, throwing
+// when the visit fits nowhere. It also closes the read-then-write race where two
+// bookings arriving in the same instant both see the same crew free and stack
+// onto it (appointments are created with ignoreFreeSlotValidation, so HighLevel
+// won't stop the double-book itself): after creating the appointment we re-read
+// that crew's calendar, and if a concurrent booking also landed in the window
+// the one with the smallest appointment id keeps the crew — a deterministic
+// tie-break so exactly one survives and the other retries — while the loser
+// releases its slot and tries the next free crew.
+async function reserveCrewSlot(config, payload, contact) {
   const period = requestedPeriod(payload.schedule.date, payload.schedule.timeWindow, payload.schedule.durationMinutes);
   const startsAt = Date.parse(period.startTime);
   const endsAt = Date.parse(period.endTime);
   if (startsAt < Date.now() + noticeMsForPackages(packageIdsOf(payload.items))) throw new SlotUnavailableError();
 
-  const crews = await busyIntervalsByCrew(config, payload.schedule.date, payload.schedule.date);
-  const index = crews.findIndex(intervals => crewIsFree(intervals, startsAt, endsAt));
-  if (index === -1) throw new SlotUnavailableError();
-  return config.crewUserIds[index];
+  const busyByCrew = await busyIntervalsByCrew(config, payload.schedule.date, payload.schedule.date);
+  const candidates = orderedFreeCrews(config, payload.submissionId, busyByCrew, startsAt, endsAt);
+  if (!candidates.length) throw new SlotUnavailableError();
+
+  for (const crewUserId of candidates) {
+    const appointment = await createAppointment(config, payload, contact, crewUserId);
+    if (await crewSlotIsOurs(config, crewUserId, payload.schedule.date, startsAt, endsAt, appointment.id)) {
+      return { crewUserId, appointment };
+    }
+    // Lost a same-instant race for this crew; release the slot and try the next.
+    await releaseAppointmentQuietly(config, appointment.id);
+  }
+  throw new SlotUnavailableError();
+}
+
+// Free crews for the window, rotated by a stable offset derived from the
+// submission id so bookings arriving together prefer different crews and rarely
+// collide in the first place. The claim/verify in reserveCrewSlot is the hard
+// guarantee; this just keeps releases rare on the common path.
+function orderedFreeCrews(config, submissionId, busyByCrew, startsAt, endsAt) {
+  const crews = config.crewUserIds;
+  const n = crews.length;
+  let offset = 0;
+  for (let i = 0; i < submissionId.length; i += 1) offset = (offset + submissionId.charCodeAt(i)) % n;
+  const ordered = [];
+  for (let k = 0; k < n; k += 1) {
+    const i = (offset + k) % n;
+    if (crewIsFree(busyByCrew[i], startsAt, endsAt)) ordered.push(crews[i]);
+  }
+  return ordered;
+}
+
+// After creating our appointment, re-read the crew's calendar (giving a
+// concurrent write a moment to settle) and decide whether we own the window: we
+// own it when nothing else overlaps, or when our appointment id sorts before
+// every other overlapping one.
+async function crewSlotIsOurs(config, crewUserId, date, startsAt, endsAt, ourId) {
+  await wait(CREW_CLAIM_SETTLE_MS);
+  const startTime = Date.parse(zonedDateTimeToIso(date, '00:00'));
+  const endTime = Date.parse(zonedDateTimeToIso(addDays(date, 1), '00:00')) - 1;
+  const query = new URLSearchParams({
+    locationId: config.locationId,
+    userId: crewUserId,
+    startTime: String(startTime),
+    endTime: String(endTime)
+  });
+  const data = await ghlRequest(config, `/calendars/events?${query}`, { version: '2021-07-28' });
+  const others = (data.events || [])
+    .filter(event => event.id && event.id !== ourId && !event.deleted && String(event.appointmentStatus || '') !== 'cancelled')
+    .filter(event => Date.parse(event.startTime) < endsAt && startsAt < Date.parse(event.endTime));
+  return others.every(event => String(ourId) < String(event.id));
+}
+
+async function releaseAppointmentQuietly(config, appointmentId) {
+  try {
+    await ghlRequest(config, `/calendars/events/${encodeURIComponent(appointmentId)}`, { method: 'DELETE', version: '2021-07-28' });
+  } catch (error) {
+    // Best effort: a failed release at worst leaves the double-book we were
+    // trying to avoid — no worse than before this guard existed.
+    console.error('[crew-release]', appointmentId, error.name || 'Error', error.statusCode || 502);
+  }
 }
 
 async function createAppointment(config, payload, contact, crewUserId) {
@@ -1110,12 +1209,19 @@ async function createBookingInHighLevel(config, metadata, payload) {
         syncPending: finalized.syncPending
       };
     }
-  } else {
+  }
+
+  // Reserve a crew (and create the appointment) BEFORE creating any opportunity,
+  // so a booking that is rejected (no crew free) or fails leaves no orphan open
+  // opportunity cluttering the pipeline (and no false OPPORTUNITY_NO_DUPLICATE
+  // block on the customer's next attempt). reserveCrewSlot also guards against
+  // two bookings landing on the same crew in the same instant.
+  const { appointment } = await reserveCrewSlot(config, payload, contact);
+
+  if (!opportunity) {
     opportunity = await createPendingOpportunity(config, metadata, contact, payload);
   }
 
-  const crewUserId = await assignCrewForVisit(config, payload);
-  const appointment = await createAppointment(config, payload, contact, crewUserId);
   const finalized = await finalizeOpportunitySafely(config, metadata, opportunity, payload, appointment);
   return {
     contactId: contact.id,

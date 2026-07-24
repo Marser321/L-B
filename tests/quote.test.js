@@ -180,6 +180,12 @@ function makeCrmMock() {
       appointments.push(appointment);
       return new Response(JSON.stringify(appointment), { status: 200 });
     }
+    if (/\/calendars\/events\/[^/?]+$/.test(url) && !url.endsWith('/appointments') && options.method === 'DELETE') {
+      const id = decodeURIComponent(url.split('/').pop());
+      const appointment = appointments.find(item => item.id === id);
+      if (appointment) appointment.deleted = true;
+      return new Response(JSON.stringify({ succeeded: true }), { status: 200 });
+    }
     if (url.endsWith('/invoices/text2pay') && options.method === 'POST') {
       const invoice = { _id: `invoice-${invoices.length + 1}`, ...body };
       invoices.push(invoice);
@@ -510,9 +516,9 @@ test('a second crew doubles capacity for the same start time', async () => {
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
   assert.equal(crm.appointments.length, 2);
-  // The same 8am slot goes to two different vans.
-  assert.equal(crm.appointments[0].assignedUserId, 'user-1');
-  assert.equal(crm.appointments[1].assignedUserId, 'user-2');
+  // The same 8am slot goes to two different vans (crew order is not a contract,
+  // so assert one-each rather than a fixed position).
+  assert.deepEqual(crm.appointments.map(item => item.assignedUserId).sort(), ['user-1', 'user-2']);
   assert.equal(crm.appointments[0].startTime, crm.appointments[1].startTime);
 
   // With both crews busy the slot disappears and a third booking is refused.
@@ -521,9 +527,107 @@ test('a second crew doubles capacity for the same start time', async () => {
   const third = await invoke(quoteHandler, payload({ submissionId: '323e4567-e89b-12d3-a456-426614174222' }));
   assert.equal(third.status, 409);
   assert.equal(crm.appointments.length, 2);
+  // A refused booking must not leave an orphan open opportunity in the pipeline:
+  // the crew is assigned before any opportunity is created.
+  assert.equal(crm.opportunities.length, 2);
 
   global.fetch = oldFetch;
   restoreEnv();
+});
+
+test('releases and reassigns when a concurrent booking claimed the same crew', async () => {
+  const restoreEnv = setTestEnv({ GHL_CREW_USER_IDS: 'user-1,user-2' });
+  const oldFetch = global.fetch;
+  const crm = makeCrmMock();
+
+  // Simulate the same-instant race: our crew read shows every van free, but the
+  // moment we create the appointment a competitor with a smaller id has also
+  // landed on that same crew. The verify read must surface it so we release our
+  // slot and move to the other van instead of double-booking.
+  let ourCrew = null;
+  const competitor = {
+    id: 'appointment-0000',
+    appointmentStatus: 'confirmed',
+    startTime: zonedDateTimeToIso(TUESDAY, '08:00'),
+    endTime: zonedDateTimeToIso(TUESDAY, '09:30')
+  };
+  global.fetch = async (url, options = {}) => {
+    const method = (options && options.method) || 'GET';
+    if (ourCrew && method === 'GET' && /\/calendars\/events\?/.test(url)) {
+      const userId = new URL(url).searchParams.get('userId');
+      const base = await (await crm.fetch(url, options)).json();
+      if (userId === ourCrew) {
+        return new Response(JSON.stringify({ events: [{ ...competitor, assignedUserId: userId }, ...base.events] }), { status: 200 });
+      }
+      return new Response(JSON.stringify(base), { status: 200 });
+    }
+    const res = await crm.fetch(url, options);
+    if (url.endsWith('/calendars/events/appointments') && method === 'POST' && !ourCrew) {
+      ourCrew = JSON.parse(options.body).assignedUserId; // the crew the competitor also grabbed
+    }
+    return res;
+  };
+
+  const result = await invoke(quoteHandler, payload());
+  assert.equal(result.status, 200);
+  // We released the contested slot...
+  const released = crm.requests.find(item => item.options.method === 'DELETE');
+  assert.ok(released, 'the losing appointment should have been released');
+  // ...and the surviving appointment sits on the OTHER van, never double-booked.
+  const survivors = crm.appointments.filter(item => !item.deleted);
+  assert.equal(survivors.length, 1);
+  assert.notEqual(survivors[0].assignedUserId, ourCrew);
+  assert.equal(result.body.appointmentId, survivors[0].id);
+
+  global.fetch = oldFetch;
+  restoreEnv();
+});
+
+test('retries a transient calendar read but never retries a write', async () => {
+  // (A) A read (GET /calendars/events) that times out once is retried, so a
+  // burst of simultaneous bookings survives transient HighLevel slowness...
+  const restoreRead = setTestEnv();
+  let oldFetch = global.fetch;
+  const readCrm = makeCrmMock();
+  let calendarReads = 0;
+  global.fetch = async (url, options = {}) => {
+    const method = (options && options.method) || 'GET';
+    if (method === 'GET' && /\/calendars\/events\?/.test(url)) {
+      calendarReads += 1;
+      if (calendarReads === 1) {
+        const timeout = new Error('simulated timeout');
+        timeout.name = 'TimeoutError';
+        throw timeout;
+      }
+    }
+    return readCrm.fetch(url, options);
+  };
+  const ok = await invoke(quoteHandler, payload());
+  assert.equal(ok.status, 200);
+  assert.ok(calendarReads >= 2, 'the timed-out calendar read should have been retried');
+  assert.equal(readCrm.appointments.length, 1);
+  global.fetch = oldFetch;
+  restoreRead();
+
+  // ...but (B) a write (POST appointment) that fails is surfaced immediately,
+  // never retried, because a timed-out write may already have landed upstream.
+  const restoreWrite = setTestEnv();
+  oldFetch = global.fetch;
+  const writeCrm = makeCrmMock();
+  let appointmentPosts = 0;
+  global.fetch = async (url, options = {}) => {
+    if (url.endsWith('/calendars/events/appointments') && options.method === 'POST') {
+      appointmentPosts += 1;
+      return new Response('{}', { status: 503 });
+    }
+    return writeCrm.fetch(url, options);
+  };
+  const failed = await invoke(quoteHandler, payload());
+  assert.equal(failed.status, 502);
+  assert.equal(appointmentPosts, 1, 'a failed write must not be auto-retried');
+  assert.equal(writeCrm.appointments.length, 0);
+  global.fetch = oldFetch;
+  restoreWrite();
 });
 
 test('creates contact, pending opportunity, confirmed appointment, and confirmed opportunity', async () => {
