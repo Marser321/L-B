@@ -50,3 +50,6 @@ async function handler(req, res) {
 
 module.exports = handler;
 module.exports._test = { assertAuthorized, timingSafeEquals };
+// Provisioning can make up to 50 CRM calls. The bounded pool in its core keeps
+// it quick, and this ceiling leaves room for normal HighLevel latency.
+module.exports.config = { maxDuration: 60 };

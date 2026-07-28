@@ -86,9 +86,22 @@ function assertCreatedId(result, kind) {
   return id;
 }
 
+async function mapWithConcurrency(items, limit, mapper) {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      await mapper(items[index]);
+    }
+  });
+  await Promise.all(workers);
+}
+
 // request is `ghlRequest(config, path, options)`, injected so this business
-// logic is testable without a CRM account. Sequential writes make a partial
-// run safe to resume: every successful object carries its marker.
+// logic is testable without a CRM account. A small bounded pool keeps the
+// protected serverless operation within its time budget; every successful
+// object still carries its marker, so a partial run is safe to resume.
 async function provision({ config, request, apply = false }) {
   if (!config || !config.locationId) throw new RequestError('CRM is not configured', 503, 'GHL_CRM_NOT_CONFIGURED');
   if (typeof request !== 'function') throw new TypeError('request is required');
@@ -107,25 +120,25 @@ async function provision({ config, request, apply = false }) {
     dryRun: !apply
   };
 
-  for (const product of catalogProducts) {
+  await mapWithConcurrency(catalogProducts, 4, async product => {
     const found = currentProducts.find(candidate => hasProductMarker(candidate, product.packageId));
     if (found) {
       const id = productId(found);
       if (!id) throw new RequestError('CRM returned an invalid membership product', 502, 'CRM_MEMBERSHIP_PROVISION_FAILED');
       productByPackage.set(product.packageId, id);
       summary.productsReused += 1;
-      continue;
+      return;
     }
-    if (!apply) continue;
+    if (!apply) return;
     const created = await request(config, '/products/', { method: 'POST', body: productPayload(product, config.locationId) });
     productByPackage.set(product.packageId, assertCreatedId(created, 'product'));
     summary.productsCreated += 1;
-  }
+  });
 
-  for (const entry of catalogEntries) {
+  await mapWithConcurrency(catalogEntries, 4, async entry => {
     const product = catalogProducts.find(candidate => candidate.packageId === entry.packageId);
     const id = productByPackage.get(entry.packageId);
-    if (!id) continue;
+    if (!id) return;
     const listedPrices = await request(config, `/products/${encodeURIComponent(id)}/price?${new URLSearchParams({ locationId: config.locationId, limit: '100' })}`);
     const found = listFrom(listedPrices, 'prices').find(candidate => hasPriceMarker(candidate, entry));
     if (found) {
@@ -133,15 +146,15 @@ async function provision({ config, request, apply = false }) {
         throw new RequestError(`CRM price is out of sync for ${entry.packageId}/${entry.sizeId}`, 409, 'CRM_MEMBERSHIP_PRICE_OUT_OF_SYNC');
       }
       summary.pricesReused += 1;
-      continue;
+      return;
     }
-    if (!apply) continue;
+    if (!apply) return;
     // `product` is deliberately retained in this loop as a guard against a
     // malformed authoritative catalog. A price can never be posted elsewhere.
     if (!product) throw new RequestError('Membership product is missing', 500, 'CRM_MEMBERSHIP_PROVISION_FAILED');
     await request(config, `/products/${encodeURIComponent(id)}/price`, { method: 'POST', body: pricePayload(entry, config.locationId) });
     summary.pricesCreated += 1;
-  }
+  });
 
   return summary;
 }
@@ -155,5 +168,6 @@ module.exports = {
   productPayload,
   pricePayload,
   matchingPrice,
+  mapWithConcurrency,
   provision
 };
