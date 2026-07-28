@@ -17,7 +17,7 @@ let cached = null;
 function getRepository() {
   if (override) return override;
   const db = require('./db.js');
-  if (!db.isConfigured()) throw new RequestError('Booking database is not configured', 503);
+  if (!db.isConfigured()) throw new RequestError('Booking database is not configured', 503, 'DATABASE_NOT_CONFIGURED');
   if (!cached) cached = createPgRepository();
   return cached;
 }

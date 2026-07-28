@@ -13,7 +13,7 @@
 // 409 means the fleet cannot cover this visit at this time — and when it does, the
 // transaction has already rolled back, so nothing was created.
 
-const { RequestError, HighLevelError } = require('../_lib/errors.js');
+const { RequestError, HighLevelError, asValidationError } = require('../_lib/errors.js');
 const { sendJson, readBody, assertSameOrigin, requireIdempotencyKey } = require('../_lib/http.js');
 const { text } = require('../_lib/validate.js');
 const { normalizeVehicles } = require('../_lib/selection.js');
@@ -107,7 +107,14 @@ async function handler(req, res) {
   try {
     assertSameOrigin(req);
     const idempotencyKey = requireIdempotencyKey(req);
-    const input = validateRequest(readBody(req));
+    let input;
+    try {
+      input = validateRequest(readBody(req));
+    } catch (error) {
+      throw asValidationError(error);
+    }
+    // Do not initialise Postgres or HighLevel until catalog/cardinality
+    // validation has rejected malformed or impossible carts.
     const hold = await agenda.acquireHold({ idempotencyKey, ...input });
     return sendJson(res, hold.replayed ? 200 : 201, { ok: true, ...hold });
   } catch (error) {

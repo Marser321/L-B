@@ -146,9 +146,11 @@ test('a fifth vehicle is rejected with 422 even when the frontend is tampered wi
 
   const res = await callHandler(quoteHandler, five);
   assert.equal(res.statusCode, 422);
+  assert.equal(res.body.code, 'MAX_VEHICLES_EXCEEDED');
   // Rejected before anything was written or blocked.
   assert.equal(ctx.repository.__store().holds.length, 0);
   assert.equal(ctx.ghl.created.length, 0);
+  assert.equal(ctx.ghl.calls.length, 0);
 
   // Four is still fine.
   const four = validatePayload(payload({ items: Array.from({ length: 4 }, () => item('premium-detail', 'sedan')) }));
@@ -380,7 +382,7 @@ test('the honeypot short-circuits before any CRM or database write', async t => 
   assert.equal(ctx.repository.__store().holds.length, 0);
 });
 
-test('cross-origin, wrong method, and unconfigured calendars all fail safely', async t => {
+test('cross-origin and wrong methods fail, while CRM configuration cannot block a local quote', async t => {
   const ctx = fresh();
   t.after(() => ctx.restore());
 
@@ -392,37 +394,40 @@ test('cross-origin, wrong method, and unconfigured calendars all fail safely', a
   const wrongMethod = await callHandler(quoteHandler, payload(), { method: 'GET' });
   assert.equal(wrongMethod.statusCode, 405);
 
-  // A van without a calendar means the agenda cannot honour a hold: fail closed
-  // rather than quietly booking three vans and calling it four.
+  // A missing calendar prevents holds, but a quote still returns its local
+  // server-authoritative pricing instead of turning into a CRM 5xx.
   delete process.env.GHL_CALENDAR_CAMIONETA_3;
   const unconfigured = await callHandler(quoteHandler, payload());
-  assert.equal(unconfigured.statusCode, 503);
-  assert.match(unconfigured.body.error, /Crew calendars are not configured/);
+  assert.equal(unconfigured.statusCode, 200);
+  assert.equal(unconfigured.body.syncPending, true);
+  assert.equal(unconfigured.body.estimate.label, 'From $155');
+  assert.equal(ctx.repository.__store().holds.length, 0);
 });
 
-test('two vans sharing one calendar is a configuration error, not silent half capacity', async t => {
+test('a duplicate crew calendar cannot block a local quote response', async t => {
   const ctx = fresh({ env: { GHL_CALENDAR_CAMIONETA_2: 'cal-van-1' } });
   t.after(() => ctx.restore());
 
   const res = await callHandler(quoteHandler, payload());
-  assert.equal(res.statusCode, 503);
-  assert.match(res.body.error, /misconfigured/);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.syncPending, true);
+  assert.equal(ctx.repository.__store().holds.length, 0);
 });
 
-test('upstream HighLevel failures map to safe status codes', async t => {
+test('upstream HighLevel failures leave a safe local quote available', async t => {
   const ctx = fresh();
   t.after(() => ctx.restore());
 
-  for (const [upstream, expected] of [[401, 503], [403, 503], [429, 503], [500, 502]]) {
+  for (const upstream of [401, 403, 429, 500]) {
     resetMetadataCache();
     ctx.ghl.failures['GET /opportunities/pipelines'] = upstream;
     // The pipeline ids are configured, so force the lookup path that fails.
     delete process.env.GHL_PIPELINE_ID;
     const res = await callHandler(quoteHandler, payload());
-    assert.equal(res.statusCode, expected, `upstream ${upstream} should surface as ${expected}`);
-    assert.equal(res.body.ok, false);
-    assert.equal(res.body.error, 'CRM temporarily unavailable');
-    assert.equal(res.body.code, 'UPSTREAM_UNAVAILABLE');
+    assert.equal(res.statusCode, 200, `upstream ${upstream} must not block the quote`);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.syncPending, true);
+    assert.equal(res.body.deposit, 30);
     process.env.GHL_PIPELINE_ID = 'pipe-1';
   }
 });
@@ -465,7 +470,8 @@ test('a timed-out calendar read is retried, but a failed write never is', async 
     return stubFetch(url, options);
   };
   const failed = await callHandler(quoteHandler, payload());
-  assert.equal(failed.statusCode, 503);
+  assert.equal(failed.statusCode, 200);
+  assert.equal(failed.body.syncPending, true);
   assert.equal(blockPosts, 1, 'a failed write must not be auto-retried');
   // And the reservation was compensated rather than left half-created.
   assert.equal(ctx2.repository.__store().holds[0].status, 'failed');
@@ -543,8 +549,43 @@ test('a location missing the deposit fields fails closed once deposits are on', 
   const on = fresh({ customFields: withoutDepositFields, env: { GHL_DEPOSIT_PAYMENTS: 'on' } });
   t.after(() => on.restore());
   const res = await callHandler(quoteHandler, payload());
-  assert.equal(res.statusCode, 503);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.syncPending, true);
   assert.equal(on.repository.__store().holds.length, 0, 'no van is held when the CRM is not ready');
+});
+
+test('a valid canonical quote is local when HighLevel is unavailable', async t => {
+  const ctx = fresh({ env: { GHL_PRIVATE_TOKEN: null } });
+  t.after(() => ctx.restore());
+
+  const res = await callHandler(quoteHandler, payload({
+    items: [{
+      packageId: 'premium-detail', sizeId: 'sedan', addonIds: ['limpieza-motor'],
+      vehicle: { make: 'Toyota', model: 'Camry', year: 2024, color: 'Blue', plate: 'ABC 123' }
+    }]
+  }));
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.syncPending, true);
+  assert.equal(res.body.estimate.label, 'From $155');
+  assert.equal(res.body.deposit, 30);
+  assert.equal(ctx.ghl.calls.length, 0);
+});
+
+test('empty and invalid carts return 422 before CRM or calendar initialization', async t => {
+  const ctx = fresh({ env: { GHL_PRIVATE_TOKEN: null, DATABASE_URL: null } });
+  t.after(() => ctx.restore());
+
+  const empty = await callHandler(quoteHandler, payload({ items: [] }));
+  assert.equal(empty.statusCode, 422);
+  assert.equal(empty.body.code, 'REQUEST_INVALID');
+
+  const invalidPackage = await callHandler(quoteHandler, payload({
+    items: [{ packageId: 'not-in-catalog', sizeId: 'sedan', addonIds: [], vehicle: { make: 'Toyota', model: 'Camry', year: 2024 } }]
+  }));
+  assert.equal(invalidPackage.statusCode, 422);
+  assert.equal(ctx.ghl.calls.length, 0);
+  assert.equal(ctx.repository.__store().holds.length, 0);
 });
 
 // ── Confirmation ───────────────────────────────────────────────────────────

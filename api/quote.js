@@ -17,7 +17,7 @@
 // the CRM half: contact, opportunity, deposit invoice, notification.
 
 const {
-  RequestError, HighLevelError, SlotUnavailableError, TooManyVehiclesError
+  RequestError, HighLevelError, SlotUnavailableError, TooManyVehiclesError, asValidationError
 } = require('./_lib/errors.js');
 const { sendJson, readBody, assertSameOrigin, assertMethod } = require('./_lib/http.js');
 const { text, optionalText, normalizePhone, validateEmail, SUBMISSION_PATTERN } = require('./_lib/validate.js');
@@ -585,78 +585,125 @@ async function resolveHold(payload, config) {
   });
 }
 
+// The quote is useful even while an optional CRM sync is retrying. This response
+// is entirely local: all money, duration, deposit and schedule values came from
+// validatePayload() and the server catalog, never from HighLevel or the browser.
+function localQuoteResponse(payload, hold = null, { opportunityId = '', depositPayment = null, syncPending = false } = {}) {
+  return {
+    ok: true,
+    submissionId: payload.submissionId,
+    holdId: hold ? hold.holdId : '',
+    opportunityId,
+    // A quoted cart without an existing hold is not presented as a reservation.
+    appointmentStatus: hold ? 'pending_payment' : 'quote_ready',
+    expiresAt: hold ? hold.expiresAt : '',
+    holdMinutes: hold ? Math.round(agenda.HOLD_TTL_MS / 60000) : 0,
+    syncPending,
+    schedule: {
+      date: payload.schedule.date,
+      timeWindow: payload.schedule.timeWindow,
+      timeLabel: payload.schedule.timeLabel,
+      timezone: payload.schedule.timezone,
+      durationMinutes: payload.schedule.durationMinutes,
+      perVehicleDurationMinutes: payload.schedule.perVehicleDurationMinutes
+    },
+    estimate: { min: payload.estimate.min, max: payload.estimate.max, label: payload.estimate.label },
+    deposit: payload.deposit,
+    crew: hold ? hold.assignments : [],
+    ...(depositPayment ? { depositUrl: depositPayment.depositUrl } : {})
+  };
+}
+
+function isOperationalSyncFailure(error) {
+  return error instanceof HighLevelError ||
+    (error instanceof RequestError && error.statusCode >= 500) ||
+    ['AbortError', 'TimeoutError', 'TypeError'].includes(error && error.name);
+}
+
 async function handler(req, res) {
   if (!assertMethod(req, res, 'POST')) return undefined;
 
+  const requestId = String((req.headers && (req.headers['x-vercel-id'] || req.headers['x-request-id'])) || 'unknown').slice(0, 120);
   let submissionId = 'unknown';
   try {
     assertSameOrigin(req);
     const body = readBody(req);
     submissionId = typeof body.submissionId === 'string' ? body.submissionId.slice(0, 100) : 'unknown';
-    const payload = validatePayload(body);
+    let payload;
+    try {
+      payload = validatePayload(body);
+    } catch (error) {
+      throw asValidationError(error);
+    }
 
     // Silently accept honeypot submissions without creating CRM records.
     if (payload.website) return sendJson(res, 200, { ok: true, submissionId: payload.submissionId });
 
-    const config = ghl.getConfig();
-    const metadata = await resolveMetadata(config);
-
-    const hold = await resolveHold(payload, config);
-    const contact = await upsertContact(config, payload);
-
-    let opportunity = await findOpportunityBySubmission(config, metadata, contact.id, payload.submissionId);
-    if (!opportunity) opportunity = await createOpportunity(config, metadata, contact, payload, hold);
-
-    await agenda.attachCustomer({
-      holdId: hold.holdId,
-      submissionId: payload.submissionId,
-      contactId: contact.id,
-      opportunityId: opportunity.id,
-      customer: payload.customer
-    });
-
-    let depositPayment = null;
-    if (config.depositPaymentsEnabled) {
-      depositPayment = await createDepositPayment(config, payload, hold, contact.id);
+    // A browser normally owns a hold before it reaches checkout. Looking up an
+    // existing hold is database-only; it must not initialise HighLevel or Stripe.
+    let hold = null;
+    if (payload.holdId) {
+      try {
+        hold = await resolveHold(payload, null);
+      } catch (error) {
+        if (isOperationalSyncFailure(error)) {
+          console.error('[quote-local]', { requestId, cause: error.name || 'Error', code: error.code || 'QUOTE_LOCAL_UNAVAILABLE' });
+          return sendJson(res, 200, localQuoteResponse(payload, null, { syncPending: true }));
+        }
+        throw error;
+      }
     }
-    const synced = await updateOpportunitySafely(config, metadata, opportunity.id, payload, hold, {
-      bookingStatus: 'pending_payment',
-      depositPayment
-    });
 
-    await notifyBookingWebhook(payload, hold, {
-      opportunityId: opportunity.id,
-      depositUrl: depositPayment ? depositPayment.depositUrl : ''
-    });
+    // CRM and payment-link work are a best-effort synchronization concern. They
+    // can enrich a held booking, but never make server-side quote calculation
+    // unavailable. This also keeps Stripe entirely out of /api/quote.
+    try {
+      const config = ghl.getConfig();
+      const metadata = await resolveMetadata(config);
 
-    return sendJson(res, 200, {
-      ok: true,
-      submissionId: payload.submissionId,
-      holdId: hold.holdId,
-      opportunityId: opportunity.id,
-      // Deliberately not "confirmed": the vans are held, and only a verified
-      // payment turns that into a confirmed booking.
-      appointmentStatus: 'pending_payment',
-      expiresAt: hold.expiresAt,
-      holdMinutes: Math.round(agenda.HOLD_TTL_MS / 60000),
-      syncPending: !synced,
-      schedule: {
-        date: payload.schedule.date,
-        timeWindow: payload.schedule.timeWindow,
-        timeLabel: payload.schedule.timeLabel,
-        timezone: payload.schedule.timezone,
-        durationMinutes: payload.schedule.durationMinutes
-      },
-      estimate: { min: payload.estimate.min, max: payload.estimate.max, label: payload.estimate.label },
-      deposit: payload.deposit,
-      crew: hold.assignments,
-      ...(depositPayment ? { depositUrl: depositPayment.depositUrl } : {})
-    });
+      if (!hold) hold = await resolveHold(payload, config);
+      const contact = await upsertContact(config, payload);
+
+      let opportunity = await findOpportunityBySubmission(config, metadata, contact.id, payload.submissionId);
+      if (!opportunity) opportunity = await createOpportunity(config, metadata, contact, payload, hold);
+
+      await agenda.attachCustomer({
+        holdId: hold.holdId,
+        submissionId: payload.submissionId,
+        contactId: contact.id,
+        opportunityId: opportunity.id,
+        customer: payload.customer
+      });
+
+      let depositPayment = null;
+      if (config.depositPaymentsEnabled) {
+        depositPayment = await createDepositPayment(config, payload, hold, contact.id);
+      }
+      const synced = await updateOpportunitySafely(config, metadata, opportunity.id, payload, hold, {
+        bookingStatus: 'pending_payment',
+        depositPayment
+      });
+
+      await notifyBookingWebhook(payload, hold, {
+        opportunityId: opportunity.id,
+        depositUrl: depositPayment ? depositPayment.depositUrl : ''
+      });
+
+      return sendJson(res, 200, localQuoteResponse(payload, hold, {
+        opportunityId: opportunity.id,
+        depositPayment,
+        syncPending: !synced
+      }));
+    } catch (error) {
+      if (!isOperationalSyncFailure(error)) throw error;
+      console.error('[quote-sync]', { requestId, cause: error.name || 'Error', code: error.code || 'QUOTE_SYNC_UNAVAILABLE' });
+      return sendJson(res, 200, localQuoteResponse(payload, hold, { syncPending: true }));
+    }
   } catch (error) {
     const statusCode = error instanceof RequestError || error instanceof HighLevelError ? error.statusCode : 502;
     const publicMessage = error instanceof RequestError ? error.message : 'CRM temporarily unavailable';
     if (statusCode >= 500) {
-      console.error('[quote]', submissionId, error.name || 'Error', error.statusCode || statusCode);
+      console.error('[quote]', { requestId, cause: error.name || 'Error', code: error.code || 'QUOTE_UNAVAILABLE', statusCode });
     }
     return sendJson(res, statusCode, { ok: false, error: publicMessage, code: error.code || 'QUOTE_UNAVAILABLE' });
   }
@@ -682,5 +729,7 @@ module.exports._test = {
   createDepositPayment,
   resolveMetadata,
   resolveHold,
+  localQuoteResponse,
+  isOperationalSyncFailure,
   resetMetadataCache: () => { metadataPromise = null; }
 };

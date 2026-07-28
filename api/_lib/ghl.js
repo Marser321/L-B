@@ -33,11 +33,11 @@ function resources() {
     calendarId: String(process.env[variable] || '').trim()
   }));
   const missing = configured.filter(resource => !resource.calendarId);
-  if (missing.length) throw new RequestError('Crew calendars are not configured', 503);
+  if (missing.length) throw new RequestError('Crew calendars are not configured', 503, 'GHL_CREW_CALENDARS_NOT_CONFIGURED');
   const calendarIds = new Set(configured.map(resource => resource.calendarId));
   // Two vans sharing a calendar would silently halve capacity: the second
   // assignment would look free and then collide on the same calendar.
-  if (calendarIds.size !== configured.length) throw new RequestError('Crew calendars are misconfigured', 503);
+  if (calendarIds.size !== configured.length) throw new RequestError('Crew calendars are misconfigured', 503, 'GHL_CREW_CALENDARS_MISCONFIGURED');
   return configured;
 }
 
@@ -45,7 +45,7 @@ function getConfig() {
   const token = process.env.GHL_PRIVATE_TOKEN;
   const locationId = process.env.GHL_LOCATION_ID;
   const assignedUserId = process.env.GHL_ASSIGNED_USER_ID;
-  if (!token || !locationId || !assignedUserId) throw new RequestError('CRM is not configured', 503);
+  if (!token || !locationId || !assignedUserId) throw new RequestError('CRM is not configured', 503, 'GHL_CRM_NOT_CONFIGURED');
   return {
     token,
     locationId,

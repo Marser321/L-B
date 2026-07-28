@@ -7,7 +7,7 @@
 // same moment, each van for the length of the vehicle it would take. Durations are
 // computed here from the server catalog — the browser's copy is a display detail.
 
-const { RequestError, HighLevelError, TooManyVehiclesError } = require('./_lib/errors.js');
+const { RequestError, HighLevelError, TooManyVehiclesError, asValidationError } = require('./_lib/errors.js');
 const { sendJson, readBody, assertSameOrigin, assertMethod } = require('./_lib/http.js');
 const { text, validateId } = require('./_lib/validate.js');
 const { normalizeVehicles } = require('./_lib/selection.js');
@@ -56,15 +56,25 @@ function validateRequest(body) {
 async function handler(req, res) {
   if (!assertMethod(req, res, 'POST')) return undefined;
 
+  const requestId = String((req.headers && (req.headers['x-vercel-id'] || req.headers['x-request-id'])) || 'unknown').slice(0, 120);
   try {
     assertSameOrigin(req);
-    const input = validateRequest(readBody(req));
+    let input;
+    try {
+      input = validateRequest(readBody(req));
+    } catch (error) {
+      throw asValidationError(error);
+    }
+    // Configuration, the database and HighLevel are deliberately touched only
+    // after the complete cart has passed local catalog validation.
     const availability = await agenda.computeAvailability(input);
     return sendJson(res, 200, { ok: true, ...availability });
   } catch (error) {
     const statusCode = error instanceof RequestError || error instanceof HighLevelError ? error.statusCode : 502;
     const publicMessage = error instanceof RequestError ? error.message : 'Calendar temporarily unavailable';
-    if (statusCode >= 500) console.error('[availability]', error.name || 'Error', error.statusCode || statusCode);
+    if (statusCode >= 500) {
+      console.error('[availability]', { requestId, cause: error.name || 'Error', code: error.code || 'AVAILABILITY_UNAVAILABLE', statusCode });
+    }
     return sendJson(res, statusCode, { ok: false, error: publicMessage, code: error.code || 'AVAILABILITY_UNAVAILABLE' });
   }
 }

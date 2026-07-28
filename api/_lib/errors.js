@@ -15,6 +15,23 @@ class RequestError extends Error {
   }
 }
 
+// The request was understood but cannot be processed with the supplied booking
+// data. Keep malformed transport (JSON, body too large) as a 4xx of its own,
+// but make every catalog/cart/field validation consistently return 422.
+class ValidationError extends RequestError {
+  constructor(message, code = 'REQUEST_INVALID') {
+    super(message, 422, code);
+    this.name = 'ValidationError';
+  }
+}
+
+function asValidationError(error) {
+  if (error instanceof RequestError && error.statusCode === 400) {
+    return new ValidationError(error.message, error.code);
+  }
+  return error;
+}
+
 class HighLevelError extends Error {
   constructor(upstreamStatus, statusCode = 502) {
     super(`HighLevel request failed (${upstreamStatus})`);
@@ -54,6 +71,8 @@ class IdempotencyConflictError extends RequestError {
 
 module.exports = {
   RequestError,
+  ValidationError,
+  asValidationError,
   HighLevelError,
   SlotUnavailableError,
   TooManyVehiclesError,

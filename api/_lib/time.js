@@ -19,7 +19,7 @@ function bookingTimezone() {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: zone });
   } catch (error) {
-    throw new RequestError('Booking timezone is not configured correctly', 503);
+    throw new RequestError('Booking timezone is not configured correctly', 503, 'BOOKING_TIMEZONE_INVALID');
   }
   return zone;
 }

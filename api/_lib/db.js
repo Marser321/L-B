@@ -28,7 +28,7 @@ function requirePg() {
 
 function getPool() {
   if (pool) return pool;
-  if (!isConfigured()) throw new RequestError('Booking database is not configured', 503);
+  if (!isConfigured()) throw new RequestError('Booking database is not configured', 503, 'DATABASE_NOT_CONFIGURED');
   const { Pool } = requirePg();
   pool = new Pool({
     connectionString: process.env.DATABASE_URL,

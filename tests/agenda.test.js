@@ -423,6 +423,32 @@ test('availability reports per-vehicle durations and a parallel visit length', a
   // Priced server-side from the ids, since sizes were supplied:
   // premium-detail/sedan $125 + boat-basico/boat_16_20 $120.
   assert.equal(res.body.estimate.min, 245);
+  const calendarReads = ctx.ghl.calls
+    .filter(call => call.method === 'GET' && call.path.startsWith('/calendars/events?'))
+    .map(call => new URLSearchParams(call.path.split('?')[1]).get('calendarId'));
+  assert.deepEqual([...new Set(calendarReads)].sort(), [...CALENDARS].sort());
+  assert.equal(calendarReads.length, 4, 'availability reads each configured van calendar exactly once');
+});
+
+test('availability for one through four vehicles queries only the four individual van calendars', async () => {
+  for (const count of [1, 2, 3, 4]) {
+    const ctx = setupAgenda();
+    try {
+      const res = await callHandler(availabilityHandler, {
+        from: DATE,
+        to: DATE,
+        vehicles: Array.from({ length: count }, () => ({ packageId: 'premium-detail' }))
+      });
+      assert.equal(res.statusCode, 200);
+      const reads = ctx.ghl.calls
+        .filter(call => call.method === 'GET' && call.path.startsWith('/calendars/events?'))
+        .map(call => new URLSearchParams(call.path.split('?')[1]).get('calendarId'));
+      assert.equal(reads.length, 4);
+      assert.deepEqual([...new Set(reads)].sort(), [...CALENDARS].sort());
+    } finally {
+      ctx.restore();
+    }
+  }
 });
 
 test('availability never offers Sunday and rejects more than four vehicles', async t => {
@@ -442,6 +468,37 @@ test('availability never offers Sunday and rejects more than four vehicles', asy
     vehicles: Array.from({ length: 5 }, () => ({ packageId: 'premium-detail' }))
   });
   assert.equal(tooMany.statusCode, 422);
+  assert.equal(tooMany.body.code, 'MAX_VEHICLES_EXCEEDED');
+});
+
+test('availability rejects invalid carts before querying HighLevel, then returns 502 only for a valid upstream calendar failure', async t => {
+  const invalid = setupAgenda({ env: { GHL_PRIVATE_TOKEN: null, DATABASE_URL: null } });
+
+  try {
+    const five = await callHandler(availabilityHandler, {
+      from: DATE, to: DATE,
+      vehicles: Array.from({ length: 5 }, () => ({ packageId: 'premium-detail' }))
+    });
+    assert.equal(five.statusCode, 422);
+    assert.equal(five.body.code, 'MAX_VEHICLES_EXCEEDED');
+    assert.equal(invalid.ghl.calls.length, 0);
+
+    const empty = await callHandler(availabilityHandler, { from: DATE, to: DATE, vehicles: [] });
+    assert.equal(empty.statusCode, 422);
+    assert.equal(empty.body.code, 'REQUEST_INVALID');
+    assert.equal(invalid.ghl.calls.length, 0);
+  } finally {
+    invalid.restore();
+  }
+
+  const upstream = setupAgenda({ failures: { 'GET /calendars/events': 500 } });
+  t.after(() => upstream.restore());
+  const valid = await callHandler(availabilityHandler, {
+    from: DATE, to: DATE, vehicles: [{ packageId: 'premium-detail' }]
+  });
+  assert.equal(valid.statusCode, 502);
+  assert.equal(valid.body.code, 'UPSTREAM_UNAVAILABLE');
+  assert.ok(upstream.ghl.calls.some(call => call.path.startsWith('/calendars/events?')));
 });
 
 test('48 hours of notice applies to memberships only', async t => {
