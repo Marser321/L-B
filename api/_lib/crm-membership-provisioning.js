@@ -22,6 +22,13 @@ function priceMarker(entry) {
   return `${PRICE_MARKER_PREFIX}:v${membershipCatalog.CATALOG_VERSION}:${entry.packageId}:${entry.sizeId}`;
 }
 
+// Price names are displayed in HighLevel's payment-link picker, so they must
+// remain customer-readable. `priceMarker` is kept only to recognise and safely
+// migrate the first provisioned catalog revision, which used it as the name.
+function priceName(entry) {
+  return entry.priceLabel;
+}
+
 function productDescription(packageId) {
   return `${productMarker(packageId)}\nManaged by the L&B Elite Wash & Detail membership catalog. Do not use for one-time deposits.`;
 }
@@ -39,7 +46,8 @@ function hasProductMarker(product, packageId) {
 }
 
 function hasPriceMarker(price, entry) {
-  return String((price && price.name) || '') === priceMarker(entry);
+  const name = String((price && price.name) || '');
+  return name === priceMarker(entry) || name === priceName(entry);
 }
 
 // HighLevel's Products API represents an amount in major currency units. The
@@ -51,7 +59,7 @@ function crmAmount(entry) {
 }
 
 function matchingPrice(price, entry) {
-  return hasPriceMarker(price, entry) &&
+  return String((price && price.name) || '') === priceName(entry) &&
     String(price.priceType || price.type || '').toLowerCase() === 'recurring' &&
     Number(price.amount) === crmAmount(entry) &&
     String(price.currency || '').toLowerCase() === entry.currency &&
@@ -73,9 +81,7 @@ function productPayload(product, locationId) {
 
 function pricePayload(entry, locationId) {
   return {
-    // The marker is intentionally the price name. It is the durable, visible
-    // idempotency key in HighLevel; the human-facing product holds the label.
-    name: priceMarker(entry),
+    name: priceName(entry),
     locationId,
     // HighLevel's creation endpoint calls this field `type`; `priceType` is
     // present on returned objects and webhooks, but is not a writable field.
@@ -183,6 +189,7 @@ module.exports = {
   PRICE_MARKER_PREFIX,
   productMarker,
   priceMarker,
+  priceName,
   productDescription,
   productPayload,
   crmAmount,

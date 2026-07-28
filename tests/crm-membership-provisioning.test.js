@@ -56,6 +56,8 @@ test('CRM provisioner creates only the 17 marked membership products and 33 recu
   assert.equal(priceWrites.length, 33);
   assert.ok(priceWrites.every(call => call.body.type === 'recurring'));
   assert.ok(priceWrites.every(call => call.body.currency === 'USD'));
+  assert.deepEqual(priceWrites.map(call => call.body.name).sort(), catalog.entries().map(provisioner.priceName).sort());
+  assert.ok(priceWrites.every(call => !call.body.name.startsWith(provisioner.PRICE_MARKER_PREFIX)));
   assert.ok(priceWrites.every(call => call.body.recurring.interval === 'month' && call.body.recurring.intervalCount === 1));
   assert.deepEqual(priceWrites.map(call => call.body.amount).sort((a, b) => a - b), catalog.entries().map(entry => entry.monthlyCents / 100).sort((a, b) => a - b));
 });
@@ -71,10 +73,15 @@ test('CRM provisioner is idempotent and repairs a managed membership price drift
   assert.equal(second.pricesReused, 33);
   assert.equal(crm.calls.slice(callsBefore).filter(call => call.method === 'POST').length, 0);
 
+  const firstEntry = catalog.entries()[0];
   const firstPrice = [...crm.prices.values()].find(bucket => bucket.length)[0];
-  firstPrice.amount += 1;
+  // Existing production rows used the internal marker as their visible name and
+  // sent cents to HighLevel. A reconcile fixes both fields in place.
+  firstPrice.name = provisioner.priceMarker(firstEntry);
+  firstPrice.amount = firstEntry.monthlyCents;
   const repaired = await provisioner.provision({ config: { locationId: 'test-location' }, request: crm.request, apply: true });
   assert.equal(repaired.pricesUpdated, 1);
-  assert.equal(firstPrice.amount, catalog.entries()[0].monthlyCents / 100);
+  assert.equal(firstPrice.name, provisioner.priceName(firstEntry));
+  assert.equal(firstPrice.amount, firstEntry.monthlyCents / 100);
   assert.equal(crm.calls.filter(call => call.method === 'PUT').length, 1);
 });
