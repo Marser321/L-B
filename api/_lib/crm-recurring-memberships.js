@@ -16,6 +16,7 @@ const provisioning = require('./crm-membership-provisioning.js');
 
 const INVOICE_VERSION = '2023-02-21';
 const CONTACT_VERSION = '2021-07-28';
+const TEST_DRAFT_NOTICE_MS = 48 * 60 * 60 * 1000;
 
 function idOf(value) {
   return String(value && (value._id || value.id) || '').trim();
@@ -192,7 +193,9 @@ async function createRecurringDraft({ config, request, lines, now = Date.now(), 
   const items = await resolveInvoiceItems({ config, request, lines, requestId: reference });
   const result = await request(config, '/invoices/schedule', {
     method: 'POST', version: INVOICE_VERSION, requestId: reference, diagnostic: true,
-    body: schedulePayload({ config, contact, items, now, liveMode: false, reference, timeZone })
+    // HighLevel requires a future recurrence start for a draft schedule. Keep
+    // the probe consistent with the server-owned 48-hour membership policy.
+    body: schedulePayload({ config, contact, items, now: now + TEST_DRAFT_NOTICE_MS, liveMode: false, reference, timeZone })
   });
   const scheduleId = idOf(result && (result.schedule || result));
   if (!scheduleId) throw new RequestError('CRM did not return a recurring invoice draft', 502, 'CRM_MEMBERSHIP_DRAFT_FAILED');
@@ -209,6 +212,7 @@ async function createRecurringDraft({ config, request, lines, now = Date.now(), 
 module.exports = {
   INVOICE_VERSION,
   CONTACT_VERSION,
+  TEST_DRAFT_NOTICE_MS,
   dateInTimeZone,
   makeTestCustomer,
   contactPayload,
