@@ -17,8 +17,9 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'api', '_lib', 'migrations');
+const { databaseConnectionString } = require('../api/_lib/database-url.js');
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString = databaseConnectionString();
 if (!connectionString) {
   console.error('Set DATABASE_URL before running migrations.');
   process.exit(1);

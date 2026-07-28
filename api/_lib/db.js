@@ -1,6 +1,7 @@
 'use strict';
 
 const { RequestError } = require('./errors.js');
+const { databaseConnectionString } = require('./database-url.js');
 
 // Thin Postgres access layer.
 //
@@ -31,7 +32,7 @@ function getPool() {
   if (!isConfigured()) throw new RequestError('Booking database is not configured', 503, 'DATABASE_NOT_CONFIGURED');
   const { Pool } = requirePg();
   pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: databaseConnectionString(),
     // A serverless invocation runs one request; a small pool is plenty and keeps
     // us well under the provider's connection ceiling when many instances are warm.
     max: Number(process.env.DATABASE_POOL_MAX || 3),
