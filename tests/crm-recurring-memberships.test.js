@@ -80,6 +80,7 @@ test('CRM recurring test draft resolves marked CRM prices and is always Stripe t
   assert.equal(invoiceCall.options.body.liveMode, false);
   assert.equal(invoiceCall.options.body.schedule.rrule.intervalType, 'monthly');
   assert.equal(invoiceCall.options.body.schedule.rrule.interval, 1);
+  assert.equal(invoiceCall.options.body.schedule.rrule.daysBefore, 0);
   assert.equal(invoiceCall.options.body.schedule.rrule.endType, 'never');
   assert.deepEqual(invoiceCall.options.body.items.map(item => ({
     productId: item.productId, priceId: item.priceId, amount: item.amount, qty: item.qty, type: item.type

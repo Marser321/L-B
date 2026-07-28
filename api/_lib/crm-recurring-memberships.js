@@ -162,6 +162,10 @@ function schedulePayload({ config, contact, items, now, liveMode, reference, tim
         interval: 1,
         startDate,
         dayOfMonth: dayOfMonth(startDate),
+        // HighLevel requires this field even when the invoice is due/sent on
+        // the recurring date itself. Omitting zero produces a 400 before any
+        // schedule exists.
+        daysBefore: 0,
         // A test creates a draft only. A production transition will call the
         // separate schedule endpoint after an explicit checkout approval.
         endType: 'never'
