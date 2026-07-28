@@ -72,7 +72,8 @@ async function handler(req, res) {
     const body = readBody(req) || {};
     if (body.action === 'inspect') {
       const id = scheduleId(body.scheduleId);
-      const result = await ghl.ghlRequest(ghl.getPaymentsConfig(), `/invoices/schedule/${encodeURIComponent(id)}`, {
+      const config = ghl.getPaymentsConfig();
+      const result = await ghl.ghlRequest(config, `/invoices/schedule/${encodeURIComponent(id)}?${new URLSearchParams({ locationId: config.locationId })}`, {
         // HighLevel's create-schedule API is pinned to 2023-02-21, whereas
         // the read endpoint is currently served under v3.
         version: 'v3'
