@@ -8,6 +8,7 @@ const membershipCatalog = require('../api/_lib/membership-catalog.js');
 const provisioning = require('../api/_lib/crm-membership-provisioning.js');
 const recurring = require('../api/_lib/crm-recurring-memberships.js');
 const ghl = require('../api/_lib/ghl.js');
+const statusEndpoint = require('../api/internal/membership-recurring-test-status.js');
 
 function line(packageId, sizeId, model) {
   return memberships.validateCheckoutLine({
@@ -127,4 +128,35 @@ test('upstream diagnostics keep only schema field names, never error values', ()
   });
   assert.equal(hint, 'contactdetails,livemode,schedule');
   assert.doesNotMatch(hint, /example|invalid|@/);
+});
+
+test('the protected test status strips CRM contact, product, price, and invoice identifiers', () => {
+  const output = statusEndpoint._test.summary({
+    _id: 'schedule-secret',
+    status: 'draft',
+    liveMode: false,
+    contactDetails: { email: 'customer@example.test' },
+    invoices: [{ _id: 'invoice-secret', invoiceItems: [{ productId: 'product-secret', priceId: 'price-secret' }] }],
+    schedule: {
+      executeAt: '2026-07-30T00:00:00.000Z',
+      rrule: {
+        intervalType: 'monthly', interval: 1, startDate: '2026-07-30',
+        startTime: '00:00:00', dayOfMonth: 1, daysBefore: 0,
+        useStartAsPrimaryUserAccepted: true, endType: 'never'
+      }
+    }
+  });
+  assert.deepEqual(output, {
+    status: 'draft', liveMode: false, invoiceCount: 1,
+    schedule: {
+      executeAt: '2026-07-30T00:00:00.000Z',
+      rrule: {
+        intervalType: 'monthly', interval: 1, startDate: '2026-07-30',
+        startTime: '00:00:00', dayOfMonth: 1, daysBefore: 0,
+        useStartAsPrimaryUserAccepted: true, endType: 'never'
+      }
+    }
+  });
+  assert.equal(JSON.stringify(output).includes('secret'), false);
+  assert.equal(JSON.stringify(output).includes('example'), false);
 });
