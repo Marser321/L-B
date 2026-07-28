@@ -33,12 +33,51 @@ function validateLines(body) {
   return lines.map((line, index) => memberships.validateCheckoutLine(line, index));
 }
 
+function scheduleId(value) {
+  const id = String(value || '').trim();
+  if (!/^[A-Za-z0-9_-]{8,200}$/.test(id)) throw new RequestError('scheduleId is invalid', 422, 'MEMBERSHIP_TEST_SCHEDULE_INVALID');
+  return id;
+}
+
+function summary(schedule) {
+  const raw = schedule && (schedule.schedule || {});
+  const rrule = raw.rrule || {};
+  // This route is protected, but even its operator response intentionally
+  // excludes customer, product, price, invoice, and CRM identifiers.
+  return {
+    status: String(schedule && schedule.status || ''),
+    liveMode: Boolean(schedule && schedule.liveMode),
+    invoiceCount: Array.isArray(schedule && schedule.invoices) ? schedule.invoices.length : 0,
+    schedule: {
+      executeAt: typeof raw.executeAt === 'string' ? raw.executeAt : '',
+      rrule: {
+        intervalType: String(rrule.intervalType || ''),
+        interval: Number(rrule.interval || 0),
+        startDate: String(rrule.startDate || ''),
+        startTime: String(rrule.startTime || ''),
+        dayOfMonth: Number(rrule.dayOfMonth || 0),
+        daysBefore: Number(rrule.daysBefore || 0),
+        useStartAsPrimaryUserAccepted: Boolean(rrule.useStartAsPrimaryUserAccepted),
+        endType: String(rrule.endType || '')
+      }
+    }
+  };
+}
+
 async function handler(req, res) {
   if (!assertMethod(req, res, 'POST')) return undefined;
   const requestId = crypto.randomUUID();
   try {
     assertAuthorized(req);
-    const lines = validateLines(readBody(req));
+    const body = readBody(req) || {};
+    if (body.action === 'inspect') {
+      const id = scheduleId(body.scheduleId);
+      const result = await ghl.ghlRequest(ghl.getPaymentsConfig(), `/invoices/schedule/${encodeURIComponent(id)}`, {
+        version: crmRecurring.INVOICE_VERSION
+      });
+      return sendJson(res, 200, { ok: true, ...summary(result) });
+    }
+    const lines = validateLines(body);
     const result = await crmRecurring.createRecurringDraft({
       config: ghl.getPaymentsConfig(),
       request: ghl.ghlRequest,
@@ -62,5 +101,5 @@ async function handler(req, res) {
 }
 
 module.exports = handler;
-module.exports._test = { assertAuthorized, validateLines, timingSafeEquals };
+module.exports._test = { assertAuthorized, validateLines, scheduleId, summary, timingSafeEquals };
 module.exports.config = { maxDuration: 30 };

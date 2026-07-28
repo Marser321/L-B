@@ -8,7 +8,7 @@ const membershipCatalog = require('../api/_lib/membership-catalog.js');
 const provisioning = require('../api/_lib/crm-membership-provisioning.js');
 const recurring = require('../api/_lib/crm-recurring-memberships.js');
 const ghl = require('../api/_lib/ghl.js');
-const statusEndpoint = require('../api/internal/membership-recurring-test-status.js');
+const testEndpoint = require('../api/internal/membership-recurring-test.js');
 
 function line(packageId, sizeId, model) {
   return memberships.validateCheckoutLine({
@@ -131,7 +131,7 @@ test('upstream diagnostics keep only schema field names, never error values', ()
 });
 
 test('the protected test status strips CRM contact, product, price, and invoice identifiers', () => {
-  const output = statusEndpoint._test.summary({
+  const output = testEndpoint._test.summary({
     _id: 'schedule-secret',
     status: 'draft',
     liveMode: false,
