@@ -293,12 +293,35 @@ test('restricts the lubricante-grafito add-on to car hauler packages', () => {
       addons
     }
   });
-  const grafito = [{ id: 'lubricante-grafito', name: 'Dry Graphite Lubricant', price: '+$60' }];
+  const grafito = [{ id: 'lubricante-grafito', name: 'Dry Graphite Lubricant', price: '+$180' }];
   for (const packageId of ['car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x']) {
     const result = validatePayload(carHaulerSelection(packageId, grafito));
     assert.equal(result.selection.addons[0].id, 'lubricante-grafito');
   }
   assert.throws(() => validatePayload(carHaulerSelection('trailer-wash', grafito)), /invalid for this package/i);
+});
+
+test('restricts the limpieza-cabina add-on to packages that have a cab', () => {
+  const heavySelection = (packageId, sizeId = 'standard') => payload({
+    selection: {
+      category: { id: 'heavy_trucks', name: 'Heavy Trucks' },
+      package: { id: packageId, name: 'Heavy Truck Package' },
+      size: { id: sizeId, name: 'Standard Size' },
+      addons: [{ id: 'limpieza-cabina', name: 'Interior Cab Cleaning', price: '+$25' }]
+    }
+  });
+  assert.equal(
+    validatePayload(heavySelection('box-truck-wash', 'size_10_16')).selection.addons[0].id,
+    'limpieza-cabina'
+  );
+  for (const packageId of ['semi-truck-wash', 'dump-truck-2x', 'garbage-truck-4x']) {
+    const result = validatePayload(heavySelection(packageId));
+    assert.equal(result.selection.addons[0].id, 'limpieza-cabina');
+  }
+  // Trailers and car haulers are towed units — no cab to clean.
+  for (const packageId of ['trailer-wash', 'trailer-2x', 'trailer-4x', 'car-hauler-wash', 'car-hauler-4x']) {
+    assert.throws(() => validatePayload(heavySelection(packageId)), /invalid for this package/i);
+  }
 });
 
 function cartItem(overrides = {}) {

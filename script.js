@@ -584,7 +584,7 @@
           { id: 'standard', name: 'Medida Estándar' }
         ],
         extras: [
-          { id: 'limpieza-cabina', name: 'Limpieza Interior de Cabina', price: 25, range: '$25 - $60' },
+          { id: 'limpieza-cabina', name: 'Limpieza Interior de Cabina', price: 25, range: '$25 - $60', notForGroups: ['trailer'] },
           { id: 'cera-rapida', name: 'Cera Rápida', price: 20, range: '$20 - $40' },
           { id: 'desengrasado-profundo', name: 'Desengrasado Profundo', price: 30, range: '$30 - $60' },
           { id: 'engrasado-camion', name: 'Engrasado para Camiones', price: 50 },
@@ -593,7 +593,7 @@
           { id: 'rines-aluminio', name: 'Ácido para Rines de Aluminio', price: 25 },
           { id: 'pulido-rines-llantas', name: 'Pulido de Rines y Llantas', price: 25 },
           { id: 'car-hauler-second-deck', name: 'Lavado del Segundo Piso', price: 100, onlyFor: CAR_HAULER_PACKAGE_IDS },
-          { id: 'lubricante-grafito', name: 'Lubricante de Grafito', priceByPackage: { 'car-hauler-wash': 60, 'car-hauler-2x': 100, 'car-hauler-4x': 220 }, onlyFor: CAR_HAULER_PACKAGE_IDS },
+          { id: 'lubricante-grafito', name: 'Lubricante de Grafito', price: 180, onlyFor: CAR_HAULER_PACKAGE_IDS },
           { id: 'pulido-tanques', name: 'Pulido Tanques de Aluminio (Cotiz.)', price: 0, range: 'Cotización personalizada' }
         ]
       },
@@ -1834,14 +1834,6 @@
   }
 
   function normalizeAddonPricing(addon) {
-    if (addon.priceByPackage) {
-      const values = Object.values(addon.priceByPackage).map(Number);
-      addon.customQuote = false;
-      addon.priceMin = Math.min(...values);
-      addon.priceMax = Math.max(...values);
-      addon.priceFrom = false;
-      return;
-    }
     const parsed = addon.range ? parsePriceText(addon.range) : null;
     const base = Number(addon.price || 0);
     addon.customQuote = Boolean(parsed && parsed.custom);
@@ -1862,13 +1854,7 @@
     return { min: base, max: base, from: false, custom: false };
   }
 
-  function addonPriceBounds(addon, pkg = state.selectedPackage) {
-    if (addon.priceByPackage) {
-      const exact = Number(pkg && addon.priceByPackage[pkg.id]);
-      if (exact) return { min: exact, max: exact, from: false, custom: false };
-      // No package context (or one outside the map): show the spread as a "from" price.
-      return { min: addon.priceMin, max: addon.priceMax, from: true, custom: false };
-    }
+  function addonPriceBounds(addon) {
     return {
       min: Number(addon.priceMin != null ? addon.priceMin : addon.price || 0),
       max: Number(addon.priceMax != null ? addon.priceMax : addon.price || 0),
@@ -1877,11 +1863,19 @@
     };
   }
 
+  // Add-on availability: `onlyFor` is a package-id allowlist, `notForGroups` a
+  // heavy-truck group blocklist (e.g. trailers have no cab to clean inside).
+  function addonAppliesTo(addon, pkg) {
+    if (addon.onlyFor && !addon.onlyFor.includes(pkg && pkg.id)) return false;
+    if (addon.notForGroups && pkg && addon.notForGroups.includes(pkg.group)) return false;
+    return true;
+  }
+
   function currentValidAddons() {
     const cat = state.selectedCategory;
     const pkg = state.selectedPackage;
     if (!cat) return [];
-    return (cat.extras || []).filter(ext => !(ext.onlyFor && !ext.onlyFor.includes(pkg && pkg.id)));
+    return (cat.extras || []).filter(ext => addonAppliesTo(ext, pkg));
   }
 
   function packageFromLabel(pkg) {
@@ -1923,7 +1917,7 @@
     let custom = false;
 
     addons.forEach(addon => {
-      const p = addonPriceBounds(addon, pkg);
+      const p = addonPriceBounds(addon);
       if (p.custom) {
         custom = true; // e.g. aluminum tank polishing — custom quote
         return;
@@ -1975,7 +1969,7 @@
     const addons = (line.addonIds || [])
       .map(id => (cat.extras || []).find(extra => extra.id === id))
       .filter(Boolean)
-      .filter(addon => !(addon.onlyFor && !addon.onlyFor.includes(pkg.id)));
+      .filter(addon => addonAppliesTo(addon, pkg));
     return { cat, pkg, size, addons };
   }
 
@@ -2201,17 +2195,17 @@
     return (hasVariable ? t('from') + ' ' : '') + fmt(sum) + (custom ? ' ' + t('customQuote') : '');
   }
 
-  function addonDisplayPrice(addon, pkg) {
+  function addonDisplayPrice(addon) {
     if (addon.customQuote) return t('customQuote');
     if (addon.range) return '+ ' + addon.range;
-    const p = addonPriceBounds(addon, pkg);
+    const p = addonPriceBounds(addon);
     return '+ ' + (p.from ? `${t('from')} ${fmt(p.min)}` : fmt(p.min));
   }
 
-  function addonWhatsAppPrice(addon, pkg) {
+  function addonWhatsAppPrice(addon) {
     if (addon.customQuote) return t('customQuote');
     if (addon.range) return addon.range;
-    const p = addonPriceBounds(addon, pkg);
+    const p = addonPriceBounds(addon);
     return p.from ? `${t('from')} ${fmt(p.min)}` : '+' + fmt(p.min);
   }
 
@@ -2767,7 +2761,10 @@
     const bundleRow = document.getElementById('bundleRow');
     const quizPanel = document.getElementById('quizPanel');
 
-    const hasQuiz = (cat.quiz || []).length > 0;
+    // Drop questions whose add-ons don't apply to the chosen package (e.g. cab
+    // interior on a trailer) so the quiz never offers a dead-end answer.
+    const quiz = (cat.quiz || []).filter(q => q.addons.some(id => validIds.has(id)));
+    const hasQuiz = quiz.length > 0;
     const bundles = (cat.bundles || []).filter(b => b.addons.every(id => validIds.has(id)));
 
     // Recommend button
@@ -2832,7 +2829,7 @@
         quizPanel.innerHTML = `
           <p class="quiz-title">${t('quizTitle')}</p>
           <div class="quiz-qs">
-            ${cat.quiz.map(q => `<button type="button" class="quiz-chip ${state.quizYes.includes(q.id) ? 'yes' : ''}" data-q="${q.id}">${loc(q.q)}</button>`).join('')}
+            ${quiz.map(q => `<button type="button" class="quiz-chip ${state.quizYes.includes(q.id) ? 'yes' : ''}" data-q="${q.id}">${loc(q.q)}</button>`).join('')}
           </div>
           <div class="quiz-actions">
             <button type="button" class="btn btn-primary btn-sm" id="quizApply">${t('quizApply')}</button>
@@ -3241,7 +3238,7 @@
       return `
       <div class="summary-line">
         <div class="summary-vehicle">${vehIcon || ''}<div class="summary-vehicle-text"><span class="sv-name">${escapeHTML(name)}</span><span class="sv-sub">${escapeHTML(showSizeRow ? size.name : cat.name)}</span></div><span class="sv-price">${est ? est.label : ''}</span></div>
-        ${addons.length ? row(t('sum.addons'), addons.map(a => `${a.name} (${addonDisplayPrice(a, pkg).replace(/^\+ /, '+')})`).join(', ')) : ''}
+        ${addons.length ? row(t('sum.addons'), addons.map(a => `${a.name} (${addonDisplayPrice(a).replace(/^\+ /, '+')})`).join(', ')) : ''}
         ${row(t('sum.vehicle'), [v.year, v.make, v.model, v.color].filter(Boolean).join(' · '))}
         ${row(t('sum.plate'), v.plate)}
         <details class="summary-includes">
@@ -3462,7 +3459,7 @@
         message += '\n';
         if (compact) return;
         if (addons.length) {
-          message += `  ${t('wa.addons')}: ${addons.map(a => `${a.name} (${addonWhatsAppPrice(a, pkg)})`).join(', ')}\n`;
+          message += `  ${t('wa.addons')}: ${addons.map(a => `${a.name} (${addonWhatsAppPrice(a)})`).join(', ')}\n`;
         }
         const v = line.vehicle || blankVehicle();
         const vehicleText = [v.year, v.make, v.model, v.color].filter(Boolean).join(' ');
@@ -3522,7 +3519,7 @@
           category: { id: cat.id, name: cat.name },
           package: { id: pkg.id, name: pkg.name },
           size: { id: size.id, name: size.name },
-          addons: addons.map(addon => ({ id: addon.id, name: addon.name, price: addonWhatsAppPrice(addon, pkg) })),
+          addons: addons.map(addon => ({ id: addon.id, name: addon.name, price: addonWhatsAppPrice(addon) })),
           vehicle: {
             make: String(v.make || '').trim(),
             model: String(v.model || '').trim(),

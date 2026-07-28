@@ -117,6 +117,14 @@ const ADDONS_BY_CATEGORY = Object.freeze({
   driveway: new Set()
 });
 const PACKAGES_BY_RESTRICTED_ADDON = Object.freeze({
+  // Only packages that actually have a cab: trailers and car haulers are towed
+  // units, and the car hauler service explicitly excludes the tractor.
+  'limpieza-cabina': new Set([
+    'box-truck-wash', 'box-truck-2x', 'box-truck-4x',
+    'semi-truck-wash', 'semi-truck-2x', 'semi-truck-4x',
+    'dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x',
+    'garbage-truck-wash', 'garbage-truck-2x', 'garbage-truck-4x'
+  ]),
   'volteo-aluminio': new Set(['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x']),
   'car-hauler-second-deck': new Set([
     'car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x',
