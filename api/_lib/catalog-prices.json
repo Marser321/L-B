@@ -1,0 +1,659 @@
+{
+  "_generated": "scripts/extract-catalog.mjs — do not edit by hand",
+  "categories": [
+    {
+      "id": "cars",
+      "sizes": [
+        "sedan",
+        "suv",
+        "truck",
+        "van_pequena",
+        "van_xl"
+      ],
+      "packages": [
+        {
+          "id": "basico-exterior",
+          "prices": {
+            "sedan": 45,
+            "suv": 65,
+            "truck": 85,
+            "van_pequena": 55,
+            "van_xl": 75
+          }
+        },
+        {
+          "id": "basico-premium",
+          "prices": {
+            "sedan": 75,
+            "suv": 95,
+            "truck": 115,
+            "van_pequena": 100,
+            "van_xl": 140
+          }
+        },
+        {
+          "id": "premium-detail",
+          "prices": {
+            "sedan": 125,
+            "suv": 155,
+            "truck": 195
+          }
+        },
+        {
+          "id": "vip",
+          "prices": {
+            "sedan": 220,
+            "suv": 250,
+            "truck": 270
+          }
+        },
+        {
+          "id": "membresia-2x",
+          "prices": {
+            "sedan": 130,
+            "suv": 160,
+            "truck": 190,
+            "van_pequena": 170,
+            "van_xl": 250
+          }
+        },
+        {
+          "id": "membresia-4x",
+          "prices": {
+            "sedan": 200,
+            "suv": 260,
+            "truck": 320,
+            "van_pequena": 300,
+            "van_xl": 460
+          }
+        }
+      ],
+      "addons": [
+        {
+          "id": "limpieza-motor",
+          "price": 30,
+          "range": "Desde $30"
+        },
+        {
+          "id": "cera-rapida",
+          "price": 20,
+          "range": "$20 - $40"
+        },
+        {
+          "id": "sellador-pintura",
+          "price": 50,
+          "range": "Desde $50"
+        },
+        {
+          "id": "pelos-animal",
+          "price": 30,
+          "range": "$30 - $140"
+        },
+        {
+          "id": "eliminar-olores",
+          "price": 30,
+          "range": "$30 - $100"
+        },
+        {
+          "id": "tratamiento-ozono",
+          "price": 40,
+          "range": "Desde $40"
+        },
+        {
+          "id": "limpieza-asientos",
+          "price": 40,
+          "range": "Desde $40/fila"
+        },
+        {
+          "id": "limpieza-alfombras",
+          "price": 30,
+          "range": "Desde $30"
+        },
+        {
+          "id": "restauracion-plasticos",
+          "price": 25,
+          "range": "Desde $25"
+        },
+        {
+          "id": "pulido-faros",
+          "price": 60,
+          "range": "Desde $60/par"
+        },
+        {
+          "id": "descontaminacion-pintura",
+          "price": 60,
+          "range": "Desde $60"
+        },
+        {
+          "id": "cargo-bed",
+          "price": 25,
+          "range": "Desde $25"
+        },
+        {
+          "id": "limpieza-chasis",
+          "price": 20
+        }
+      ]
+    },
+    {
+      "id": "paint_correction",
+      "sizes": [
+        "sedan",
+        "suv",
+        "truck",
+        "van"
+      ],
+      "packages": [
+        {
+          "id": "paint-enhancement",
+          "prices": {
+            "sedan": 299,
+            "suv": 349,
+            "truck": 399,
+            "van": 449
+          }
+        },
+        {
+          "id": "paint-correction",
+          "prices": {
+            "sedan": 599,
+            "suv": 699,
+            "truck": 799,
+            "van": 899
+          }
+        },
+        {
+          "id": "ceramic-protection",
+          "prices": {
+            "sedan": 999,
+            "suv": 1199,
+            "truck": 1399,
+            "van": 1599
+          }
+        }
+      ],
+      "addons": [
+        {
+          "id": "faros-recup",
+          "price": 120
+        },
+        {
+          "id": "tar-sap",
+          "price": 50,
+          "range": "Desde $50"
+        },
+        {
+          "id": "water-spots",
+          "price": 75,
+          "range": "Desde $75"
+        },
+        {
+          "id": "engine-bay",
+          "price": 75
+        },
+        {
+          "id": "ext-plastics",
+          "price": 50
+        },
+        {
+          "id": "repelente-cristales",
+          "price": 50
+        }
+      ]
+    },
+    {
+      "id": "heavy_trucks",
+      "sizes": [
+        "size_10_16",
+        "size_17_20",
+        "size_21_26",
+        "standard"
+      ],
+      "packages": [
+        {
+          "id": "box-truck-wash",
+          "prices": {
+            "size_10_16": 80,
+            "size_17_20": 100,
+            "size_21_26": 140
+          }
+        },
+        {
+          "id": "box-truck-2x",
+          "prices": {
+            "size_10_16": 140,
+            "size_17_20": 170,
+            "size_21_26": 250
+          }
+        },
+        {
+          "id": "box-truck-4x",
+          "prices": {
+            "size_10_16": 240,
+            "size_17_20": 300,
+            "size_21_26": 440
+          }
+        },
+        {
+          "id": "semi-truck-wash",
+          "prices": {
+            "standard": 150
+          }
+        },
+        {
+          "id": "semi-truck-2x",
+          "prices": {
+            "standard": 270
+          }
+        },
+        {
+          "id": "semi-truck-4x",
+          "prices": {
+            "standard": 500
+          }
+        },
+        {
+          "id": "trailer-wash",
+          "prices": {
+            "standard": 200
+          }
+        },
+        {
+          "id": "trailer-2x",
+          "prices": {
+            "standard": 370
+          }
+        },
+        {
+          "id": "trailer-4x",
+          "prices": {
+            "standard": 700
+          }
+        },
+        {
+          "id": "car-hauler-wash",
+          "prices": {
+            "standard": 120
+          }
+        },
+        {
+          "id": "car-hauler-2x",
+          "prices": {
+            "standard": 220
+          }
+        },
+        {
+          "id": "car-hauler-4x",
+          "prices": {
+            "standard": 400
+          }
+        },
+        {
+          "id": "dump-truck-wash",
+          "prices": {
+            "standard": 180
+          }
+        },
+        {
+          "id": "dump-truck-2x",
+          "prices": {
+            "standard": 320
+          }
+        },
+        {
+          "id": "dump-truck-4x",
+          "prices": {
+            "standard": 620
+          }
+        },
+        {
+          "id": "garbage-truck-wash",
+          "prices": {
+            "standard": 200
+          }
+        },
+        {
+          "id": "garbage-truck-2x",
+          "prices": {
+            "standard": 370
+          }
+        },
+        {
+          "id": "garbage-truck-4x",
+          "prices": {
+            "standard": 700
+          }
+        }
+      ],
+      "addons": [
+        {
+          "id": "limpieza-cabina",
+          "price": 25,
+          "range": "$25 - $60",
+          "notForGroups": [
+            "trailer"
+          ]
+        },
+        {
+          "id": "cera-rapida",
+          "price": 20,
+          "range": "$20 - $40"
+        },
+        {
+          "id": "desengrasado-profundo",
+          "price": 30,
+          "range": "$30 - $60"
+        },
+        {
+          "id": "engrasado-camion",
+          "price": 50
+        },
+        {
+          "id": "motor-pesado",
+          "price": 30
+        },
+        {
+          "id": "volteo-aluminio",
+          "price": 120,
+          "onlyFor": [
+            "dump-truck-wash",
+            "dump-truck-2x",
+            "dump-truck-4x"
+          ]
+        },
+        {
+          "id": "rines-aluminio",
+          "price": 25
+        },
+        {
+          "id": "pulido-rines-llantas",
+          "price": 25
+        },
+        {
+          "id": "car-hauler-second-deck",
+          "price": 100,
+          "onlyFor": [
+            "car-hauler-wash",
+            "car-hauler-2x",
+            "car-hauler-4x"
+          ]
+        },
+        {
+          "id": "lubricante-grafito",
+          "price": 180,
+          "onlyFor": [
+            "car-hauler-wash",
+            "car-hauler-2x",
+            "car-hauler-4x"
+          ]
+        },
+        {
+          "id": "pulido-tanques",
+          "price": 0,
+          "range": "Cotización personalizada"
+        }
+      ]
+    },
+    {
+      "id": "boats",
+      "sizes": [
+        "boat_16_20",
+        "boat_21_30",
+        "boat_31_40",
+        "boat_41_60"
+      ],
+      "packages": [
+        {
+          "id": "boat-basico",
+          "prices": {
+            "boat_16_20": 120,
+            "boat_21_30": 170,
+            "boat_31_40": 220,
+            "boat_41_60": 300
+          }
+        },
+        {
+          "id": "boat-premium",
+          "prices": {
+            "boat_16_20": 180,
+            "boat_21_30": 250,
+            "boat_31_40": 400,
+            "boat_41_60": 600
+          },
+          "priceRanges": {
+            "boat_16_20": "$180 - $250",
+            "boat_21_30": "$250 - $400",
+            "boat_31_40": "$400 - $600",
+            "boat_41_60": "$600 - $900"
+          }
+        },
+        {
+          "id": "boat-detail",
+          "prices": {
+            "boat_16_20": 250,
+            "boat_21_30": 400,
+            "boat_31_40": 600,
+            "boat_41_60": 900
+          },
+          "priceRanges": {
+            "boat_16_20": "$250 - $400",
+            "boat_21_30": "$400 - $600",
+            "boat_31_40": "$600 - $900",
+            "boat_41_60": "$900 - $1,200"
+          }
+        }
+      ],
+      "addons": [
+        {
+          "id": "boat-motor",
+          "price": 75,
+          "range": "Desde $75"
+        },
+        {
+          "id": "boat-vinilo-uv",
+          "price": 100,
+          "range": "Desde $100"
+        },
+        {
+          "id": "boat-cera-marina",
+          "price": 20,
+          "range": "$20/pie"
+        },
+        {
+          "id": "boat-pulido",
+          "price": 30,
+          "range": "$30/pie"
+        },
+        {
+          "id": "boat-oxidacion",
+          "price": 35,
+          "range": "Desde $35/pie"
+        },
+        {
+          "id": "boat-ceramica",
+          "price": 75,
+          "range": "Desde $75/pie"
+        },
+        {
+          "id": "boat-inox",
+          "price": 100
+        },
+        {
+          "id": "boat-compartimientos",
+          "price": 75
+        },
+        {
+          "id": "boat-manchas-agua",
+          "price": 75,
+          "range": "Desde $75"
+        },
+        {
+          "id": "boat-marcas-casco",
+          "price": 60,
+          "range": "Desde $60"
+        },
+        {
+          "id": "boat-lona-bimini",
+          "price": 100,
+          "range": "Desde $100"
+        },
+        {
+          "id": "boat-repelente-cristales",
+          "price": 75
+        },
+        {
+          "id": "boat-olores-ozono",
+          "price": 100
+        },
+        {
+          "id": "boat-teca",
+          "price": 25,
+          "range": "Desde $25/pie"
+        }
+      ]
+    },
+    {
+      "id": "jetski",
+      "sizes": [
+        "qty_1",
+        "qty_2",
+        "qty_3"
+      ],
+      "packages": [
+        {
+          "id": "jetski-premium",
+          "prices": {
+            "qty_1": 80,
+            "qty_2": 150,
+            "qty_3": 200
+          }
+        },
+        {
+          "id": "jetski-membresia",
+          "prices": {
+            "qty_1": 130,
+            "qty_2": 220,
+            "qty_3": 300
+          }
+        }
+      ],
+      "addons": [
+        {
+          "id": "eliminacion-sal",
+          "price": 20
+        },
+        {
+          "id": "brillo-plasticos",
+          "price": 15
+        },
+        {
+          "id": "limpieza-asiento",
+          "price": 30
+        },
+        {
+          "id": "ceramica-marina",
+          "price": 35
+        }
+      ]
+    },
+    {
+      "id": "golf_cart",
+      "sizes": [
+        "standard"
+      ],
+      "packages": [
+        {
+          "id": "golf-premium",
+          "prices": {
+            "standard": 80
+          }
+        },
+        {
+          "id": "golf-membresia",
+          "prices": {
+            "standard": 130
+          }
+        }
+      ],
+      "addons": []
+    },
+    {
+      "id": "atv",
+      "sizes": [
+        "qty_1",
+        "qty_2",
+        "qty_3"
+      ],
+      "packages": [
+        {
+          "id": "atv-premium",
+          "prices": {
+            "qty_1": 100,
+            "qty_2": 170,
+            "qty_3": 220
+          }
+        },
+        {
+          "id": "atv-membresia",
+          "prices": {
+            "qty_1": 170,
+            "qty_2": 280,
+            "qty_3": 400
+          }
+        }
+      ],
+      "addons": []
+    },
+    {
+      "id": "mobile_home",
+      "sizes": [
+        "single_wide",
+        "double_wide",
+        "triple_wide"
+      ],
+      "packages": [
+        {
+          "id": "mobile-home-basico",
+          "prices": {
+            "single_wide": 150,
+            "double_wide": 225,
+            "triple_wide": 350
+          },
+          "priceRanges": {
+            "single_wide": "$150 - $225",
+            "double_wide": "$225 - $350",
+            "triple_wide": "$350 - $500"
+          }
+        }
+      ],
+      "addons": []
+    },
+    {
+      "id": "driveway",
+      "sizes": [
+        "standard"
+      ],
+      "packages": [
+        {
+          "id": "driveway-basico",
+          "prices": {
+            "standard": 100
+          },
+          "priceRanges": {
+            "standard": "$100 - $300"
+          }
+        },
+        {
+          "id": "driveway-premium",
+          "prices": {
+            "standard": 150
+          },
+          "priceRanges": {
+            "standard": "$150 - $400"
+          }
+        }
+      ],
+      "addons": []
+    }
+  ]
+}

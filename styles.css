@@ -1489,6 +1489,19 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 .deposit-cta[hidden] { display: none; }
 .deposit-cta .deposit-cta-hint { display: block; font-size: var(--fs-sm); font-weight: 400; opacity: .85; }
 
+/* A held slot is deliberately styled as temporary: payment confirmation comes
+   from the webhook, not from submitting the checkout form. */
+.temporary-reservation {
+  margin-top: var(--space-4); padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--accent-bright) 55%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent-glow) 13%, var(--surface));
+  color: var(--text-strong); font-size: var(--fs-sm); line-height: 1.45;
+}
+.temporary-reservation strong { display: block; margin-bottom: 3px; }
+.temporary-reservation.is-warning { border-color: color-mix(in srgb, var(--danger, #ff6b6b) 70%, transparent); }
+.temporary-reservation.is-confirmed { border-color: color-mix(in srgb, var(--success) 70%, transparent); }
+
 /* ======================================================
    HOW IT WORKS
    ====================================================== */

@@ -1,0 +1,19 @@
+{
+  "name": "lyb-elite-wash-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "L&B Elite Wash & Detail — marketing site plus the booking API.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "migrate": "node scripts/migrate.mjs",
+    "migrate:status": "node scripts/migrate.mjs --status",
+    "catalog": "node scripts/extract-catalog.mjs",
+    "catalog:check": "node scripts/extract-catalog.mjs --check"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

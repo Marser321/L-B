@@ -1,7 +1,23 @@
 # Phase B — Online Deposit Collection: Decisions & Open Items
 
-Status: implemented behind `GHL_DEPOSIT_PAYMENTS`, off by default, not deployed.
-Companion doc: `HIGHLEVEL-WORKFLOW.md` (§ "Fase B — cobro online del depósito").
+> **SUPERSEDED — see `AGENDA.md`.**
+>
+> Section 2 below deferred PAY-FIRST (hold → pay → confirm via webhook) as an
+> owner decision, and listed what it would need: a slot-hold mechanism with an
+> expiry, a webhook receiver with signature verification, and an abandoned-cart
+> cleanup job. The owner has since asked for exactly that, and all three now
+> exist: `POST /api/bookings/holds`, `POST /api/payments/webhook`, and the
+> 15-minute sweep on `POST /api/bookings/expire`.
+>
+> **A booking is no longer confirmed by submitting the form.** It is held for 15
+> minutes and confirmed only by a verified payment event. The rest of this
+> document describes the previous confirm-then-pay model and is kept for the
+> reasoning and the `text2pay` endpoint research in section 3, which is still
+> accurate and still in use.
+
+Status: superseded by the transactional agenda; deposit collection itself is
+still behind `GHL_DEPOSIT_PAYMENTS`, off by default.
+Companion docs: `AGENDA.md`, `HIGHLEVEL-WORKFLOW.md`.
 
 ## 1. Chosen model: CONFIRM-THEN-PAY
 

@@ -118,6 +118,97 @@ async function ensureCalendar() {
   return { calendarId: calendar.id, assignedUserId: resolvedUserId };
 }
 
+// The four per-van calendars the agenda books onto. These are the authority for
+// crew assignment now: a multi-vehicle booking writes one appointment per van,
+// straight onto these calendars. The general round-robin calendar is NOT used for
+// that, because round robin is free to put two of the four vehicles on the same
+// van, which is exactly the bug the per-van calendars remove.
+//
+// Verification only by default. Pass --create-van-calendars to create any that are
+// missing (one simple calendar per van, assigned to that van's user):
+//
+//   GHL_VAN_USER_IDS=user1,user2,user3,user4 node scripts/setup-ghl.mjs --create-van-calendars
+async function ensureVanCalendars() {
+  const envVars = [
+    'GHL_CALENDAR_CAMIONETA_1', 'GHL_CALENDAR_CAMIONETA_2',
+    'GHL_CALENDAR_CAMIONETA_3', 'GHL_CALENDAR_CAMIONETA_4'
+  ];
+  const shouldCreate = process.argv.includes('--create-van-calendars');
+  const vanUserIds = String(process.env.GHL_VAN_USER_IDS || '').split(',').map(value => value.trim()).filter(Boolean);
+
+  const data = await request(`/calendars/?locationId=${encodeURIComponent(locationId)}&showDrafted=true`);
+  const calendars = data.calendars || [];
+  const resolved = [];
+
+  for (const [index, envVar] of envVars.entries()) {
+    const position = index + 1;
+    const configuredId = String(process.env[envVar] || '').trim();
+    const name = `Camioneta ${position}`;
+    let calendar = configuredId
+      ? calendars.find(item => item.id === configuredId)
+      : calendars.find(item => String(item.name || '').toLowerCase() === name.toLowerCase());
+
+    if (configuredId && !calendar) {
+      throw new Error(`${envVar} points at calendar ${configuredId}, which this location does not have.`);
+    }
+
+    if (!calendar) {
+      if (!shouldCreate) {
+        throw new Error(
+          `No calendar for van ${position}. Create one named "${name}" in HighLevel and set ${envVar}, ` +
+          'or re-run with --create-van-calendars and GHL_VAN_USER_IDS set.'
+        );
+      }
+      const userId = vanUserIds[index] || assignedUserId;
+      if (!userId) throw new Error(`Set GHL_VAN_USER_IDS (four user ids) to create "${name}".`);
+      console.log(`Creating calendar "${name}"…`);
+      const created = await request('/calendars/', {
+        method: 'POST',
+        body: {
+          locationId,
+          name,
+          description: `Van ${position}. Booked by the website agenda, one appointment per vehicle.`,
+          slug: `camioneta-${position}`,
+          // A single-resource calendar: the website decides the slot, so HighLevel
+          // must not apply its own round-robin or slot validation on top.
+          calendarType: 'simple',
+          teamMembers: [{ userId, priority: 1, isPrimary: true }],
+          eventTitle: '{{contact.name}} — Mobile Service',
+          slotDuration: 30,
+          slotDurationUnit: 'mins',
+          slotInterval: 30,
+          slotIntervalUnit: 'mins',
+          autoConfirm: true,
+          allowBookingFor: 60,
+          allowBookingForUnit: 'days'
+        }
+      });
+      calendar = created.calendar || created;
+      if (!calendar.id) throw new Error(`HighLevel did not return an ID for "${name}".`);
+
+      const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      await request(`/calendars/schedules/event-calendar/${encodeURIComponent(calendar.id)}`, {
+        method: 'POST',
+        version: '2021-07-28',
+        body: {
+          timezone: process.env.BOOKING_TIMEZONE || 'America/New_York',
+          rules: weekdays.map(day => ({ type: 'wday', day, intervals: [{ from: '08:00', to: '18:00' }] }))
+        }
+      });
+    }
+
+    if (calendar.isActive === false) throw new Error(`Calendar "${calendar.name}" is not active.`);
+    resolved.push({ envVar, id: calendar.id, name: calendar.name });
+  }
+
+  // Two vans sharing one calendar would silently halve capacity: the second
+  // assignment would look free and then collide on the same calendar.
+  const ids = new Set(resolved.map(entry => entry.id));
+  if (ids.size !== resolved.length) throw new Error('Two vans are pointing at the same calendar.');
+
+  return resolved;
+}
+
 async function ensureCustomFields() {
   const data = await request(`/locations/${encodeURIComponent(locationId)}/customFields?model=opportunity`);
   const fields = data.customFields || [];
@@ -148,14 +239,18 @@ try {
   const pipeline = await ensurePipeline();
   const fieldIds = await ensureCustomFields();
   const calendar = await ensureCalendar();
+  const vans = await ensureVanCalendars();
   console.log('\nHighLevel setup complete. Add these server-only variables to Vercel:');
   console.log(`GHL_LOCATION_ID=${locationId}`);
   console.log(`GHL_PIPELINE_ID=${pipeline.pipelineId}`);
   console.log(`GHL_PIPELINE_STAGE_ID=${pipeline.pipelineStageId}`);
   console.log(`GHL_CONFIRMED_PIPELINE_STAGE_ID=${pipeline.confirmedPipelineStageId}`);
-  console.log(`GHL_CALENDAR_ID=${calendar.calendarId}`);
   console.log(`GHL_ASSIGNED_USER_ID=${calendar.assignedUserId}`);
+  vans.forEach(van => console.log(`${van.envVar}=${van.id}   # ${van.name}`));
+  console.log(`GHL_CALENDAR_ID=${calendar.calendarId}   # legacy round robin, unused by the agenda`);
   console.log(`Verified ${Object.keys(fieldIds).length} opportunity fields.`);
+  console.log('\nStill required outside HighLevel: DATABASE_URL (then `npm run migrate`),');
+  console.log('PAYMENT_WEBHOOK_SECRET, and CRON_SECRET. See .env.example.');
 } catch (error) {
   console.error(`HighLevel setup failed: ${error.message}`);
   process.exit(1);

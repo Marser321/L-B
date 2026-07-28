@@ -1,0 +1,1167 @@
+{
+  "_generated": "scripts/extract-catalog.mjs — do not edit by hand",
+  "version": "1",
+  "categories": [
+    {
+      "id": "cars",
+      "name": "Cars & SUVs",
+      "image": "assets/service-cars.webp",
+      "from": "$45",
+      "packages": [
+        {
+          "id": "basico-exterior",
+          "name": "Basic Wash (Lavado Básico)",
+          "description": "Lavado exterior profesional realizado con productos de alta calidad y técnicas seguras para la pintura.",
+          "includes": [
+            "Lavado exterior completo",
+            "Eliminación de insectos adheridos",
+            "Limpieza de cristales exteriores",
+            "Limpieza de la tapa del tanque de combustible",
+            "Limpieza de llantas y rines",
+            "Aplicación de brillo para neumáticos",
+            "Secado manual con toallas de microfibra",
+            "Limpieza de guardabarros interiores",
+            "Inspección final de calidad"
+          ],
+          "prices": {
+            "sedan": 45,
+            "suv": 65,
+            "truck": 85,
+            "van_pequena": 55,
+            "van_xl": 75
+          }
+        },
+        {
+          "id": "basico-premium",
+          "name": "Basic Wash Premium",
+          "description": "Combina un lavado exterior profesional con una limpieza interior completa para mantener el vehículo limpio, fresco y protegido.",
+          "includes": [
+            "Aspirado intensivo del interior",
+            "Limpieza de tablero y superficies interiores",
+            "Limpieza de cristales interiores",
+            "Desempolvado completo",
+            "Aplicación de ambientador",
+            "Lavado exterior completo",
+            "Eliminación de insectos adheridos",
+            "Limpieza de rines y llantas",
+            "Aplicación de brillo para neumáticos",
+            "Limpieza de guardabarros interiores",
+            "Secado manual con toallas de microfibra"
+          ],
+          "prices": {
+            "sedan": 75,
+            "suv": 95,
+            "truck": 115,
+            "van_pequena": 100,
+            "van_xl": 140
+          }
+        },
+        {
+          "id": "premium-detail",
+          "name": "Premium Detail",
+          "description": "Restauración profunda tanto del interior como del exterior del vehículo, brindando una apariencia renovada y una protección superior.",
+          "includes": [
+            "Aspirado intensivo interior",
+            "Desempolvado completo interior",
+            "Limpieza profunda del tablero",
+            "Limpieza de paneles de puertas",
+            "Eliminación localizada de olores",
+            "Aplicación de máquina de ozono",
+            "Limpieza de cristales interiores",
+            "Ambientador premium",
+            "Lavado exterior completo y eliminación de insectos",
+            "Limpieza de rines, llantas y guardabarros",
+            "Limpieza del motor",
+            "Aplicación de cera manual o sellador en spray",
+            "Protección de pintura hasta por 4 meses"
+          ],
+          "prices": {
+            "sedan": 125,
+            "suv": 155,
+            "truck": 195
+          }
+        },
+        {
+          "id": "vip",
+          "name": "VIP Detail",
+          "description": "Nuestro servicio más completo, diseñado para clientes que buscan el máximo nivel de limpieza, restauración y protección.",
+          "includes": [
+            "Limpieza profunda de asientos de cuero, tela o Alcántara",
+            "Aspirado intensivo y limpieza del maletero (debe estar vacío)",
+            "Limpieza profunda e hidratación de tablero y plásticos",
+            "Limpieza e hidratación de paneles de puertas",
+            "Tratamiento de olores con máquina de ozono y ambientador premium",
+            "Lavado exterior completamente a mano",
+            "Detallado profundo de rines y llantas con brillo para neumáticos",
+            "Limpieza de guardabarros y tapa de combustible",
+            "Limpieza e hidratación del motor",
+            "Hidratación de plásticos exteriores",
+            "Aplicación de cera manual o sellador premium",
+            "Protección de pintura hasta por 6 meses"
+          ],
+          "prices": {
+            "sedan": 220,
+            "suv": 250,
+            "truck": 270
+          }
+        },
+        {
+          "id": "membresia-2x",
+          "name": "Membresía (2x al mes)",
+          "description": "Mantén tu vehículo impecable con 2 visitas premium de mantenimiento mensual.",
+          "includes": [
+            "2 visitas de lavado completo al mes",
+            "Aspirado intensivo y desempolvado interior",
+            "Limpieza de tablero y cristales",
+            "Lavado exterior premium detallado",
+            "Programar con al menos 48 horas de anticipación"
+          ],
+          "prices": {
+            "sedan": 130,
+            "suv": 160,
+            "truck": 190,
+            "van_pequena": 170,
+            "van_xl": 250
+          }
+        },
+        {
+          "id": "membresia-4x",
+          "name": "Membresía (4x al mes)",
+          "description": "Cuidado semanal absoluto. 4 lavados premium completos al mes.",
+          "includes": [
+            "4 visitas de lavado completo al mes",
+            "Aspirado intensivo y desempolvado interior",
+            "Limpieza de tablero y cristales",
+            "Lavado exterior premium detallado",
+            "Programar con al menos 48 horas de anticipación"
+          ],
+          "prices": {
+            "sedan": 200,
+            "suv": 260,
+            "truck": 320,
+            "van_pequena": 300,
+            "van_xl": 460
+          }
+        }
+      ],
+      "sizes": [
+        {
+          "id": "sedan",
+          "name": "Sedán / Coupé"
+        },
+        {
+          "id": "suv",
+          "name": "SUV & Small Truck"
+        },
+        {
+          "id": "truck",
+          "name": "Full-Size Truck"
+        },
+        {
+          "id": "van_pequena",
+          "name": "Small Van"
+        },
+        {
+          "id": "van_xl",
+          "name": "XL Van"
+        }
+      ],
+      "extras": [
+        {
+          "id": "limpieza-motor",
+          "name": "Limpieza de Motor",
+          "price": 30,
+          "range": "Desde $30"
+        },
+        {
+          "id": "cera-rapida",
+          "name": "Cera Rápida (Spray Wax)",
+          "price": 20,
+          "range": "$20 - $40"
+        },
+        {
+          "id": "sellador-pintura",
+          "name": "Sellador de Pintura",
+          "price": 50,
+          "range": "Desde $50"
+        },
+        {
+          "id": "pelos-animal",
+          "name": "Eliminación de pelos de mascotas",
+          "price": 30,
+          "range": "$30 - $140"
+        },
+        {
+          "id": "eliminar-olores",
+          "name": "Eliminación de Olores",
+          "price": 30,
+          "range": "$30 - $100"
+        },
+        {
+          "id": "tratamiento-ozono",
+          "name": "Tratamiento con Ozono",
+          "price": 40,
+          "range": "Desde $40"
+        },
+        {
+          "id": "limpieza-asientos",
+          "name": "Limpieza Profunda de Asientos",
+          "price": 40,
+          "range": "Desde $40/fila"
+        },
+        {
+          "id": "limpieza-alfombras",
+          "name": "Limpieza de Alfombras y Tapetes",
+          "price": 30,
+          "range": "Desde $30"
+        },
+        {
+          "id": "restauracion-plasticos",
+          "name": "Restauración de Plásticos",
+          "price": 25,
+          "range": "Desde $25"
+        },
+        {
+          "id": "pulido-faros",
+          "name": "Pulido de Faros",
+          "price": 60,
+          "range": "Desde $60/par"
+        },
+        {
+          "id": "descontaminacion-pintura",
+          "name": "Descontaminación de Pintura",
+          "price": 60,
+          "range": "Desde $60"
+        },
+        {
+          "id": "cargo-bed",
+          "name": "Lavado Compartimiento Carga (Truck Bed)",
+          "price": 25,
+          "range": "Desde $25"
+        },
+        {
+          "id": "limpieza-chasis",
+          "name": "Limpieza de Chasis",
+          "price": 20
+        }
+      ]
+    },
+    {
+      "id": "paint_correction",
+      "name": "Paint Correction & Protection",
+      "image": "assets/service-paint-correction.webp",
+      "from": "$299",
+      "packages": [
+        {
+          "id": "paint-enhancement",
+          "name": "Package 1 – Paint Enhancement",
+          "description": "Mejora de brillo de un paso y eliminación de defectos leves con sellador protector.",
+          "includes": [
+            "Lavado premium",
+            "Descontaminación química",
+            "Clay Bar",
+            "Pulido de un paso (mejora brillo y elimina defectos leves)",
+            "Aplicación de sellador de pintura (JetSeal)",
+            "Limpieza de cristales",
+            "Brillo para llantas"
+          ],
+          "prices": {
+            "sedan": 299,
+            "suv": 349,
+            "truck": 399,
+            "van": 449
+          }
+        },
+        {
+          "id": "paint-correction",
+          "name": "Package 2 – Paint Correction",
+          "description": "Corrección de pintura de dos pasos (compound + polish) para eliminar entre 70-85% de rayones.",
+          "includes": [
+            "Todo lo incluido en el Paquete 1 (Enhancement)",
+            "Corrección de pintura de dos pasos (compound + polish)",
+            "Eliminación de marcas circulares (swirls) y el 70–85% de rayones",
+            "Sellador premium de pintura"
+          ],
+          "prices": {
+            "sedan": 599,
+            "suv": 699,
+            "truck": 799,
+            "van": 899
+          }
+        },
+        {
+          "id": "ceramic-protection",
+          "name": "Package 3 – Elite Ceramic Protection",
+          "description": "Protección cerámica marina/vial de alta resistencia para un acabado de espejo duradero.",
+          "includes": [
+            "Lavado premium y descontaminación completa",
+            "Clay Bar y Corrección de pintura",
+            "Preparación con panel wipe",
+            "Aplicación de recubrimiento cerámico",
+            "Protección UV y alto brillo",
+            "Efecto hidrofóbico extremo (repelencia al agua)"
+          ],
+          "prices": {
+            "sedan": 999,
+            "suv": 1199,
+            "truck": 1399,
+            "van": 1599
+          }
+        }
+      ],
+      "sizes": [
+        {
+          "id": "sedan",
+          "name": "Sedán"
+        },
+        {
+          "id": "suv",
+          "name": "SUV"
+        },
+        {
+          "id": "truck",
+          "name": "Pickup / Truck"
+        },
+        {
+          "id": "van",
+          "name": "Van"
+        }
+      ],
+      "extras": [
+        {
+          "id": "faros-recup",
+          "name": "Restauración de faros",
+          "price": 120
+        },
+        {
+          "id": "tar-sap",
+          "name": "Remoción de alquitrán y savia",
+          "price": 50,
+          "range": "Desde $50"
+        },
+        {
+          "id": "water-spots",
+          "name": "Eliminación de manchas de agua",
+          "price": 75,
+          "range": "Desde $75"
+        },
+        {
+          "id": "engine-bay",
+          "name": "Limpieza del compartimiento del motor",
+          "price": 75
+        },
+        {
+          "id": "ext-plastics",
+          "name": "Protección de plásticos exteriores",
+          "price": 50
+        },
+        {
+          "id": "repelente-cristales",
+          "name": "Tratamiento de cristales repelente",
+          "price": 50
+        }
+      ]
+    },
+    {
+      "id": "heavy_trucks",
+      "name": "Heavy Trucks",
+      "image": "assets/service-heavy-trucks.webp",
+      "from": "$80",
+      "packages": [
+        {
+          "id": "box-truck-wash",
+          "name": "Box Truck (Basic Wash)",
+          "description": "Lavado exterior manual completo para camiones de carga de diferentes medidas.",
+          "includes": [
+            "Lavado exterior completo",
+            "Aplicación de jabón profesional",
+            "Lavado manual con cepillos y/o guantes de microfibra",
+            "Limpieza de espejos y cristales",
+            "Limpieza básica de rines y llantas",
+            "Desengrasado ligero y enjuague completo",
+            "Secado de superficies visibles"
+          ],
+          "prices": {
+            "size_10_16": 80,
+            "size_17_20": 100,
+            "size_21_26": 140
+          }
+        },
+        {
+          "id": "box-truck-2x",
+          "name": "Box Truck Membresía (2x al mes)",
+          "description": "Mantenimiento quincenal para mantener la imagen limpia de tu camión.",
+          "includes": [
+            "2 visitas de lavado exterior completo al mes",
+            "Remoción de grasa y lavado manual",
+            "Limpieza de cristales y espejos"
+          ],
+          "prices": {
+            "size_10_16": 140,
+            "size_17_20": 170,
+            "size_21_26": 250
+          }
+        },
+        {
+          "id": "box-truck-4x",
+          "name": "Box Truck Membresía (4x al mes)",
+          "description": "Limpieza semanal intensiva para flotas de camiones de carga.",
+          "includes": [
+            "4 visitas de lavado exterior completo al mes",
+            "Remoción de grasa y lavado manual",
+            "Limpieza de cristales y espejos"
+          ],
+          "prices": {
+            "size_10_16": 240,
+            "size_17_20": 300,
+            "size_21_26": 440
+          }
+        },
+        {
+          "id": "semi-truck-wash",
+          "name": "Semi Truck (Tractor) Wash",
+          "description": "Lavado completo exterior para cabezal de tractocamión.",
+          "includes": [
+            "Lavado exterior completo",
+            "Limpieza de cabina exterior",
+            "Limpieza de cristales y espejos",
+            "Limpieza básica de rines y neumáticos",
+            "Desengrasado ligero y secado"
+          ],
+          "prices": {
+            "standard": 150
+          }
+        },
+        {
+          "id": "semi-truck-2x",
+          "name": "Semi Truck Membresía (2x al mes)",
+          "description": "Mantenimiento quincenal recurrente para tractores.",
+          "includes": [
+            "2 visitas de lavado exterior completo de Semi Truck al mes",
+            "Limpieza exterior de cabina, cristales y rines"
+          ],
+          "prices": {
+            "standard": 270
+          }
+        },
+        {
+          "id": "semi-truck-4x",
+          "name": "Semi Truck Membresía (4x al mes)",
+          "description": "Limpieza semanal intensiva para cabezales de tractocamión.",
+          "includes": [
+            "4 visitas de lavado exterior completo de Semi Truck al mes",
+            "Limpieza exterior de cabina, cristales y rines"
+          ],
+          "prices": {
+            "standard": 500
+          }
+        },
+        {
+          "id": "trailer-wash",
+          "name": "Trailer Wash (Reefer / Dry Van)",
+          "description": "Lavado completo a presión de paneles de trailer comercial de 48' a 53'.",
+          "includes": [
+            "Lavado exterior completo",
+            "Eliminación de suciedad acumulada de carretera",
+            "Limpieza de paneles laterales, frontal y posterior",
+            "Enjuague completo y secado"
+          ],
+          "prices": {
+            "standard": 200
+          }
+        },
+        {
+          "id": "trailer-2x",
+          "name": "Trailer Membresía (2x al mes)",
+          "description": "2 visitas mensuales de lavado exterior de trailer.",
+          "includes": [
+            "2 lavados exteriores completos al mes",
+            "Limpieza de paneles, frontal y posterior"
+          ],
+          "prices": {
+            "standard": 370
+          }
+        },
+        {
+          "id": "trailer-4x",
+          "name": "Trailer Membresía (4x al mes)",
+          "description": "Lavado exterior semanal recurrente para trailers comerciales.",
+          "includes": [
+            "4 lavados exteriores completos al mes",
+            "Limpieza de paneles, frontal y posterior"
+          ],
+          "prices": {
+            "standard": 700
+          }
+        },
+        {
+          "id": "car-hauler-wash",
+          "name": "Car Hauler (Lavado Básico)",
+          "description": "Lavado completo únicamente del remolque transportador de vehículos; no incluye el camión tractor. Atención especial a chasis, estructura, rampas y plataformas.",
+          "includes": [
+            "Desengrasado de chasis y estructura",
+            "Lavado completo con champú para vehículos comerciales",
+            "Limpieza de rines y llantas",
+            "Lavado de guardabarros",
+            "Enjuague a presión",
+            "Secado para evitar manchas",
+            "Aplicación de brillo para neumáticos",
+            "Desengrasado profundo de rampas y plataformas"
+          ],
+          "prices": {
+            "standard": 120
+          }
+        },
+        {
+          "id": "car-hauler-2x",
+          "name": "Car Hauler Membresía (2x al mes)",
+          "description": "Dos lavados mensuales completos del remolque transportador de vehículos; no incluyen el camión tractor.",
+          "includes": [
+            "2 lavados básicos completos al mes",
+            "Desengrasado de chasis, estructura, rampas y plataformas",
+            "Lavado con champú para vehículos comerciales",
+            "Limpieza de rines, llantas y guardabarros",
+            "Enjuague a presión",
+            "Secado para evitar manchas",
+            "Aplicación de brillo para neumáticos"
+          ],
+          "prices": {
+            "standard": 220
+          }
+        },
+        {
+          "id": "car-hauler-4x",
+          "name": "Car Hauler Membresía (4x al mes)",
+          "description": "Lavado semanal recurrente del remolque transportador de vehículos; no incluye el camión tractor.",
+          "includes": [
+            "4 lavados básicos completos al mes",
+            "Desengrasado de chasis, estructura, rampas y plataformas",
+            "Lavado con champú para vehículos comerciales",
+            "Limpieza de rines, llantas y guardabarros",
+            "Enjuague a presión",
+            "Secado para evitar manchas",
+            "Aplicación de brillo para neumáticos"
+          ],
+          "prices": {
+            "standard": 400
+          }
+        },
+        {
+          "id": "dump-truck-wash",
+          "name": "Dump Truck (Camión de Volteo)",
+          "description": "Lavado exterior para camiones de volteo incluyendo chasis visible y tolva.",
+          "includes": [
+            "Lavado exterior completo",
+            "Eliminación de barro y suciedad de chasis visible",
+            "Limpieza de rines y neumáticos",
+            "Desengrasado ligero"
+          ],
+          "prices": {
+            "standard": 180
+          }
+        },
+        {
+          "id": "dump-truck-2x",
+          "name": "Dump Truck Membresía (2x al mes)",
+          "description": "2 visitas mensuales de lavado exterior de camión de volteo.",
+          "includes": [
+            "2 lavados completos exteriores y de chasis al mes"
+          ],
+          "prices": {
+            "standard": 320
+          }
+        },
+        {
+          "id": "dump-truck-4x",
+          "name": "Dump Truck Membresía (4x al mes)",
+          "description": "Lavado exterior semanal recurrente para camiones de volteo.",
+          "includes": [
+            "4 lavados completos exteriores y de chasis al mes"
+          ],
+          "prices": {
+            "standard": 620
+          }
+        },
+        {
+          "id": "garbage-truck-wash",
+          "name": "Garbage Truck (Camión de Basura)",
+          "description": "Lavado y desengrasado exterior de alta resistencia.",
+          "includes": [
+            "Lavado exterior",
+            "Desengrasado básico",
+            "Eliminación de suciedad pesada",
+            "Limpieza de cabina y cristales",
+            "Enjuague completo"
+          ],
+          "prices": {
+            "standard": 200
+          }
+        },
+        {
+          "id": "garbage-truck-2x",
+          "name": "Garbage Truck Membresía (2x al mes)",
+          "description": "2 visitas mensuales de lavado exterior de camión de basura.",
+          "includes": [
+            "2 lavados exteriores y desengrasados de chasis/caja al mes"
+          ],
+          "prices": {
+            "standard": 370
+          }
+        },
+        {
+          "id": "garbage-truck-4x",
+          "name": "Garbage Truck Membresía (4x al mes)",
+          "description": "Lavado exterior semanal recurrente para camiones de basura.",
+          "includes": [
+            "4 lavados exteriores y desengrasados de chasis/caja al mes"
+          ],
+          "prices": {
+            "standard": 700
+          }
+        }
+      ],
+      "sizes": [
+        {
+          "id": "size_10_16",
+          "name": "Caja de 10' a 16'"
+        },
+        {
+          "id": "size_17_20",
+          "name": "Caja de 17' a 20'"
+        },
+        {
+          "id": "size_21_26",
+          "name": "Caja de 21' a 26'"
+        },
+        {
+          "id": "standard",
+          "name": "Medida Estándar"
+        }
+      ],
+      "extras": [
+        {
+          "id": "limpieza-cabina",
+          "name": "Limpieza Interior de Cabina",
+          "price": 25,
+          "range": "$25 - $60",
+          "notForGroups": [
+            "trailer"
+          ]
+        },
+        {
+          "id": "cera-rapida",
+          "name": "Cera Rápida",
+          "price": 20,
+          "range": "$20 - $40"
+        },
+        {
+          "id": "desengrasado-profundo",
+          "name": "Desengrasado Profundo",
+          "price": 30,
+          "range": "$30 - $60"
+        },
+        {
+          "id": "engrasado-camion",
+          "name": "Engrasado para Camiones",
+          "price": 50
+        },
+        {
+          "id": "motor-pesado",
+          "name": "Limpieza de Motor",
+          "price": 30
+        },
+        {
+          "id": "volteo-aluminio",
+          "name": "Caja de Aluminio",
+          "price": 120,
+          "onlyFor": [
+            "dump-truck-wash",
+            "dump-truck-2x",
+            "dump-truck-4x"
+          ]
+        },
+        {
+          "id": "rines-aluminio",
+          "name": "Ácido para Rines de Aluminio",
+          "price": 25
+        },
+        {
+          "id": "pulido-rines-llantas",
+          "name": "Pulido de Rines y Llantas",
+          "price": 25
+        },
+        {
+          "id": "car-hauler-second-deck",
+          "name": "Lavado del Segundo Piso",
+          "price": 100,
+          "onlyFor": [
+            "car-hauler-wash",
+            "car-hauler-2x",
+            "car-hauler-4x"
+          ]
+        },
+        {
+          "id": "lubricante-grafito",
+          "name": "Lubricante de Grafito",
+          "price": 180,
+          "onlyFor": [
+            "car-hauler-wash",
+            "car-hauler-2x",
+            "car-hauler-4x"
+          ]
+        },
+        {
+          "id": "pulido-tanques",
+          "name": "Pulido Tanques de Aluminio (Cotiz.)",
+          "price": 0,
+          "range": "Cotización personalizada"
+        }
+      ]
+    },
+    {
+      "id": "boats",
+      "name": "Boats & Watercraft",
+      "image": "assets/service-boats.webp",
+      "from": "$120",
+      "packages": [
+        {
+          "id": "boat-basico",
+          "name": "Basic Boat Wash",
+          "description": "Servicio de lavado básico diseñado para mantener la embarcación limpia después de cada uso.",
+          "includes": [
+            "Lavado completo del exterior",
+            "Enjuague con agua dulce",
+            "Eliminación de sal, arena y suciedad",
+            "Limpieza básica del casco",
+            "Limpieza de superficies visibles",
+            "Secado básico"
+          ],
+          "prices": {
+            "boat_16_20": 120,
+            "boat_21_30": 170,
+            "boat_31_40": 220,
+            "boat_41_60": 300
+          }
+        },
+        {
+          "id": "boat-premium",
+          "name": "Premium Boat Wash",
+          "description": "Limpieza más completa tanto del exterior como del interior detallado.",
+          "includes": [
+            "Lavado completo exterior y enjuague dulce",
+            "Eliminación de sal y suciedad",
+            "Limpieza detallada del casco",
+            "Limpieza detallada de asientos interior",
+            "Limpieza de consola y ventanas",
+            "Limpieza de compartimientos y superficies visibles"
+          ],
+          "prices": {
+            "boat_16_20": 180,
+            "boat_21_30": 250,
+            "boat_31_40": 400,
+            "boat_41_60": 600
+          },
+          "priceRanges": {
+            "boat_16_20": "$180 - $250",
+            "boat_21_30": "$250 - $400",
+            "boat_31_40": "$400 - $600",
+            "boat_41_60": "$600 - $900"
+          }
+        },
+        {
+          "id": "boat-detail",
+          "name": "Premium Boat Detail",
+          "description": "Nuestro servicio más completo para restaurar y proteger su embarcación marina.",
+          "includes": [
+            "Limpieza interior completa",
+            "Limpieza exterior completa",
+            "Pulido del casco y restauración del brillo",
+            "Aplicación de protectores para superficies",
+            "Limpieza de detalles y acabado profesional"
+          ],
+          "prices": {
+            "boat_16_20": 250,
+            "boat_21_30": 400,
+            "boat_31_40": 600,
+            "boat_41_60": 900
+          },
+          "priceRanges": {
+            "boat_16_20": "$250 - $400",
+            "boat_21_30": "$400 - $600",
+            "boat_31_40": "$600 - $900",
+            "boat_41_60": "$900 - $1,200"
+          }
+        }
+      ],
+      "sizes": [
+        {
+          "id": "boat_16_20",
+          "name": "16 FT a 20 FT"
+        },
+        {
+          "id": "boat_21_30",
+          "name": "21 FT a 30 FT"
+        },
+        {
+          "id": "boat_31_40",
+          "name": "31 FT a 40 FT"
+        },
+        {
+          "id": "boat_41_60",
+          "name": "41 FT a 60 FT"
+        }
+      ],
+      "extras": [
+        {
+          "id": "boat-motor",
+          "name": "Limpieza y detallado del motor",
+          "price": 75,
+          "range": "Desde $75"
+        },
+        {
+          "id": "boat-vinilo-uv",
+          "name": "Limpieza profunda y protección UV de asientos de vinilo",
+          "price": 100,
+          "range": "Desde $100"
+        },
+        {
+          "id": "boat-cera-marina",
+          "name": "Aplicación de cera marina premium",
+          "price": 20,
+          "range": "$20/pie"
+        },
+        {
+          "id": "boat-pulido",
+          "name": "Pulido de una etapa",
+          "price": 30,
+          "range": "$30/pie"
+        },
+        {
+          "id": "boat-oxidacion",
+          "name": "Eliminación de oxidación",
+          "price": 35,
+          "range": "Desde $35/pie"
+        },
+        {
+          "id": "boat-ceramica",
+          "name": "Recubrimiento cerámico marino",
+          "price": 75,
+          "range": "Desde $75/pie"
+        },
+        {
+          "id": "boat-inox",
+          "name": "Pulido de acero inoxidable y cromados",
+          "price": 100
+        },
+        {
+          "id": "boat-compartimientos",
+          "name": "Limpieza de compartimientos y áreas de almacenamiento",
+          "price": 75
+        },
+        {
+          "id": "boat-manchas-agua",
+          "name": "Eliminación de manchas de agua",
+          "price": 75,
+          "range": "Desde $75"
+        },
+        {
+          "id": "boat-marcas-casco",
+          "name": "Eliminación de marcas negras del casco",
+          "price": 60,
+          "range": "Desde $60"
+        },
+        {
+          "id": "boat-lona-bimini",
+          "name": "Limpieza de lona, Bimini Top o T-Top",
+          "price": 100,
+          "range": "Desde $100"
+        },
+        {
+          "id": "boat-repelente-cristales",
+          "name": "Tratamiento repelente de agua para cristales",
+          "price": 75
+        },
+        {
+          "id": "boat-olores-ozono",
+          "name": "Eliminación de olores y tratamiento con ozono",
+          "price": 100
+        },
+        {
+          "id": "boat-teca",
+          "name": "Limpieza y restauración de teca (Teak)",
+          "price": 25,
+          "range": "Desde $25/pie"
+        }
+      ]
+    },
+    {
+      "id": "jetski",
+      "name": "Jet Ski",
+      "image": "assets/service-jetski.webp",
+      "from": "$80",
+      "packages": [
+        {
+          "id": "jetski-premium",
+          "name": "Premium Wash Jet Ski",
+          "description": "Lavado completo del Jet Ski, tráiler y remoción total de salitre.",
+          "includes": [
+            "Lavado completo del Jet Ski y del tráiler",
+            "Enjuague con agua dulce",
+            "Eliminación de sal y arena",
+            "Limpieza de casco y asiento",
+            "Secado completo"
+          ],
+          "prices": {
+            "qty_1": 80,
+            "qty_2": 150,
+            "qty_3": 200
+          }
+        },
+        {
+          "id": "jetski-membresia",
+          "name": "Membresía (2x al mes)",
+          "description": "Mantenimiento quincenal continuo para mantener tu moto náutica lista.",
+          "includes": [
+            "2 visitas de lavado completo premium al mes",
+            "Lavado del tráiler y enjuague dulce",
+            "Eliminación de salitre"
+          ],
+          "prices": {
+            "qty_1": 130,
+            "qty_2": 220,
+            "qty_3": 300
+          }
+        }
+      ],
+      "sizes": [
+        {
+          "id": "qty_1",
+          "name": "1 Jet Ski"
+        },
+        {
+          "id": "qty_2",
+          "name": "2 Jet Skis"
+        },
+        {
+          "id": "qty_3",
+          "name": "3 Jet Skis"
+        }
+      ],
+      "extras": [
+        {
+          "id": "eliminacion-sal",
+          "name": "Descontaminación por sal pesada",
+          "price": 20
+        },
+        {
+          "id": "brillo-plasticos",
+          "name": "Restauración de brillo en plásticos",
+          "price": 15
+        },
+        {
+          "id": "limpieza-asiento",
+          "name": "Limpieza profunda de asiento",
+          "price": 30
+        },
+        {
+          "id": "ceramica-marina",
+          "name": "Cerámica rápida marina",
+          "price": 35
+        }
+      ]
+    },
+    {
+      "id": "golf_cart",
+      "name": "Golf Cart",
+      "image": "assets/service-golf-cart.webp",
+      "from": "$80",
+      "packages": [
+        {
+          "id": "golf-premium",
+          "name": "Premium Wash Golf Cart",
+          "description": "Lavado detallado completo incluyendo asientos, volante, techo y ruedas.",
+          "includes": [
+            "Lavado exterior completo y limpieza de techo",
+            "Limpieza de asientos, volante y tablero",
+            "Limpieza de ruedas y rines",
+            "Limpieza interior y secado detallado"
+          ],
+          "prices": {
+            "standard": 80
+          }
+        },
+        {
+          "id": "golf-membresia",
+          "name": "Membresía (2x al mes)",
+          "description": "Mantenimiento mensual recurrente (2 visitas por mes) de tu carrito de golf.",
+          "includes": [
+            "2 visitas de lavado completo premium al mes",
+            "Limpieza de asientos, tablero, ruedas y volante",
+            "Secado detallado"
+          ],
+          "prices": {
+            "standard": 130
+          }
+        }
+      ],
+      "sizes": [
+        {
+          "id": "standard",
+          "name": "Estándar"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "id": "atv",
+      "name": "ATVs & Quad",
+      "image": "assets/service-atv.webp",
+      "from": "$100",
+      "packages": [
+        {
+          "id": "atv-premium",
+          "name": "Premium Wash ATV",
+          "description": "Eliminación a presión de barro, arena, polvo y grasa; detallado de partes mecánicas visibles.",
+          "includes": [
+            "Lavado a presión",
+            "Eliminación de barro, arena y polvo",
+            "Limpieza de suspensión visible",
+            "Limpieza de ruedas y rines",
+            "Limpieza de asiento y guardabarros",
+            "Limpieza de luces y manillares",
+            "Secado detallado"
+          ],
+          "prices": {
+            "qty_1": 100,
+            "qty_2": 170,
+            "qty_3": 220
+          }
+        },
+        {
+          "id": "atv-membresia",
+          "name": "Membresía (2x al mes)",
+          "description": "2 visitas al mes para mantener limpia tu cuatrimoto después de tus aventuras.",
+          "includes": [
+            "2 visitas de lavado a presión detallado al mes",
+            "Limpieza de suspensión, guardabarros y plásticos"
+          ],
+          "prices": {
+            "qty_1": 170,
+            "qty_2": 280,
+            "qty_3": 400
+          }
+        }
+      ],
+      "sizes": [
+        {
+          "id": "qty_1",
+          "name": "1 ATV"
+        },
+        {
+          "id": "qty_2",
+          "name": "2 ATVs"
+        },
+        {
+          "id": "qty_3",
+          "name": "3 ATVs"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "id": "mobile_home",
+      "name": "Mobile Homes",
+      "image": "assets/service-mobile-home.webp",
+      "from": "$150",
+      "packages": [
+        {
+          "id": "mobile-home-basico",
+          "name": "Basic Premium Wash",
+          "description": "Lavado profesional exterior soft-wash para casas móviles. Elimina moho y suciedad.",
+          "includes": [
+            "Lavado exterior completo",
+            "Aplicación de técnica Soft Wash o baja presión (según el material)",
+            "Eliminación de moho, algas y hongos",
+            "Eliminación de suciedad acumulada y telarañas",
+            "Enjuague completo e inspección final de calidad"
+          ],
+          "prices": {
+            "single_wide": 150,
+            "double_wide": 225,
+            "triple_wide": 350
+          },
+          "priceRanges": {
+            "single_wide": "$150 - $225",
+            "double_wide": "$225 - $350",
+            "triple_wide": "$350 - $500"
+          }
+        }
+      ],
+      "sizes": [
+        {
+          "id": "single_wide",
+          "name": "Single-Wide (1 Sección)"
+        },
+        {
+          "id": "double_wide",
+          "name": "Double-Wide (2 Secciones)"
+        },
+        {
+          "id": "triple_wide",
+          "name": "Triple-Wide o Mayor"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "id": "driveway",
+      "name": "Driveways",
+      "image": "assets/service-driveway.webp",
+      "from": "$100",
+      "packages": [
+        {
+          "id": "driveway-basico",
+          "name": "Basic Pressure Wash",
+          "description": "El método más eficiente para la limpieza de superficies de concreto y pavimento.",
+          "includes": [
+            "Lavado a presión profesional",
+            "Eliminación de suciedad, moho y algas",
+            "Eliminación de polvo y enjuague completo",
+            "Inspección final de calidad"
+          ],
+          "prices": {
+            "standard": 100
+          },
+          "priceRanges": {
+            "standard": "$100 - $300"
+          }
+        },
+        {
+          "id": "driveway-premium",
+          "name": "Premium Pressure Wash",
+          "description": "Recomendado para concreto con manchas difíciles, aceite de motor y fluidos.",
+          "includes": [
+            "Todo lo incluido en el Basic Pressure Wash",
+            "Aplicación de desengrasantes profesionales",
+            "Tratamiento especializado para manchas de aceite",
+            "Eliminación de pintura superficial y fluidos automotrices",
+            "Productos especializados para restaurar la superficie"
+          ],
+          "prices": {
+            "standard": 150
+          },
+          "priceRanges": {
+            "standard": "$150 - $400"
+          }
+        }
+      ],
+      "sizes": [
+        {
+          "id": "standard",
+          "name": "Estándar"
+        }
+      ],
+      "extras": []
+    }
+  ]
+}

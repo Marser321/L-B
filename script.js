@@ -66,15 +66,20 @@
   function timeWindowLabel(key) {
     if (!key) return '';
     if (key === 'full_day') return t('tw.full_day');
-    const duration = state.availability.durationMinutes || 0;
     const start = minutesFromTime(key);
-    return duration ? `${clockLabel(start)}–${clockLabel(start + duration)}` : clockLabel(start);
+    // The appointment has one shared START time. Per-vehicle durations are
+    // rendered separately from the server response so a parallel visit never
+    // looks like one long, serial appointment.
+    return clockLabel(start);
   }
 
   // ──────────────────────────────────────────────
   // SERVICES DATA (Extracted from Context & PDF)
   // ──────────────────────────────────────────────
-  const SERVICES_DATA = {
+  // Hydrated from GET /api/catalog during init. The literal remains a resilient
+  // rendering fallback for an offline tab; live ids/prices are replaced by the
+  // server catalog before the wizard is shown.
+  let SERVICES_DATA = {
     categories: [
       {
         id: 'cars',
@@ -188,7 +193,7 @@
               'Aspirado intensivo y desempolvado interior',
               'Limpieza de tablero y cristales',
               'Lavado exterior premium detallado',
-              'Programar con al menos 24 horas de anticipación'
+              'Programar con al menos 48 horas de anticipación'
             ],
             prices: {
               sedan: 130,
@@ -207,7 +212,7 @@
               'Aspirado intensivo y desempolvado interior',
               'Limpieza de tablero y cristales',
               'Lavado exterior premium detallado',
-              'Programar con al menos 24 horas de anticipación'
+              'Programar con al menos 48 horas de anticipación'
             ],
             prices: {
               sedan: 200,
@@ -1077,12 +1082,12 @@
       'membresia-2x': {
         name: 'Membership (2x per month)',
         description: 'Two monthly premium maintenance visits to keep your vehicle consistently clean.',
-        includes: ['2 complete wash visits per month', 'Intensive vacuum and interior dust removal', 'Dashboard and glass cleaning', 'Premium detailed exterior wash', 'Schedule at least 24 hours in advance']
+        includes: ['2 complete wash visits per month', 'Intensive vacuum and interior dust removal', 'Dashboard and glass cleaning', 'Premium detailed exterior wash', 'Schedule at least 48 hours in advance']
       },
       'membresia-4x': {
         name: 'Membership (4x per month)',
         description: 'Weekly premium care with four complete washes per month.',
-        includes: ['4 complete wash visits per month', 'Intensive vacuum and interior dust removal', 'Dashboard and glass cleaning', 'Premium detailed exterior wash', 'Schedule at least 24 hours in advance']
+        includes: ['4 complete wash visits per month', 'Intensive vacuum and interior dust removal', 'Dashboard and glass cleaning', 'Premium detailed exterior wash', 'Schedule at least 48 hours in advance']
       },
       'paint-enhancement': {
         name: 'Package 1 - Paint Enhancement',
@@ -1694,7 +1699,7 @@
     'cart.edit': { en: 'Edit', es: 'Editar' },
     'cart.remove': { en: 'Remove', es: 'Quitar' },
     'cart.count': { en: '{n} services in this visit', es: '{n} servicios en esta visita' },
-    'cart.max': { en: 'You\'ve reached the limit of services per booking — contact us for larger fleets.', es: 'Llegaste al límite de servicios por reserva — contáctanos para flotas más grandes.' },
+    'cart.max': { en: 'Maximum reached: one reservation can include 4 vehicles. You can still edit or remove a vehicle.', es: 'Límite alcanzado: una reserva puede incluir 4 vehículos. Aún puedes editar o quitar un vehículo.' },
     'btn.addAnother': { en: 'Add another vehicle', es: 'Agregar otro vehículo' },
     'form.vehicleN': { en: 'Vehicle {n}', es: 'Vehículo {n}' },
     'wa.serviceN': { en: 'Service {n}', es: 'Servicio {n}' },
@@ -1719,12 +1724,28 @@
     'wa.time': { en: 'Confirmed time', es: 'Horario confirmado' },
     'wa.notes': { en: 'Notes', es: 'Notas' },
     'wa.closing': { en: 'My appointment is confirmed. I have a question about this booking.', es: 'Mi cita está confirmada. Tengo una consulta sobre esta reserva.' },
-    'submit.saving': { en: 'Confirming your appointment securely…', es: 'Confirmando tu cita de forma segura…' },
-    'submit.success': { en: 'Appointment confirmed. Reservation number:', es: 'Cita confirmada. Número de reserva:' },
+    'submit.saving': { en: 'Reserving your crew securely…', es: 'Reservando tu equipo de forma segura…' },
+    // The crew is held, not yet confirmed: the booking is confirmed once the
+    // deposit is paid, which is what the countdown and the deposit CTA are for.
+    'submit.success': { en: 'Your crew is reserved. Reservation number:', es: 'Tu equipo está reservado. Número de reserva:' },
+    'submit.holdNotice': {
+      en: 'We are holding this time for {minutes} minutes. Pay the deposit to confirm it.',
+      es: 'Mantenemos este horario reservado por {minutes} minutos. Paga el depósito para confirmarlo.'
+    },
     'submit.slotTaken': { en: 'That opening was just booked. Choose another available time; all your information is still here.', es: 'Ese turno acaba de ocuparse. Elige otro horario disponible; todos tus datos siguen aquí.' },
     'submit.error': { en: "We couldn't create the appointment. No booking was confirmed; your information is still here so you can retry or contact us.", es: 'No pudimos crear la cita. No hay una reserva confirmada; tus datos siguen aquí para reintentar o contactarnos.' },
     'submit.depositCta': { en: 'Pay your ${amount} deposit', es: 'Pagar depósito de ${amount}' },
     'submit.depositHint': { en: 'Lock in your booking now — this deposit is credited to your final total.', es: 'Asegura tu reserva ahora — este depósito se descuenta del total final.' },
+    'submit.paymentUnavailable': { en: 'Your temporary reservation is active, but we could not open payment. Contact us before it expires.', es: 'Tu reserva temporal está activa, pero no pudimos abrir el pago. Contáctanos antes de que venza.' },
+    'hold.activeTitle': { en: 'Temporary reservation', es: 'Reserva temporal' },
+    'hold.active': { en: 'We are reserving the crew while you review your booking. Time remaining: {time}.', es: 'Estamos reservando el equipo mientras revisas tu reserva. Tiempo restante: {time}.' },
+    'hold.pending': { en: 'Your time is temporarily reserved. Pay the deposit before {time} to confirm it.', es: 'Tu horario está reservado temporalmente. Paga el depósito antes de {time} para confirmarlo.' },
+    'hold.confirmed': { en: 'Payment received — your reservation is confirmed.', es: 'Pago recibido: tu reserva está confirmada.' },
+    'hold.expired': { en: 'The temporary reservation expired. Choose a new available time.', es: 'La reserva temporal venció. Elige un nuevo horario disponible.' },
+    'hold.paymentFailed': { en: 'The payment did not complete, so the temporary reservation was released. Choose a new time.', es: 'El pago no se completó, por lo que la reserva temporal fue liberada. Elige un nuevo horario.' },
+    'hold.released': { en: 'This temporary reservation is no longer available. Choose a new time.', es: 'Esta reserva temporal ya no está disponible. Elige un nuevo horario.' },
+    'form.durationVehicle': { en: 'Vehicle {n}: {duration}', es: 'Vehículo {n}: {duration}' },
+    'sum.duration': { en: 'Estimated time per vehicle', es: 'Tiempo estimado por vehículo' },
     'wa.quick': { en: "Hi L&B Elite! I'd like to book a service.", es: 'Hola L&B Elite, me gustaría reservar un servicio.' },
     'waFloat.aria': { en: 'Contact us on WhatsApp', es: 'Contactar por WhatsApp' }
   };
@@ -1747,7 +1768,9 @@
 
       cat.packages.forEach(pkg => {
         normalizePackagePricing(pkg);
-        pkg.type = /membresia|membership|-2x$|-4x$/.test(pkg.id) ? 'membership' : 'onetime';
+        // The API supplies the membership flag; browser code never infers it
+        // from an identifier or maintains a second package-id list.
+        pkg.type = pkg.isMembership === true ? 'membership' : 'onetime';
         if (cat.id === 'heavy_trucks') {
           const overridePrefix = Object.keys(PACKAGE_GROUP_OVERRIDES).find(prefix => pkg.id.startsWith(prefix));
           const g = overridePrefix ? null : HEAVY_GROUPS.find(grp => pkg.id.startsWith(grp.id));
@@ -1879,8 +1902,7 @@
   }
 
   function packageFromLabel(pkg) {
-    const mins = Object.keys(pkg.prices || {}).map(sizeId => packagePriceBounds(pkg, sizeId).min);
-    return t('from') + ' ' + fmt(Math.min(...mins));
+    return loc(pkg.displayFrom) || '—';
   }
 
   function categoryImage(cat) {
@@ -1943,18 +1965,16 @@
   }
 
   // ── Multi-vehicle cart ──
-  // Cart rules (mirror of api/quote.js CART_RULES): every line shares one visit
+  // Cart rules (mirror of api/_lib/catalog.js): every line shares one visit
   // (same address, date and time window → one appointment), duplicate lines are
   // allowed, restricted add-ons apply per line, and the visit books the full
   // day when ANY line uses a full-day package.
-  const CART_MAX_ITEMS = 6;
-  // Mirror of FULL_DAY_PACKAGES in api/quote.js. Trucks, boats, mobile homes and
-  // driveways now book by duration; only paint work still takes the whole day.
-  const FULL_DAY_PACKAGE_IDS = new Set(['paint-correction', 'ceramic-protection']);
-
-  function isFullDayLine(line) {
-    return FULL_DAY_PACKAGE_IDS.has(line.packageId);
-  }
+  // Mirror of MAX_VEHICLES in api/_lib/catalog.js. Four vans means four vehicles
+  // per visit: each vehicle is washed by its own van at the same time. The server
+  // rejects a fifth with HTTP 422 regardless of what this constant says.
+  // Hydrated by GET /api/catalog. The server is still the backstop if a stale
+  // tab or a tampered client tries to add more.
+  let CART_MAX_ITEMS = 4;
 
   // Resolve a stored cart line against the live catalog (null when stale).
   function resolveLine(line) {
@@ -1973,37 +1993,78 @@
     return { cat, pkg, size, addons };
   }
 
+  function selectionKey(vehicles = cartVehicles()) {
+    return JSON.stringify(vehicles.map(vehicle => ({
+      packageId: vehicle.packageId,
+      sizeId: vehicle.sizeId || '',
+      addonIds: [...(vehicle.addonIds || [])].sort()
+    })));
+  }
+
+  function authoritativeEstimate() {
+    if (state.availability.cartKey !== selectionKey() || !state.availability.estimate) return null;
+    return state.availability.estimate;
+  }
+
   function lineEstimate(line) {
-    const resolved = resolveLine(line);
-    return resolved ? estimateFor(resolved.pkg, resolved.size, resolved.addons) : null;
+    const estimate = authoritativeEstimate();
+    const index = state.cart.indexOf(line);
+    return estimate && index >= 0 ? (estimate.perVehicle || [])[index] || null : null;
   }
 
   // Total across committed lines plus the draft under construction.
   function cartEstimate() {
-    const parts = state.cart.map(lineEstimate).filter(Boolean);
-    const draft = computeEstimate();
-    if (draft) parts.push(draft);
-    if (!parts.length) return null;
-    let min = 0, max = 0, isRange = false, isFrom = false, custom = false;
-    parts.forEach(part => {
-      min += part.min;
-      max += part.max;
-      if (part.isRange) isRange = true;
-      if (part.isFrom) isFrom = true;
-      if (part.custom) custom = true;
-    });
-    const showRange = isRange && max > min;
-    let label = showRange ? `${fmt(min)} - ${fmt(max)}` : (isFrom ? `${t('from')} ${fmt(min)}` : fmt(min));
-    if (custom) label += ' ' + t('customQuote');
-    return { min, max, isRange: showRange, custom, isFrom, label };
+    return authoritativeEstimate();
   }
 
-  // Every package in the visit, the uncommitted draft included: the calendar has
-  // to reserve enough time for all of them back to back.
+  // Every package in the visit, the uncommitted draft included. Used as a cache
+  // key and for full-day detection — NOT for duration: each vehicle is washed by
+  // its own van at the same time, so the visit is as long as its slowest vehicle,
+  // never the sum. The server decides that (see AGENDA.md).
   function cartPackageIds() {
     const ids = state.cart.map(line => line.packageId);
     if (state.selectedCategory && state.selectedPackage) ids.push(state.selectedPackage.id);
     return ids;
+  }
+
+  // What the availability endpoint needs: one entry per vehicle, with the size and
+  // add-ons that decide its price. The server looks every id up in its own catalog
+  // — these are identifiers, not values it trusts.
+  function cartVehicles() {
+    const vehicles = state.cart.map(line => {
+      const resolved = resolveLine(line);
+      return {
+        packageId: line.packageId,
+        sizeId: resolved ? resolved.size.id : line.sizeId,
+        addonIds: resolved ? resolved.addons.map(addon => addon.id) : []
+      };
+    });
+    if (state.selectedCategory && state.selectedPackage) {
+      vehicles.push({
+        packageId: state.selectedPackage.id,
+        sizeId: state.selectedSize ? state.selectedSize.id : undefined,
+        addonIds: state.selectedAddons.map(addon => addon.id)
+      });
+    }
+    return vehicles;
+  }
+
+  function holdVehicles() {
+    return state.cart.map(line => {
+      const v = line.vehicle || blankVehicle();
+      return {
+        packageId: line.packageId,
+        sizeId: line.sizeId,
+        addonIds: [...(line.addonIds || [])],
+        vehicle: {
+          make: String(v.make || '').trim(),
+          model: String(v.model || '').trim(),
+          year: Number(v.year),
+          color: String(v.color || '').trim(),
+          plate: String(v.plate || '').trim()
+        }
+      };
+    });
   }
 
   // Commit the wizard draft as a cart line and reset the draft.
@@ -2032,6 +2093,7 @@
   function removeCartLine(lineId) {
     const index = state.cart.findIndex(line => line.lineId === lineId);
     if (index === -1) return;
+    if (state.hold && state.hold.status !== 'confirmed') void releaseTemporaryHold('cart_changed');
     state.cart.splice(index, 1);
     renderCartPanel();
     updateQuoteBar();
@@ -2048,6 +2110,7 @@
   function editCartLine(lineId, step = 2) {
     const index = state.cart.findIndex(line => line.lineId === lineId);
     if (index === -1) return;
+    if (state.hold && state.hold.status !== 'confirmed') void releaseTemporaryHold('cart_changed');
     const line = state.cart[index];
     const resolved = resolveLine(line);
     state.cart.splice(index, 1);
@@ -2179,34 +2242,17 @@
 
   // ── Add-on bundle pricing ──
   function bundlePrice(bundle) {
-    const cat = state.selectedCategory;
-    let sum = 0, hasVariable = false, custom = false;
-    bundle.addons.forEach(id => {
-      const a = (cat.extras || []).find(e => e.id === id);
-      if (!a) return;
-      const p = addonPriceBounds(a);
-      if (p.custom) {
-        custom = true;
-        return;
-      }
-      sum += p.min;
-      if (p.max > p.min || p.from) hasVariable = true;
-    });
-    return (hasVariable ? t('from') + ' ' : '') + fmt(sum) + (custom ? ' ' + t('customQuote') : '');
+    // Bundles are presentation-only selections. Their final total is returned
+    // by availability with the rest of the server-authoritative cart quote.
+    return '';
   }
 
   function addonDisplayPrice(addon) {
-    if (addon.customQuote) return t('customQuote');
-    if (addon.range) return '+ ' + addon.range;
-    const p = addonPriceBounds(addon);
-    return '+ ' + (p.from ? `${t('from')} ${fmt(p.min)}` : fmt(p.min));
+    return loc(addon.displayPrice) || '—';
   }
 
   function addonWhatsAppPrice(addon) {
-    if (addon.customQuote) return t('customQuote');
-    if (addon.range) return addon.range;
-    const p = addonPriceBounds(addon);
-    return p.from ? `${t('from')} ${fmt(p.min)}` : '+' + fmt(p.min);
+    return loc(addon.displayPrice) || '—';
   }
 
   function addonBadge(addon) {
@@ -2313,10 +2359,179 @@
     return `lyb-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
+  // ── Temporary checkout hold ────────────────────────────────────────────
+  // Holds are created only after the complete schedule form is valid. That
+  // keeps vans free while a visitor is simply browsing packages, but gives a
+  // reviewer a real, visible 15-minute reservation before payment.
+  let holdCountdownTimer = null;
+  let holdPollTimer = null;
+  let resolvingLostHold = false;
+
+  function stopHoldMonitoring() {
+    if (holdCountdownTimer) window.clearInterval(holdCountdownTimer);
+    if (holdPollTimer) window.clearInterval(holdPollTimer);
+    holdCountdownTimer = null;
+    holdPollTimer = null;
+  }
+
+  function holdTimeLeft() {
+    const expiresAt = state.hold && Date.parse(state.hold.expiresAt || '');
+    if (!Number.isFinite(expiresAt)) return 0;
+    return Math.max(0, expiresAt - Date.now());
+  }
+
+  function countdownLabel(milliseconds) {
+    const seconds = Math.ceil(milliseconds / 1000);
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  function renderTemporaryReservation() {
+    const box = document.getElementById('temporaryReservation');
+    if (!box) return;
+    const hold = state.hold;
+    if (!hold) {
+      box.hidden = true;
+      box.textContent = '';
+      box.className = 'temporary-reservation';
+      return;
+    }
+    const left = holdTimeLeft();
+    let key = 'hold.active';
+    let className = 'temporary-reservation';
+    if (hold.status === 'pending_payment') key = 'hold.pending';
+    else if (hold.status === 'confirmed') { key = 'hold.confirmed'; className += ' is-confirmed'; }
+    else if (hold.status === 'payment_failed') { key = 'hold.paymentFailed'; className += ' is-warning'; }
+    else if (hold.status === 'expired') { key = 'hold.expired'; className += ' is-warning'; }
+    else if (hold.status === 'released' || hold.status === 'failed') { key = 'hold.released'; className += ' is-warning'; }
+    box.className = className;
+    box.hidden = false;
+    box.innerHTML = `<strong>${escapeHTML(t('hold.activeTitle'))}</strong>${escapeHTML(t(key).replace('{time}', countdownLabel(left)))}`;
+  }
+
+  async function releaseTemporaryHold(reason = 'customer_changed') {
+    const hold = state.hold;
+    stopHoldMonitoring();
+    state.hold = null;
+    renderTemporaryReservation();
+    if (!hold || !hold.holdId || hold.status === 'confirmed') return;
+    try {
+      await fetch('/api/bookings/holds', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdId: hold.holdId, reason })
+      });
+    } catch (error) { /* TTL/cron remains the safety net for an offline browser. */ }
+  }
+
+  async function returnToScheduleForHold(status) {
+    if (resolvingLostHold) return;
+    resolvingLostHold = true;
+    stopHoldMonitoring();
+    state.hold = null;
+    state.completed = false;
+    state.confirmedBooking = null;
+    state.schedule.date = '';
+    state.schedule.timeWindow = '';
+    saveState();
+    await loadAvailability(true);
+    goToStep(4);
+    const messageEl = document.getElementById('availabilityMessage');
+    if (messageEl) {
+      messageEl.textContent = t(status === 'payment_failed' ? 'hold.paymentFailed' : (status === 'expired' ? 'hold.expired' : 'hold.released'));
+      messageEl.className = 'availability-msg error';
+    }
+    resolvingLostHold = false;
+  }
+
+  async function pollTemporaryHold() {
+    const hold = state.hold;
+    if (!hold || !hold.holdId) return;
+    try {
+      const response = await fetch(`/api/bookings/holds?holdId=${encodeURIComponent(hold.holdId)}`);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) {
+        if (result.code === 'HOLD_EXPIRED' || response.status === 409) await returnToScheduleForHold('expired');
+        return;
+      }
+      if (!state.hold || state.hold.holdId !== hold.holdId) return;
+      state.hold = { ...state.hold, expiresAt: result.expiresAt || state.hold.expiresAt, status: result.status, reason: result.reason || '' };
+      renderTemporaryReservation();
+      if (result.status === 'confirmed') {
+        state.completed = true;
+        stopHoldMonitoring();
+        setSubmissionStatus(t('hold.confirmed'), 'success');
+        saveState();
+      } else if (['expired', 'payment_failed', 'released', 'failed'].includes(result.status)) {
+        await returnToScheduleForHold(result.status);
+      }
+    } catch (error) { /* The local countdown remains useful during a transient outage. */ }
+  }
+
+  function startHoldMonitoring() {
+    stopHoldMonitoring();
+    if (!state.hold || !state.hold.holdId) return;
+    renderTemporaryReservation();
+    holdCountdownTimer = window.setInterval(() => {
+      if (!state.hold) return stopHoldMonitoring();
+      if (holdTimeLeft() <= 0) {
+        void returnToScheduleForHold('expired');
+        return;
+      }
+      renderTemporaryReservation();
+    }, 1000);
+    holdPollTimer = window.setInterval(() => { void pollTemporaryHold(); }, 10_000);
+    void pollTemporaryHold();
+  }
+
+  async function acquireTemporaryHold() {
+    const currentKey = selectionKey(state.cart.map(line => ({ packageId: line.packageId, sizeId: line.sizeId, addonIds: line.addonIds || [] })));
+    if (state.hold && state.hold.cartKey === currentKey && ['active', 'pending_payment'].includes(state.hold.status)) return true;
+    if (state.hold) await releaseTemporaryHold('selection_changed');
+    const requestKey = newSubmissionId();
+    try {
+      const response = await fetch('/api/bookings/holds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `hold-${requestKey}` },
+        body: JSON.stringify({
+          date: state.schedule.date,
+          startTime: state.schedule.timeWindow,
+          language: LANG,
+          vehicles: holdVehicles()
+        })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) {
+        if (response.status === 409 || result.code === 'SLOT_UNAVAILABLE') {
+          state.schedule.date = '';
+          state.schedule.timeWindow = '';
+          await loadAvailability(true);
+          const messageEl = document.getElementById('availabilityMessage');
+          if (messageEl) { messageEl.textContent = t('submit.slotTaken'); messageEl.className = 'availability-msg error'; }
+        }
+        return false;
+      }
+      state.hold = {
+        holdId: result.holdId,
+        expiresAt: result.expiresAt,
+        status: result.status || 'active',
+        reason: '',
+        requestKey,
+        cartKey: currentKey
+      };
+      state.availability.deposit = Number(result.deposit) || state.availability.deposit;
+      startHoldMonitoring();
+      saveState();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   // ── Persistence ──
   // Storage key is versioned: v2 invalidates drafts that referenced the retired
   // car-hauler graphite packages / group (now the lubricante-grafito add-on).
-  const STORAGE_KEY = 'lyb-quote-v2';
+  const STORAGE_KEY = 'lyb-quote-v3';
   function saveState() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -2331,7 +2546,10 @@
           vehicle: state.draftVehicle
         },
         submissionId: state.submissionId,
-        schedule: state.schedule
+        schedule: state.schedule,
+        // No customer data is added here: this is only the opaque hold id and
+        // its server-issued lifecycle data, so a refresh can keep the countdown.
+        hold: state.hold
       }));
     } catch (e) { /* storage unavailable */ }
   }
@@ -2339,7 +2557,7 @@
     let s;
     try {
       localStorage.removeItem('lyb-quote'); // pre-v2 drafts may reference retired packages
-      s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+      s = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem('lyb-quote-v2') || 'null');
     } catch (e) { return; }
     if (!s) return;
     if (s.schedule) {
@@ -2350,6 +2568,17 @@
       });
     }
     if (s.submissionId) state.submissionId = s.submissionId;
+    if (s.hold && typeof s.hold === 'object' && typeof s.hold.holdId === 'string') {
+      state.hold = {
+        holdId: s.hold.holdId,
+        expiresAt: typeof s.hold.expiresAt === 'string' ? s.hold.expiresAt : '',
+        status: typeof s.hold.status === 'string' ? s.hold.status : 'active',
+        reason: typeof s.hold.reason === 'string' ? s.hold.reason : '',
+        requestKey: typeof s.hold.requestKey === 'string' ? s.hold.requestKey : '',
+        cartKey: typeof s.hold.cartKey === 'string' ? s.hold.cartKey : '',
+        depositUrl: typeof s.hold.depositUrl === 'string' ? s.hold.depositUrl : ''
+      };
+    }
     if (Array.isArray(s.cart)) {
       state.cart = s.cart
         .filter(line => line && resolveLine(line))
@@ -2404,7 +2633,9 @@
     submitError: false,
     completed: false,
     confirmedBooking: null,
-    availability: { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, deposit: 0, dates: [] },
+    hold: null,
+    catalogVersion: '',
+    availability: { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, noticeHours: 0, dates: [] },
     submissionId: newSubmissionId(),
     schedule: blankSchedule()
   };
@@ -2797,7 +3028,7 @@
             <div class="bundle-card ${allSel ? 'added' : ''}" data-bundle="${b.id}" role="button" tabindex="0">
               <div class="bundle-top">
                 <span class="bundle-name">${loc(b.name)}</span>
-                <span class="bundle-price">${bundlePrice(b)}</span>
+                ${bundlePrice(b) ? `<span class="bundle-price">${bundlePrice(b)}</span>` : ''}
               </div>
               <p class="bundle-desc">${loc(b.desc)}</p>
               <span class="bundle-action">${allSel ? t('bundleRemove') : t('bundleAdd')}</span>
@@ -2885,9 +3116,7 @@
     if (validSizes.length > 1) {
       sizeSection.style.display = 'block';
       sizeGrid.innerHTML = validSizes.map(size => {
-        const displayPrice = pkg.priceRanges && pkg.priceRanges[size.id]
-          ? pkg.priceRanges[size.id]
-          : fmt(pkg.prices[size.id]);
+        const displayPrice = loc(pkg.displayPrices && pkg.displayPrices[size.id]) || '—';
         const isSel = state.selectedSize && state.selectedSize.id === size.id;
         const iconHTML = sizeIconHTML(cat.id, size.id);
         return `
@@ -2999,25 +3228,28 @@
     if (fullDayHint) fullDayHint.hidden = !fullDay;
     if (fullDay) state.schedule.timeWindow = state.schedule.date ? 'full_day' : '';
 
-    // Memberships need 48h of notice; reflect that in the date hint.
+    // The API owns the notice rule (including mixed carts); the browser never
+    // infers membership from package-id text.
     const dateHint = document.querySelector('#timeWindowField')?.parentElement?.querySelector('[data-i18n="form.dateHint"]')
       || document.querySelector('[data-i18n="form.dateHint"]');
     if (dateHint) {
-      const membership = cartPackageIds().some(id => /membresia|membership|-2x$|-4x$/.test(id));
-      dateHint.textContent = t(membership ? 'form.dateHintMembership' : 'form.dateHint');
+      dateHint.textContent = t(state.availability.noticeHours >= 48 ? 'form.dateHintMembership' : 'form.dateHint');
     }
 
     const durationHint = document.getElementById('durationHint');
     if (durationHint) {
-      const minutes = state.availability.durationMinutes || 0;
-      durationHint.hidden = fullDay || !minutes;
-      durationHint.textContent = minutes ? t('form.duration').replace('{duration}', durationLabel(minutes)) : '';
+      const perVehicle = state.availability.perVehicleDurationMinutes || [];
+      durationHint.hidden = fullDay || !perVehicle.length;
+      durationHint.textContent = perVehicle.map((minutes, index) =>
+        t('form.durationVehicle').replace('{n}', String(index + 1)).replace('{duration}', durationLabel(minutes))
+      ).join(' · ');
     }
 
     const day = selectedAvailabilityDay();
     // Start times come from the calendar, so the chips are rebuilt per day.
     if (timeRow && !fullDay) {
-      const slots = day ? day.slots : [];
+      // The API returns slot objects; `start` is the local start time to book.
+      const slots = (day ? day.slots : []).map(slot => (typeof slot === 'string' ? slot : slot.start));
       if (!slots.includes(state.schedule.timeWindow)) state.schedule.timeWindow = '';
       timeRow.innerHTML = slots.map(slot =>
         `<button type="button" class="time-chip${slot === state.schedule.timeWindow ? ' active' : ''}" data-window="${escapeHTML(slot)}">${escapeHTML(clockLabel(minutesFromTime(slot)))}</button>`
@@ -3027,9 +3259,9 @@
   }
 
   async function loadAvailability(force = false) {
-    const packageIds = cartPackageIds();
-    if (!packageIds.length) return;
-    const cartKey = packageIds.join('|');
+    const vehicles = cartVehicles();
+    if (!vehicles.length) return;
+    const cartKey = selectionKey(vehicles);
     if (!force && state.availability.cartKey === cartKey && (state.availability.loading || state.availability.dates.length)) {
       renderAvailability();
       return;
@@ -3041,29 +3273,36 @@
       state.schedule.date = '';
       state.schedule.timeWindow = '';
     }
-    state.availability = { cartKey, loading: true, error: '', bookingMode: '', durationMinutes: 0, deposit: 0, dates: [] };
+    state.availability = { cartKey, loading: true, error: '', bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, noticeHours: 0, dates: [] };
     renderAvailability();
     try {
       const from = todayISO();
       const response = await fetch('/api/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packageIds, from, to: addDaysISO(from, 59) })
+        body: JSON.stringify({ vehicles, language: LANG, from, to: addDaysISO(from, 59) })
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.error || `Calendar request failed (${response.status})`);
-      if (cartPackageIds().join('|') !== cartKey) return; // cart changed mid-flight
+      if (selectionKey() !== cartKey) return; // cart changed mid-flight
       state.availability = {
         cartKey,
         loading: false,
         error: '',
         bookingMode: result.bookingMode,
-        durationMinutes: Number(result.durationMinutes) || 0,
+        // The visit lasts as long as its longest vehicle: the vans work in
+        // parallel, one per vehicle, so this is never the sum of the cart.
+        durationMinutes: Number(result.visitDurationMinutes) || 0,
+        perVehicleDurationMinutes: Array.isArray(result.perVehicleDurationMinutes) ? result.perVehicleDurationMinutes.map(Number) : [],
         deposit: Number(result.deposit) || 0,
+        estimate: result.estimate && typeof result.estimate === 'object' ? result.estimate : null,
+        noticeHours: Number(result.noticeHours) || 0,
+        // Each slot is { start, startsAt, endsAt }; `start` is the local start
+        // time in the LOCATION's timezone, already resolved by the server.
         dates: Array.isArray(result.dates) ? result.dates : []
       };
     } catch (error) {
-      state.availability = { cartKey, loading: false, error: t('availability.error'), bookingMode: '', durationMinutes: 0, deposit: 0, dates: [] };
+      state.availability = { cartKey, loading: false, error: t('availability.error'), bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, noticeHours: 0, dates: [] };
     }
     renderAvailability();
     if (cartChangedNotice) {
@@ -3227,6 +3466,9 @@
     const many = entries.length > 1;
     const row = (lab, val) => val ? `<div class="summary-row"><span class="lab">${escapeHTML(lab)}</span><span class="val">${escapeHTML(val)}</span></div>` : '';
     const scheduleVal = [prettyDate(s.date), timeWindowLabel(s.timeWindow)].filter(Boolean).join(' · ');
+    const perVehicleDuration = (state.availability.perVehicleDurationMinutes || []).map((minutes, index) =>
+      t('form.durationVehicle').replace('{n}', String(index + 1)).replace('{duration}', durationLabel(minutes))
+    ).join(' · ');
 
     const lineBlocks = entries.map(({ line, resolved, est }, index) => {
       const { cat, pkg, size, addons } = resolved;
@@ -3255,6 +3497,7 @@
       ${row(t('sum.address'), [s.address, s.unit].filter(Boolean).join(', '))}
       ${row(t('sum.area'), [s.city, s.zip].filter(Boolean).join(' '))}
       ${row(t('sum.time'), scheduleVal)}
+      ${row(t('sum.duration'), perVehicleDuration)}
       ${row(t('sum.notes'), s.notes)}
       <div class="summary-total">
         <span class="lab">${t('sum.total')}</span>
@@ -3335,7 +3578,9 @@
     }
 
     if (state.currentStep === state.totalSteps) {
-      const buttonLabel = state.completed ? t('btn.booked') : (state.submitting ? t('btn.saving') : (state.submitError ? t('btn.retry') : t('btn.book')));
+      const buttonLabel = state.completed
+        ? (state.hold && state.hold.status === 'confirmed' ? t('btn.booked') : t('hold.activeTitle'))
+        : (state.submitting ? t('btn.saving') : (state.submitError ? t('btn.retry') : t('btn.book')));
       btnNext.innerHTML = `
         ${buttonLabel}
         <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon" width="18" height="18">
@@ -3372,7 +3617,10 @@
       restoreScheduleInputs();
       loadAvailability();
     }
-    else if (step === 5) renderSummary();
+    else if (step === 5) {
+      renderSummary();
+      renderTemporaryReservation();
+    }
 
     updateStepUI();
     updateQuoteBar();
@@ -3389,10 +3637,14 @@
 
     // Leaving step 3 commits the draft as a cart line; step 4 works on the cart.
     if (state.currentStep === 3 && !commitDraftToCart()) return;
+    if (state.currentStep === 4 && !(await acquireTemporaryHold())) return;
     goToStep(state.currentStep + 1);
   });
 
-  btnBack.addEventListener('click', () => {
+  btnBack.addEventListener('click', async () => {
+    if (state.currentStep === 5 && state.hold && state.hold.status !== 'confirmed') {
+      await releaseTemporaryHold('back_to_schedule');
+    }
     if (state.currentStep === 4 && state.cart.length) {
       // Reopen the last committed line as the draft so "back" feels natural.
       editCartLine(state.cart[state.cart.length - 1].lineId, 3);
@@ -3424,7 +3676,9 @@
   function renderDepositCta(type) {
     const depositEl = document.getElementById('depositCta');
     if (!depositEl) return;
-    const depositUrl = type === 'success' && state.confirmedBooking ? state.confirmedBooking.depositUrl : '';
+    const depositUrl = type === 'success'
+      ? ((state.confirmedBooking && state.confirmedBooking.depositUrl) || (state.hold && state.hold.depositUrl) || '')
+      : '';
     if (!depositUrl) {
       depositEl.hidden = true;
       depositEl.removeAttribute('href');
@@ -3477,8 +3731,8 @@
       if (s.date) message += `*${t('wa.date')}:* ${prettyDate(s.date)}\n`;
       if (s.timeWindow) message += `*${t('wa.time')}:* ${timeWindowLabel(s.timeWindow)}\n`;
       if (s.notes) message += `*${t('wa.notes')}:* ${s.notes}\n`;
-      if (state.confirmedBooking && state.confirmedBooking.appointmentId) {
-        message += `*Reservation #:* ${state.confirmedBooking.appointmentId}\n`;
+      if (state.confirmedBooking && state.confirmedBooking.holdId) {
+        message += `*Reservation #:* ${state.confirmedBooking.holdId}\n`;
       }
       message += `\n${t('wa.closing')}`;
       return message;
@@ -3510,29 +3764,29 @@
   function quotePayload() {
     const s = state.schedule;
     const items = state.cart
-      .map(line => ({ line, resolved: resolveLine(line), est: lineEstimate(line) }))
+      .map(line => ({ line, resolved: resolveLine(line) }))
       .filter(entry => entry.resolved)
-      .map(({ line, resolved, est }) => {
-        const { cat, pkg, size, addons } = resolved;
+      .map(({ line, resolved }) => {
+        const { size } = resolved;
         const v = line.vehicle || blankVehicle();
         return {
-          category: { id: cat.id, name: cat.name },
-          package: { id: pkg.id, name: pkg.name },
-          size: { id: size.id, name: size.name },
-          addons: addons.map(addon => ({ id: addon.id, name: addon.name, price: addonWhatsAppPrice(addon) })),
+          // Identifiers and descriptors only. The server resolves every
+          // commercial value, calendar decision and label from its catalog.
+          packageId: line.packageId,
+          sizeId: size.id,
+          addonIds: [...(line.addonIds || [])],
           vehicle: {
             make: String(v.make || '').trim(),
             model: String(v.model || '').trim(),
             year: Number(v.year),
             color: String(v.color || '').trim(),
             plate: String(v.plate || '').trim()
-          },
-          estimate: est ? { min: est.min, max: est.max, label: est.label, custom: est.custom, isRange: est.isRange } : null
+          }
         };
       });
-    const total = cartEstimate();
     return {
       submissionId: state.submissionId,
+      holdId: state.hold && state.hold.holdId ? state.hold.holdId : '',
       language: LANG,
       website: s.website || '',
       policyAccepted: state.policiesAccepted,
@@ -3547,8 +3801,7 @@
         zip: s.zip.trim()
       },
       items,
-      estimate: total ? { min: total.min, max: total.max, label: total.label, custom: total.custom, isRange: total.isRange } : null,
-      schedule: { date: s.date, timeWindow: s.timeWindow, timeLabel: timeWindowLabel(s.timeWindow), notes: s.notes.trim() }
+      schedule: { date: s.date, timeWindow: s.timeWindow, notes: s.notes.trim() }
     };
   }
 
@@ -3569,15 +3822,35 @@
       if (!response.ok || !result.ok) {
         const requestError = new Error(result.error || `CRM request failed (${response.status})`);
         requestError.status = response.status;
+        requestError.code = result.code || '';
         throw requestError;
       }
 
       state.confirmedBooking = result;
-      setSubmissionStatus(`${t('submit.success')} ${result.appointmentId}`, 'success');
-      try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* storage unavailable */ }
+      state.hold = {
+        ...(state.hold || {}),
+        holdId: result.holdId,
+        expiresAt: result.expiresAt || (state.hold && state.hold.expiresAt),
+        status: result.appointmentStatus === 'pending_payment' ? 'pending_payment' : 'active',
+        reason: '',
+        depositUrl: result.depositUrl || ''
+      };
+      // The reservation id is the hold: one booking now spans one appointment per
+      // van, so there is no single appointment id to quote back.
+      const reservationId = result.holdId || result.opportunityId || '';
+      const holdNotice = result.holdMinutes
+        ? ` ${t('submit.holdNotice').replace('{minutes}', String(result.holdMinutes))}`
+        : '';
+      const paymentStatus = result.depositUrl
+        ? `${t('submit.success')} ${reservationId}${holdNotice}`
+        : t('submit.paymentUnavailable');
+      setSubmissionStatus(paymentStatus, result.depositUrl ? 'success' : 'error');
       state.completed = true;
+      startHoldMonitoring();
+      saveState();
     } catch (error) {
       if (error.status === 409) {
+        await releaseTemporaryHold(error.code === 'HOLD_EXPIRED' ? 'hold_expired' : 'slot_conflict');
         state.submitError = false;
         state.schedule.date = '';
         state.schedule.timeWindow = '';
@@ -3638,7 +3911,8 @@
   function setupReset() {
     const btn = document.getElementById('btnReset');
     if (!btn) return;
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
+      await releaseTemporaryHold('reset');
       try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
       state.catFilter = 'all';
       state.pkgType = 'onetime';
@@ -3657,7 +3931,8 @@
       state.submitError = false;
       state.completed = false;
       state.confirmedBooking = null;
-      state.availability = { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, deposit: 0, dates: [] };
+      state.hold = null;
+      state.availability = { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, noticeHours: 0, dates: [] };
       state.submissionId = newSubmissionId();
       state.schedule = blankSchedule();
       const policyEl = document.getElementById('policyAccept');
@@ -3752,6 +4027,7 @@
     restoreScheduleInputs();
     updateStepUI();
     updateQuoteBar();
+    renderTemporaryReservation();
   }
 
   function updateLangToggle() {
@@ -3785,13 +4061,32 @@
   // ──────────────────────────────────────────────
   // INITIALIZATION
   // ──────────────────────────────────────────────
-  function init() {
+  async function hydrateCatalog() {
+    try {
+      const response = await fetch('/api/catalog');
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok || !Array.isArray(result.categories)) return false;
+      SERVICES_DATA = { categories: result.categories };
+      CART_MAX_ITEMS = Number(result.maxVehicles) || CART_MAX_ITEMS;
+      state.catalogVersion = result.version || '';
+      enrichServicesData();
+      applyServiceLanguage(LANG);
+      return true;
+    } catch (error) {
+      // The embedded presentation fallback lets an already-open page keep
+      // rendering, while POST endpoints still remain server-authoritative.
+      return false;
+    }
+  }
+
+  async function init() {
     setupThemeToggle();
     setupLangToggle();
     applyUILanguage();
     setupContactLinks();
     setupHeroVideo();
     handleNavScroll();
+    await hydrateCatalog();
     restoreState();
     renderCatFilter();
     renderCategories();
@@ -3804,8 +4099,16 @@
     document.querySelectorAll('.route-card').forEach(attachSpotlight);
     updateStepUI();
     updateQuoteBar();
+    if (state.hold) {
+      state.currentStep = 5;
+      state.completed = ['pending_payment', 'confirmed'].includes(state.hold.status);
+      renderSummary();
+      setSubmissionStatus(state.hold.status === 'pending_payment' ? t('hold.pending').replace('{time}', countdownLabel(holdTimeLeft())) : t('hold.active').replace('{time}', countdownLabel(holdTimeLeft())), 'success');
+      startHoldMonitoring();
+      updateStepUI();
+    }
   }
 
-  init();
+  void init();
 
 })();
