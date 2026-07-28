@@ -62,6 +62,24 @@ function getConfig() {
   };
 }
 
+// Payment work does not need the four crew calendars. Keep this separate from
+// `getConfig` so a calendar configuration problem cannot prevent a CRM invoice
+// draft from being prepared (and, conversely, a payment-only deployment never
+// needs to know a calendar id).
+function getPaymentsConfig() {
+  const token = process.env.GHL_PRIVATE_TOKEN;
+  const locationId = process.env.GHL_LOCATION_ID;
+  if (!token || !locationId) throw new RequestError('CRM is not configured', 503, 'GHL_CRM_NOT_CONFIGURED');
+  return {
+    token,
+    locationId,
+    // Test is the safe default. This flag is intentionally distinct from the
+    // deposit switch so enabling recurring memberships can never alter the
+    // established $30/$50 deposit flow.
+    membershipPaymentsLiveMode: process.env.GHL_MEMBERSHIP_LIVE_MODE === 'true'
+  };
+}
+
 async function ghlRequestOnce(config, path, options = {}) {
   let response;
   try {
@@ -85,8 +103,10 @@ async function ghlRequestOnce(config, path, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const statusCode = response.status === 401 || response.status === 403 || response.status === 429 ? 503 : 502;
-    // Server-side diagnostics: which GHL call failed and the upstream envelope.
-    console.error('[ghl-fail]', options.method || 'GET', path, response.status, JSON.stringify(data).slice(0, 400));
+    // Server-side diagnostics must remain safe for production logs. The
+    // upstream envelope can echo a contact or invoice payload, so retain only
+    // method, route, status, and an optional caller-generated request id.
+    console.error('[ghl-fail]', options.requestId || '-', options.method || 'GET', path, response.status);
     throw new HighLevelError(response.status, statusCode);
   }
   return data;
@@ -252,6 +272,7 @@ module.exports = {
   wait,
   resources,
   getConfig,
+  getPaymentsConfig,
   ghlRequest,
   isTransientGhlError,
   busyIntervalsForCalendar,
