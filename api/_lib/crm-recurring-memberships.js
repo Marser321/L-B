@@ -155,9 +155,8 @@ function schedulePayload({ config, contact, items, now, liveMode, reference, tim
       customFields: []
     },
     schedule: {
-      // HighLevel's Schedule API stores this as an ISO instant, while its
-      // rrule remains anchored to the location's calendar date below.
-      executeAt: new Date(now).toISOString(),
+      // HighLevel's schedule endpoint accepts either a one-time `executeAt`
+      // OR a recurring `rrule`; recurring memberships must send only rrule.
       rrule: {
         intervalType: 'monthly',
         interval: 1,
