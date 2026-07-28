@@ -33,10 +33,6 @@ function dateInTimeZone(now, timeZone) {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
-function dayOfMonth(date) {
-  return Number(String(date).slice(-2));
-}
-
 function testReference() {
   return `crm-recurring-test-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -156,16 +152,22 @@ function schedulePayload({ config, contact, items, now, liveMode, reference, tim
       customFields: []
     },
     schedule: {
-      executeAt: new Date(now).toISOString(),
+      // HighLevel's Schedule API stores this as an ISO instant, while its
+      // rrule remains anchored to the location's calendar date below.
+      executeAt: `${startDate}T00:00:00.000Z`,
       rrule: {
         intervalType: 'monthly',
         interval: 1,
         startDate,
-        dayOfMonth: dayOfMonth(startDate),
+        startTime: '00:00:00',
+        // The CRM UI's monthly membership default bills on the first day of
+        // the cycle. It also avoids the API's 1–28 monthly day constraint.
+        dayOfMonth: 1,
         // HighLevel requires this field even when the invoice is due/sent on
         // the recurring date itself. Omitting zero produces a 400 before any
         // schedule exists.
         daysBefore: 0,
+        useStartAsPrimaryUserAccepted: true,
         // A test creates a draft only. A production transition will call the
         // separate schedule endpoint after an explicit checkout approval.
         endType: 'never'

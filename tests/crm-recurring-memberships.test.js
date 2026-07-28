@@ -80,9 +80,13 @@ test('CRM recurring test draft resolves marked CRM prices and is always Stripe t
   const invoiceCall = calls.find(call => call.path === '/invoices/schedule');
   assert.equal(invoiceCall.options.version, '2023-02-21');
   assert.equal(invoiceCall.options.body.liveMode, false);
+  assert.equal(invoiceCall.options.body.schedule.executeAt, '2026-07-28T00:00:00.000Z');
   assert.equal(invoiceCall.options.body.schedule.rrule.intervalType, 'monthly');
   assert.equal(invoiceCall.options.body.schedule.rrule.interval, 1);
+  assert.equal(invoiceCall.options.body.schedule.rrule.startTime, '00:00:00');
+  assert.equal(invoiceCall.options.body.schedule.rrule.dayOfMonth, 1);
   assert.equal(invoiceCall.options.body.schedule.rrule.daysBefore, 0);
+  assert.equal(invoiceCall.options.body.schedule.rrule.useStartAsPrimaryUserAccepted, true);
   assert.equal(invoiceCall.options.body.schedule.rrule.endType, 'never');
   assert.deepEqual(invoiceCall.options.body.items.map(item => ({
     productId: item.productId, priceId: item.priceId, amount: item.amount, qty: item.qty, type: item.type
