@@ -80,7 +80,7 @@ test('CRM recurring test draft resolves marked CRM prices and is always Stripe t
   const invoiceCall = calls.find(call => call.path === '/invoices/schedule');
   assert.equal(invoiceCall.options.version, '2023-02-21');
   assert.equal(invoiceCall.options.body.liveMode, false);
-  assert.equal(invoiceCall.options.body.schedule.executeAt, '2026-07-30T00:00:00.000Z');
+  assert.equal(invoiceCall.options.body.schedule.executeAt, '2026-07-30T16:00:00.000Z');
   assert.equal(invoiceCall.options.body.schedule.rrule.intervalType, 'monthly');
   assert.equal(invoiceCall.options.body.schedule.rrule.interval, 1);
   assert.equal(invoiceCall.options.body.schedule.rrule.startTime, '00:00:00');
@@ -94,6 +94,8 @@ test('CRM recurring test draft resolves marked CRM prices and is always Stripe t
     { productId: 'product-a', priceId: 'price-a', amount: 130, qty: 1, type: 'recurring' },
     { productId: 'product-b', priceId: 'price-b', amount: 320, qty: 1, type: 'recurring' }
   ]);
+  assert.deepEqual(invoiceCall.options.body.discount.validOnProductIds, []);
+  assert.equal(invoiceCall.options.body.invoiceNumberPrefix, 'INV-');
   assert.equal(calls.some(call => /\/schedule\/[^/]+\/schedule$/.test(call.path)), false, 'draft is never scheduled or sent');
 });
 

@@ -124,7 +124,7 @@ async function resolveInvoiceItems({ config, request, lines, requestId }) {
       throw new RequestError('A membership is not available for purchase yet', 503, 'CRM_MEMBERSHIP_CATALOG_UNAVAILABLE');
     }
     return {
-      name: entry.priceLabel,
+      name: String(byPackage.get(line.packageId).name || entry.label),
       description: line.vehicleLabel,
       productId: resolved.productId,
       priceId,
@@ -149,13 +149,15 @@ function schedulePayload({ config, contact, items, now, liveMode, reference, tim
       name: contact.name,
       phoneNo: contact.phone,
       email: contact.email,
+      additionalEmails: [],
+      companyName: '',
       address: { countryCode: 'US' },
       customFields: []
     },
     schedule: {
       // HighLevel's Schedule API stores this as an ISO instant, while its
       // rrule remains anchored to the location's calendar date below.
-      executeAt: `${startDate}T00:00:00.000Z`,
+      executeAt: new Date(now).toISOString(),
       rrule: {
         intervalType: 'monthly',
         interval: 1,
@@ -175,12 +177,22 @@ function schedulePayload({ config, contact, items, now, liveMode, reference, tim
       }
     },
     liveMode: Boolean(liveMode),
-    businessDetails: { name: 'L & B Elite Wash & Detail' },
+    businessDetails: {
+      name: 'L & B Elite Wash & Detail',
+      phoneNo: '+12395270770',
+      address: {
+        addressLine1: '3049 14th ave ne', city: 'Naples', state: 'FL',
+        countryCode: 'US', postalCode: '34120'
+      },
+      website: 'https://lbelitewashd.com/',
+      customValues: []
+    },
     currency: 'USD',
     items,
-    discount: { value: 0, type: 'percentage' },
+    discount: { value: 0, type: 'percentage', validOnProductIds: [] },
     title: 'INVOICE',
     termsNotes: 'L&B automated CRM integration test. Do not schedule or send.',
+    invoiceNumberPrefix: 'INV-',
     paymentMethods: { stripe: { enableBankDebitOnly: false } },
     automaticTaxesEnabled: false
   };
