@@ -44,7 +44,7 @@ function hasPriceMarker(price, entry) {
 
 function matchingPrice(price, entry) {
   return hasPriceMarker(price, entry) &&
-    String(price.priceType || '').toLowerCase() === 'recurring' &&
+    String(price.priceType || price.type || '').toLowerCase() === 'recurring' &&
     Number(price.amount) === entry.monthlyCents &&
     String(price.currency || '').toLowerCase() === entry.currency &&
     String(price.recurring && price.recurring.interval || '').toLowerCase() === entry.interval &&
@@ -69,8 +69,10 @@ function pricePayload(entry, locationId) {
     // idempotency key in HighLevel; the human-facing product holds the label.
     name: priceMarker(entry),
     locationId,
-    priceType: 'recurring',
-    currency: entry.currency,
+    // HighLevel's creation endpoint calls this field `type`; `priceType` is
+    // present on returned objects and webhooks, but is not a writable field.
+    type: 'recurring',
+    currency: entry.currency.toUpperCase(),
     // HighLevel product API amounts use the currency's minor unit (cents for
     // USD), matching the authoritative catalog's monthlyCents field.
     amount: entry.monthlyCents,

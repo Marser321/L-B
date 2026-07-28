@@ -46,7 +46,8 @@ test('CRM provisioner creates only the 17 marked membership products and 33 recu
   assert.equal(crm.calls.filter(call => call.method === 'POST' && call.path === '/products/').length, 17);
   const priceWrites = crm.calls.filter(call => call.method === 'POST' && /\/price$/.test(call.path));
   assert.equal(priceWrites.length, 33);
-  assert.ok(priceWrites.every(call => call.body.priceType === 'recurring'));
+  assert.ok(priceWrites.every(call => call.body.type === 'recurring'));
+  assert.ok(priceWrites.every(call => call.body.currency === 'USD'));
   assert.ok(priceWrites.every(call => call.body.recurring.interval === 'month' && call.body.recurring.intervalCount === 1));
   assert.deepEqual(priceWrites.map(call => call.body.amount).sort((a, b) => a - b), catalog.entries().map(entry => entry.monthlyCents).sort((a, b) => a - b));
 });
