@@ -22,6 +22,17 @@ function idOf(value) {
   return String(value && (value._id || value.id) || '').trim();
 }
 
+function scheduleFromResponse(result) {
+  const candidates = [
+    result && result.schedule,
+    result && result.invoiceSchedule,
+    result && result.data,
+    result && result.invoice,
+    result
+  ];
+  return candidates.find(candidate => idOf(candidate)) || null;
+}
+
 function rows(value, key) {
   return Array.isArray(value && value[key]) ? value[key] : [];
 }
@@ -208,13 +219,19 @@ async function createRecurringDraft({ config, request, lines, now = Date.now(), 
     // the probe consistent with the server-owned 48-hour membership policy.
     body: schedulePayload({ config, contact, items, now: now + TEST_DRAFT_NOTICE_MS, liveMode: false, reference, timeZone })
   });
-  const scheduleId = idOf(result && (result.schedule || result));
-  if (!scheduleId) throw new RequestError('CRM did not return a recurring invoice draft', 502, 'CRM_MEMBERSHIP_DRAFT_FAILED');
+  const schedule = scheduleFromResponse(result);
+  const scheduleId = idOf(schedule);
+  if (!scheduleId) {
+    const error = new RequestError('CRM did not return a recurring invoice draft', 502, 'CRM_MEMBERSHIP_DRAFT_FAILED');
+    // Keys are safe structural diagnostics; no response values are retained.
+    error.responseKeys = Object.keys(result || {}).sort();
+    throw error;
+  }
   return {
     reference,
     scheduleId,
-    status: String(result && result.status || 'draft'),
-    liveMode: Boolean(result && result.liveMode),
+    status: String(schedule.status || 'draft'),
+    liveMode: Boolean(schedule.liveMode),
     lineCount: items.length,
     monthlyTotal: items.reduce((sum, item) => sum + item.amount * item.qty, 0)
   };
@@ -227,6 +244,7 @@ module.exports = {
   dateInTimeZone,
   makeTestCustomer,
   contactPayload,
+  scheduleFromResponse,
   findProduct,
   catalogPriceEntry,
   resolveInvoiceItems,

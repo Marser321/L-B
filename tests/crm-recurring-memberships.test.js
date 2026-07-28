@@ -111,6 +111,12 @@ test('CRM recurring draft refuses live mode before any CRM request', async () =>
   assert.equal(calls.length, 0);
 });
 
+test('CRM recurring draft accepts the documented and wrapped HighLevel schedule response forms', () => {
+  assert.equal(recurring.scheduleFromResponse({ _id: 'schedule-direct' })._id, 'schedule-direct');
+  assert.equal(recurring.scheduleFromResponse({ invoiceSchedule: { id: 'schedule-wrapped' } }).id, 'schedule-wrapped');
+  assert.equal(recurring.scheduleFromResponse({ data: { _id: 'schedule-data' } })._id, 'schedule-data');
+});
+
 test('missing or stale CRM membership price cannot be substituted with client input', async () => {
   const { request, calls } = requestStub();
   const original = request;
