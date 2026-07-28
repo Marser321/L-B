@@ -11,7 +11,7 @@ const { RequestError, HighLevelError, TooManyVehiclesError, asValidationError } 
 const { sendJson, readBody, assertSameOrigin, assertMethod } = require('./_lib/http.js');
 const { text, validateId } = require('./_lib/validate.js');
 const { normalizeVehicles } = require('./_lib/selection.js');
-const { isValidDateOnly, datesBetween } = require('./_lib/time.js');
+const { isValidDateOnly, datesBetween, bookingTimezone, todayInZone, addDays } = require('./_lib/time.js');
 const { BOOKING_WINDOW_DAYS, MAX_VEHICLES, isKnownPackage } = require('./_lib/catalog.js');
 const agenda = require('./_lib/agenda.js');
 
@@ -38,8 +38,16 @@ function validateRequest(body) {
     );
   }
 
-  const from = text(body.from, 'from', 10, 10);
-  const to = text(body.to, 'to', 10, 10);
+  // New clients leave the range to the server, so the service location's
+  // timezone is the only clock that decides which day starts the search.
+  // Explicit ranges stay accepted for legacy clients and internal callers.
+  const hasExplicitRange = Object.prototype.hasOwnProperty.call(body, 'from') || Object.prototype.hasOwnProperty.call(body, 'to');
+  const from = hasExplicitRange
+    ? text(body.from, 'from', 10, 10)
+    : todayInZone(Date.now(), bookingTimezone());
+  const to = hasExplicitRange
+    ? text(body.to, 'to', 10, 10)
+    : addDays(from, BOOKING_WINDOW_DAYS - 1);
   if (!isValidDateOnly(from) || !isValidDateOnly(to) || to < from) throw new RequestError('date range is invalid');
   if (datesBetween(from, to).length > BOOKING_WINDOW_DAYS) throw new RequestError('date range is too large');
 

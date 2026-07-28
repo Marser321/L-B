@@ -501,6 +501,18 @@ test('availability rejects invalid carts before querying HighLevel, then returns
   assert.ok(upstream.ghl.calls.some(call => call.path.startsWith('/calendars/events?')));
 });
 
+test('canonical availability requests use the server location clock when they omit the legacy date range', () => {
+  const input = availabilityHandler._test.validateRequest({
+    vehicles: [{ packageId: 'premium-detail', sizeId: 'sedan', addonIds: [] }],
+    language: 'es'
+  });
+
+  assert.match(input.from, /^\d{4}-\d{2}-\d{2}$/);
+  assert.match(input.to, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal((Date.parse(`${input.to}T00:00:00Z`) - Date.parse(`${input.from}T00:00:00Z`)) / 86_400_000, 59);
+  assert.equal(input.language, 'es');
+});
+
 test('48 hours of notice applies to memberships only', async t => {
   const ctx = setupAgenda();
   t.after(() => ctx.restore());

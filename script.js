@@ -6,6 +6,14 @@
 (function () {
   'use strict';
 
+  // Loaded before this file and shared with the frontend unit tests. It only
+  // presents server-authorized metadata; it does not contain booking policy.
+  const UI_RULES = window.LybQuoteUiRules;
+  if (!UI_RULES) {
+    console.error('Quote UI rules failed to load.');
+    return;
+  }
+
   // ──────────────────────────────────────────────
   // LANGUAGE (bilingual ES / EN)
   // ──────────────────────────────────────────────
@@ -1612,7 +1620,7 @@
     'form.cityPh': { en: 'e.g. Fort Myers', es: 'ej. Fort Myers' },
     'form.date': { en: 'Available date', es: 'Fecha disponible' },
     'form.dateHint': { en: 'Please book at least 1 hour ahead.', es: 'Reserva con al menos 1 hora de anticipación.' },
-    'form.dateHintMembership': { en: 'Membership visits must be booked at least 48 hours ahead.', es: 'Las visitas de membresía deben reservarse con al menos 48 horas de anticipación.' },
+    'form.dateHintMembership': { en: 'Membership visits must be booked at least {hours} hours ahead.', es: 'Las visitas de membresía deben reservarse con al menos {hours} horas de anticipación.' },
     'form.time': { en: 'Start time', es: 'Hora de inicio' },
     'tw.full_day': { en: 'Full day (8am–6pm)', es: 'Día completo (8am–6pm)' },
     'form.duration': { en: 'Estimated on site: {duration}', es: 'Tiempo estimado en sitio: {duration}' },
@@ -1770,7 +1778,9 @@
         normalizePackagePricing(pkg);
         // The API supplies the membership flag; browser code never infers it
         // from an identifier or maintains a second package-id list.
-        pkg.type = pkg.isMembership === true ? 'membership' : 'onetime';
+        if (typeof pkg.isMembership === 'boolean') {
+          pkg.type = pkg.isMembership ? 'membership' : 'onetime';
+        }
         if (cat.id === 'heavy_trucks') {
           const overridePrefix = Object.keys(PACKAGE_GROUP_OVERRIDES).find(prefix => pkg.id.startsWith(prefix));
           const g = overridePrefix ? null : HEAVY_GROUPS.find(grp => pkg.id.startsWith(grp.id));
@@ -2067,22 +2077,31 @@
     });
   }
 
+  function cartPackageMetadata() {
+    return state.cart
+      .map(resolveLine)
+      .filter(Boolean)
+      .map(resolved => ({ isMembership: resolved.pkg.isMembership === true }));
+  }
+
   // Commit the wizard draft as a cart line and reset the draft.
   function commitDraftToCart() {
     const cat = state.selectedCategory;
     const pkg = state.selectedPackage;
-    if (!cat || !pkg || state.cart.length >= CART_MAX_ITEMS) return false;
+    if (!cat || !pkg) return false;
     const sizes = validSizesForPackage(cat, pkg);
     const size = state.selectedSize || (sizes.length === 1 ? sizes[0] : null);
     if (!size) return false;
-    state.cart.push({
+    const append = UI_RULES.appendCartLine(state.cart, {
       lineId: newLineId(),
       categoryId: cat.id,
       packageId: pkg.id,
       sizeId: size.id,
       addonIds: state.selectedAddons.map(addon => addon.id),
       vehicle: state.draftVehicle || blankVehicle()
-    });
+    }, CART_MAX_ITEMS);
+    if (!append.added) return false;
+    state.cart = append.lines;
     state.draftVehicle = blankVehicle();
     clearServiceSelection();
     renderCartPanel();
@@ -2096,6 +2115,10 @@
     if (state.hold && state.hold.status !== 'confirmed') void releaseTemporaryHold('cart_changed');
     state.cart.splice(index, 1);
     renderCartPanel();
+    // The cart limit is presentation state. Recalculate it immediately so
+    // removing the fourth vehicle re-enables "Add another vehicle" without
+    // requiring the customer to leave and re-enter this step.
+    updateStepUI();
     updateQuoteBar();
     if (state.currentStep >= 4) {
       renderVehicleFields();
@@ -2264,16 +2287,9 @@
   }
 
   // ── Scheduling helpers ──
-  // Same-day bookings are allowed now that notice is one hour, so the calendar
-  // opens today. The server still decides which start times are far enough out.
-  function todayISO() {
-    return new Date().toISOString().split('T')[0];
-  }
-  function addDaysISO(iso, days) {
-    const d = new Date(`${iso}T12:00:00`);
-    d.setDate(d.getDate() + days);
-    return d.toISOString().split('T')[0];
-  }
+  // The API chooses dates in the service location timezone. The browser only
+  // renders its server-authorized date strings; it never derives a booking
+  // window from its own clock.
   function prettyDate(iso) {
     if (!iso) return '';
     const d = new Date(iso + 'T00:00:00');
@@ -2336,7 +2352,7 @@
   }
   function scheduleValid() {
     const s = state.schedule;
-    return !!(contactValid() && allVehiclesValid() && s.date && s.date >= todayISO() && s.timeWindow);
+    return !!(contactValid() && allVehiclesValid() && selectedSlotIsAuthorized());
   }
 
   function blankSchedule() {
@@ -2485,6 +2501,9 @@
   }
 
   async function acquireTemporaryHold() {
+    // A hold may never be attempted from a stale form or while availability is
+    // loading/failed. The server repeats this validation before creating one.
+    if (!selectedSlotIsAuthorized()) return false;
     const currentKey = selectionKey(state.cart.map(line => ({ packageId: line.packageId, sizeId: line.sizeId, addonIds: line.addonIds || [] })));
     if (state.hold && state.hold.cartKey === currentKey && ['active', 'pending_payment'].includes(state.hold.status)) return true;
     if (state.hold) await releaseTemporaryHold('selection_changed');
@@ -2635,7 +2654,8 @@
     confirmedBooking: null,
     hold: null,
     catalogVersion: '',
-    availability: { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, noticeHours: 0, dates: [] },
+    catalogRules: { membershipNoticeHours: 0, locationTimeZone: '', minimumDate: '' },
+    availability: { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, dates: [] },
     submissionId: newSubmissionId(),
     schedule: blankSchedule()
   };
@@ -3193,8 +3213,26 @@
     updateQuoteBar();
   }
 
+  function availabilityUiState() {
+    return UI_RULES.scheduleUiState({
+      packages: cartPackageMetadata(),
+      catalogRules: state.catalogRules,
+      availability: state.availability
+    });
+  }
+
   function selectedAvailabilityDay() {
-    return state.availability.dates.find(item => item.date === state.schedule.date) || null;
+    return availabilityUiState().dates.find(item => item.date === state.schedule.date) || null;
+  }
+
+  function selectedSlotIsAuthorized() {
+    const ui = availabilityUiState();
+    return UI_RULES.selectedSlotIsAuthorized({
+      availability: state.availability,
+      dates: ui.dates,
+      date: state.schedule.date,
+      timeWindow: state.schedule.timeWindow
+    });
   }
 
   function renderAvailability() {
@@ -3204,23 +3242,31 @@
     const timeRow = timeField && timeField.querySelector('.time-row');
     const fullDayHint = document.getElementById('fullDayHint');
     if (!dateEl) return;
+    const ui = availabilityUiState();
+    const dates = ui.dates;
 
-    dateEl.disabled = state.availability.loading || Boolean(state.availability.error) || !state.availability.dates.length;
+    // Date/time choices only ever come from the successful availability API.
+    // `minimumDate`, if the catalog starts providing one, has already been
+    // calculated by the server in the location timezone and is only used to
+    // filter those API choices.
+    dateEl.disabled = !ui.canSelectDateTime;
+    if (state.catalogRules.locationTimeZone) dateEl.dataset.locationTimeZone = state.catalogRules.locationTimeZone;
+    else delete dateEl.dataset.locationTimeZone;
     const options = [`<option value="">${escapeHTML(state.availability.loading ? t('availability.loading') : t('availability.chooseDate'))}</option>`];
-    state.availability.dates.forEach(item => {
+    dates.forEach(item => {
       options.push(`<option value="${item.date}">${escapeHTML(prettyDate(item.date))}</option>`);
     });
     dateEl.innerHTML = options.join('');
-    if (state.availability.dates.some(item => item.date === state.schedule.date)) dateEl.value = state.schedule.date;
+    if (dates.some(item => item.date === state.schedule.date)) dateEl.value = state.schedule.date;
     else {
       state.schedule.date = '';
       state.schedule.timeWindow = '';
     }
 
     if (messageEl) {
-      const empty = !state.availability.loading && !state.availability.error && !state.availability.dates.length;
-      messageEl.textContent = state.availability.error || (empty ? t('availability.empty') : (state.availability.dates.length ? t('availability.ready') : ''));
-      messageEl.className = `availability-msg${state.availability.error ? ' error' : (state.availability.dates.length ? ' success' : '')}`;
+      const empty = !state.availability.loading && !state.availability.error && !dates.length;
+      messageEl.textContent = state.availability.error || (empty ? t('availability.empty') : (dates.length ? t('availability.ready') : ''));
+      messageEl.className = `availability-msg${state.availability.error ? ' error' : (dates.length ? ' success' : '')}`;
     }
 
     const fullDay = state.availability.bookingMode === 'full_day';
@@ -3228,12 +3274,13 @@
     if (fullDayHint) fullDayHint.hidden = !fullDay;
     if (fullDay) state.schedule.timeWindow = state.schedule.date ? 'full_day' : '';
 
-    // The API owns the notice rule (including mixed carts); the browser never
-    // infers membership from package-id text.
+    // Membership presentation comes from explicit catalog metadata, rather
+    // than availability. It therefore stays correct while availability is
+    // loading or temporarily unavailable.
     const dateHint = document.querySelector('#timeWindowField')?.parentElement?.querySelector('[data-i18n="form.dateHint"]')
       || document.querySelector('[data-i18n="form.dateHint"]');
     if (dateHint) {
-      dateHint.textContent = t(state.availability.noticeHours >= 48 ? 'form.dateHintMembership' : 'form.dateHint');
+      dateHint.textContent = t(ui.dateHintKey).replace('{hours}', String(ui.membershipNoticeHours));
     }
 
     const durationHint = document.getElementById('durationHint');
@@ -3273,14 +3320,13 @@
       state.schedule.date = '';
       state.schedule.timeWindow = '';
     }
-    state.availability = { cartKey, loading: true, error: '', bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, noticeHours: 0, dates: [] };
+    state.availability = { cartKey, loading: true, error: '', bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, dates: [] };
     renderAvailability();
     try {
-      const from = todayISO();
       const response = await fetch('/api/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicles, language: LANG, from, to: addDaysISO(from, 59) })
+        body: JSON.stringify({ vehicles, language: LANG })
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.error || `Calendar request failed (${response.status})`);
@@ -3296,13 +3342,12 @@
         perVehicleDurationMinutes: Array.isArray(result.perVehicleDurationMinutes) ? result.perVehicleDurationMinutes.map(Number) : [],
         deposit: Number(result.deposit) || 0,
         estimate: result.estimate && typeof result.estimate === 'object' ? result.estimate : null,
-        noticeHours: Number(result.noticeHours) || 0,
         // Each slot is { start, startsAt, endsAt }; `start` is the local start
         // time in the LOCATION's timezone, already resolved by the server.
         dates: Array.isArray(result.dates) ? result.dates : []
       };
     } catch (error) {
-      state.availability = { cartKey, loading: false, error: t('availability.error'), bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, noticeHours: 0, dates: [] };
+      state.availability = { cartKey, loading: false, error: t('availability.error'), bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, dates: [] };
     }
     renderAvailability();
     if (cartChangedNotice) {
@@ -3570,11 +3615,12 @@
 
     const addBtn = document.getElementById('btnAddLine');
     if (addBtn) {
-      // Committing the draft adds one more line; block when that would exceed the cap.
-      const atCap = state.cart.length + 1 >= CART_MAX_ITEMS;
-      addBtn.disabled = atCap;
+      // The fourth line can still be committed. Once four are in the cart,
+      // editing/removing remains available but adding another is disabled.
+      const limit = UI_RULES.cartLimitState(state.cart.length, CART_MAX_ITEMS);
+      addBtn.disabled = !limit.canAdd;
       const hint = document.getElementById('addLineHint');
-      if (hint) hint.hidden = !atCap;
+      if (hint) hint.hidden = !limit.atLimit;
     }
 
     if (state.currentStep === state.totalSteps) {
@@ -3932,7 +3978,7 @@
       state.completed = false;
       state.confirmedBooking = null;
       state.hold = null;
-      state.availability = { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, noticeHours: 0, dates: [] };
+      state.availability = { cartKey: '', loading: false, error: '', bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, dates: [] };
       state.submissionId = newSubmissionId();
       state.schedule = blankSchedule();
       const policyEl = document.getElementById('policyAccept');
@@ -4069,6 +4115,12 @@
       SERVICES_DATA = { categories: result.categories };
       CART_MAX_ITEMS = Number(result.maxVehicles) || CART_MAX_ITEMS;
       state.catalogVersion = result.version || '';
+      state.catalogRules = {
+        membershipNoticeHours: Number(result.membershipNoticeHours) || 0,
+        locationTimeZone: typeof result.locationTimeZone === 'string' ? result.locationTimeZone : '',
+        // Optional and server-issued only. No client-side date math is used.
+        minimumDate: typeof result.minimumDate === 'string' ? result.minimumDate : ''
+      };
       enrichServicesData();
       applyServiceLanguage(LANG);
       return true;

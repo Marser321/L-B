@@ -6,12 +6,15 @@ const assert = require('node:assert/strict');
 const catalogHandler = require('../api/catalog.js');
 const { callHandler } = require('./support/harness.js');
 
-test('public catalog exposes server-owned ids, prices, membership flags, and the four-vehicle cap', async () => {
+test('public catalog exposes server-owned ids, display metadata, membership policy, and the four-vehicle cap', async () => {
   const res = await callHandler(catalogHandler, undefined, { method: 'GET' });
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.ok, true);
   assert.equal(res.body.maxVehicles, 4);
+  assert.equal(res.body.membershipNoticeHours, 48);
+  assert.equal(res.body.locationTimeZone, 'America/New_York');
   assert.match(res.body.version, /^[a-f0-9]{12}$/);
+  assert.ok(res.body.categories.every(category => category.packages.every(pkg => typeof pkg.isMembership === 'boolean')));
 
   const cars = res.body.categories.find(category => category.id === 'cars');
   const membership = cars.packages.find(pkg => pkg.id === 'membresia-2x');
