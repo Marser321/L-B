@@ -73,7 +73,9 @@ async function handler(req, res) {
     if (body.action === 'inspect') {
       const id = scheduleId(body.scheduleId);
       const result = await ghl.ghlRequest(ghl.getPaymentsConfig(), `/invoices/schedule/${encodeURIComponent(id)}`, {
-        version: crmRecurring.INVOICE_VERSION
+        // HighLevel's create-schedule API is pinned to 2023-02-21, whereas
+        // the read endpoint is currently served under v3.
+        version: 'v3'
       });
       return sendJson(res, 200, { ok: true, ...summary(result) });
     }
