@@ -29,6 +29,14 @@ function fakeCrm() {
       prices.set(match[1], bucket);
       return price;
     }
+    const update = path.match(/^\/products\/([^/]+)\/price\/([^/]+)$/);
+    if (update && options.method === 'PUT') {
+      const bucket = prices.get(update[1]) || [];
+      const price = bucket.find(candidate => candidate._id === update[2]);
+      if (!price) throw new Error(`Missing price ${update[2]}`);
+      Object.assign(price, options.body);
+      return price;
+    }
     throw new Error(`Unexpected request ${options.method || 'GET'} ${path}`);
   };
   return { products, prices, calls, request };
@@ -49,10 +57,10 @@ test('CRM provisioner creates only the 17 marked membership products and 33 recu
   assert.ok(priceWrites.every(call => call.body.type === 'recurring'));
   assert.ok(priceWrites.every(call => call.body.currency === 'USD'));
   assert.ok(priceWrites.every(call => call.body.recurring.interval === 'month' && call.body.recurring.intervalCount === 1));
-  assert.deepEqual(priceWrites.map(call => call.body.amount).sort((a, b) => a - b), catalog.entries().map(entry => entry.monthlyCents).sort((a, b) => a - b));
+  assert.deepEqual(priceWrites.map(call => call.body.amount).sort((a, b) => a - b), catalog.entries().map(entry => entry.monthlyCents / 100).sort((a, b) => a - b));
 });
 
-test('CRM provisioner is idempotent and detects an edited membership price', async () => {
+test('CRM provisioner is idempotent and repairs a managed membership price drift', async () => {
   const crm = fakeCrm();
   await provisioner.provision({ config: { locationId: 'test-location' }, request: crm.request, apply: true });
   const callsBefore = crm.calls.length;
@@ -65,8 +73,8 @@ test('CRM provisioner is idempotent and detects an edited membership price', asy
 
   const firstPrice = [...crm.prices.values()].find(bucket => bucket.length)[0];
   firstPrice.amount += 1;
-  await assert.rejects(
-    () => provisioner.provision({ config: { locationId: 'test-location' }, request: crm.request, apply: true }),
-    error => error && error.code === 'CRM_MEMBERSHIP_PRICE_OUT_OF_SYNC'
-  );
+  const repaired = await provisioner.provision({ config: { locationId: 'test-location' }, request: crm.request, apply: true });
+  assert.equal(repaired.pricesUpdated, 1);
+  assert.equal(firstPrice.amount, catalog.entries()[0].monthlyCents / 100);
+  assert.equal(crm.calls.filter(call => call.method === 'PUT').length, 1);
 });

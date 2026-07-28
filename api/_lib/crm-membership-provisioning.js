@@ -42,10 +42,18 @@ function hasPriceMarker(price, entry) {
   return String((price && price.name) || '') === priceMarker(entry);
 }
 
+// HighLevel's Products API represents an amount in major currency units. The
+// membership catalog deliberately keeps money in cents for the application and
+// database, so the boundary must convert exactly once here. Sending cents to
+// HighLevel would turn a $130 membership into $13,000.
+function crmAmount(entry) {
+  return entry.monthlyCents / 100;
+}
+
 function matchingPrice(price, entry) {
   return hasPriceMarker(price, entry) &&
     String(price.priceType || price.type || '').toLowerCase() === 'recurring' &&
-    Number(price.amount) === entry.monthlyCents &&
+    Number(price.amount) === crmAmount(entry) &&
     String(price.currency || '').toLowerCase() === entry.currency &&
     String(price.recurring && price.recurring.interval || '').toLowerCase() === entry.interval &&
     Number(price.recurring && price.recurring.intervalCount) === 1;
@@ -73,9 +81,9 @@ function pricePayload(entry, locationId) {
     // present on returned objects and webhooks, but is not a writable field.
     type: 'recurring',
     currency: entry.currency.toUpperCase(),
-    // HighLevel product API amounts use the currency's minor unit (cents for
-    // USD), matching the authoritative catalog's monthlyCents field.
-    amount: entry.monthlyCents,
+    // HighLevel uses major currency units, unlike the server catalog which
+    // intentionally stores money in cents.
+    amount: crmAmount(entry),
     recurring: { interval: entry.interval, intervalCount: 1 }
   };
 }
@@ -116,6 +124,7 @@ async function provision({ config, request, apply = false }) {
     productsCreated: 0,
     productsReused: 0,
     pricesCreated: 0,
+    pricesUpdated: 0,
     pricesReused: 0,
     dryRun: !apply
   };
@@ -143,7 +152,17 @@ async function provision({ config, request, apply = false }) {
     const found = listFrom(listedPrices, 'prices').find(candidate => hasPriceMarker(candidate, entry));
     if (found) {
       if (!matchingPrice(found, entry)) {
-        throw new RequestError(`CRM price is out of sync for ${entry.packageId}/${entry.sizeId}`, 409, 'CRM_MEMBERSHIP_PRICE_OUT_OF_SYNC');
+        const priceId = productId(found);
+        if (!priceId) throw new RequestError('CRM returned an invalid membership price', 502, 'CRM_MEMBERSHIP_PROVISION_FAILED');
+        if (!apply) return;
+        // Only a marked membership price can reach this branch. Updating it is
+        // safe to resume after a partial run and can never touch a deposit.
+        await request(config, `/products/${encodeURIComponent(id)}/price/${encodeURIComponent(priceId)}`, {
+          method: 'PUT',
+          body: pricePayload(entry, config.locationId)
+        });
+        summary.pricesUpdated += 1;
+        return;
       }
       summary.pricesReused += 1;
       return;
@@ -166,6 +185,7 @@ module.exports = {
   priceMarker,
   productDescription,
   productPayload,
+  crmAmount,
   pricePayload,
   matchingPrice,
   mapWithConcurrency,
