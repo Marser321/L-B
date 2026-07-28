@@ -50,7 +50,9 @@ async function handler(req, res) {
     return sendJson(res, 200, { ok: true, ...result });
   } catch (error) {
     const statusCode = error instanceof RequestError || error instanceof HighLevelError ? error.statusCode : 502;
-    if (statusCode >= 500) console.error('[membership-recurring-test]', requestId, error.name || 'Error', statusCode, error.code || '');
+    if (statusCode >= 500) {
+      console.error('[membership-recurring-test]', requestId, error.name || 'Error', statusCode, error.code || '', error.upstreamHint || '');
+    }
     return sendJson(res, statusCode, {
       ok: false,
       error: error instanceof RequestError ? error.message : 'CRM recurring membership test failed',

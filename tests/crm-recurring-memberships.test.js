@@ -7,6 +7,7 @@ const memberships = require('../api/_lib/memberships.js');
 const membershipCatalog = require('../api/_lib/membership-catalog.js');
 const provisioning = require('../api/_lib/crm-membership-provisioning.js');
 const recurring = require('../api/_lib/crm-recurring-memberships.js');
+const ghl = require('../api/_lib/ghl.js');
 
 function line(packageId, sizeId, model) {
   return memberships.validateCheckoutLine({
@@ -118,4 +119,12 @@ test('missing or stale CRM membership price cannot be substituted with client in
     error => error.code === 'CRM_MEMBERSHIP_CATALOG_UNAVAILABLE' && error.statusCode === 503
   );
   assert.equal(calls.some(call => call.path === '/invoices/schedule'), false);
+});
+
+test('upstream diagnostics keep only schema field names, never error values', () => {
+  const hint = ghl.safeDiagnosticHint({
+    message: 'contactDetails.email test@example.test is invalid for schedule. liveMode=false'
+  });
+  assert.equal(hint, 'contactdetails,livemode,schedule');
+  assert.doesNotMatch(hint, /example|invalid|@/);
 });

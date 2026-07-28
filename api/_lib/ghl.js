@@ -8,6 +8,12 @@ const GHL_REQUEST_TIMEOUT_MS = 10 * 1000;
 // HighLevel error; first entry is 0 (no wait before the initial try).
 const GHL_READ_RETRY_BACKOFF_MS = [0, 400, 1200];
 const CALENDAR_API_VERSION = '2021-07-28';
+const SAFE_DIAGNOSTIC_FIELDS = Object.freeze([
+  'altid', 'alttype', 'businessdetails', 'contactdetails', 'currency',
+  'daysbefore', 'discount', 'endtype', 'executeat', 'invoicenumberprefix',
+  'items', 'livemode', 'paymentmethods', 'rrule', 'schedule', 'startdate',
+  'termsnotes', 'title'
+]);
 
 // The four vans, in rotation order. Each one has its own HighLevel calendar, set
 // by env var, and the agenda books straight onto those calendars — never onto the
@@ -22,6 +28,14 @@ const RESOURCE_ENV_VARS = Object.freeze([
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function safeDiagnosticHint(data) {
+  // Presence-only schema diagnostics are sufficient to identify a bad
+  // integration contract and cannot carry contact, invoice, token, or amount
+  // values into logs.
+  const serialized = JSON.stringify(data || {}).toLowerCase();
+  return SAFE_DIAGNOSTIC_FIELDS.filter(field => serialized.includes(field)).join(',');
 }
 
 // The vans available to the agenda, as { key, position, calendarId }. Ordered by
@@ -107,7 +121,7 @@ async function ghlRequestOnce(config, path, options = {}) {
     // upstream envelope can echo a contact or invoice payload, so retain only
     // method, route, status, and an optional caller-generated request id.
     console.error('[ghl-fail]', options.requestId || '-', options.method || 'GET', path, response.status);
-    throw new HighLevelError(response.status, statusCode);
+    throw new HighLevelError(response.status, statusCode, options.diagnostic ? safeDiagnosticHint(data) : '');
   }
   return data;
 }
@@ -268,6 +282,7 @@ async function deleteCalendarEventsQuietly(config, eventIds) {
 module.exports = {
   GHL_BASE_URL,
   CALENDAR_API_VERSION,
+  safeDiagnosticHint,
   RESOURCE_ENV_VARS,
   wait,
   resources,

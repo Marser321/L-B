@@ -189,7 +189,7 @@ async function createRecurringDraft({ config, request, lines, now = Date.now(), 
   const contact = await upsertTestContact({ config, request, customer, reference });
   const items = await resolveInvoiceItems({ config, request, lines, requestId: reference });
   const result = await request(config, '/invoices/schedule', {
-    method: 'POST', version: INVOICE_VERSION, requestId: reference,
+    method: 'POST', version: INVOICE_VERSION, requestId: reference, diagnostic: true,
     body: schedulePayload({ config, contact, items, now, liveMode: false, reference, timeZone })
   });
   const scheduleId = idOf(result && (result.schedule || result));
