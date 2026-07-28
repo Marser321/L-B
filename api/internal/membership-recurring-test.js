@@ -98,7 +98,10 @@ async function handler(req, res) {
     return sendJson(res, statusCode, {
       ok: false,
       error: error instanceof RequestError ? error.message : 'CRM recurring membership test failed',
-      code: error.code || 'CRM_MEMBERSHIP_TEST_FAILED'
+      code: error.code || 'CRM_MEMBERSHIP_TEST_FAILED',
+      // Only this Bearer-protected test route can emit the redacted provider
+      // validation text. It is intentionally absent from application logs.
+      ...(error instanceof HighLevelError && error.diagnosticMessage ? { diagnostic: error.diagnosticMessage } : {})
     });
   }
 }

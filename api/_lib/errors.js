@@ -33,7 +33,7 @@ function asValidationError(error) {
 }
 
 class HighLevelError extends Error {
-  constructor(upstreamStatus, statusCode = 502, upstreamHint = '') {
+  constructor(upstreamStatus, statusCode = 502, upstreamHint = '', diagnosticMessage = '') {
     super(`HighLevel request failed (${upstreamStatus})`);
     this.name = 'HighLevelError';
     this.statusCode = statusCode;
@@ -41,6 +41,7 @@ class HighLevelError extends Error {
     // Deliberately limited to whitelisted schema field names. Never copy an
     // upstream message: invoice/contact error messages may echo PII.
     this.upstreamHint = upstreamHint;
+    this.diagnosticMessage = diagnosticMessage;
     this.code = 'UPSTREAM_UNAVAILABLE';
   }
 }

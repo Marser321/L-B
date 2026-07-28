@@ -38,6 +38,20 @@ function safeDiagnosticHint(data) {
   return SAFE_DIAGNOSTIC_FIELDS.filter(field => serialized.includes(field)).join(',');
 }
 
+function safeDiagnosticMessage(data) {
+  const candidate = data && (data.message || data.error || data.detail);
+  if (typeof candidate !== 'string') return '';
+  // Error messages are read only by the operator-only test endpoint. Still
+  // redact aggressively so a provider that echoes a request cannot surface a
+  // contact, credential, invoice, or other production identifier.
+  return candidate
+    .slice(0, 300)
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/(?:bearer\s+|sk_(?:test|live)_|pk_(?:test|live)_|whsec_)[A-Za-z0-9._-]+/gi, '[redacted-secret]')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, '[redacted-phone]')
+    .replace(/\b[A-Za-z0-9_-]{24,}\b/g, '[redacted-id]');
+}
+
 // The vans available to the agenda, as { key, position, calendarId }. Ordered by
 // position so the rotation cursor means the same thing on every request.
 function resources() {
@@ -121,7 +135,12 @@ async function ghlRequestOnce(config, path, options = {}) {
     // upstream envelope can echo a contact or invoice payload, so retain only
     // method, route, status, and an optional caller-generated request id.
     console.error('[ghl-fail]', options.requestId || '-', options.method || 'GET', path, response.status);
-    throw new HighLevelError(response.status, statusCode, options.diagnostic ? safeDiagnosticHint(data) : '');
+    throw new HighLevelError(
+      response.status,
+      statusCode,
+      options.diagnostic ? safeDiagnosticHint(data) : '',
+      options.diagnostic ? safeDiagnosticMessage(data) : ''
+    );
   }
   return data;
 }
@@ -283,6 +302,7 @@ module.exports = {
   GHL_BASE_URL,
   CALENDAR_API_VERSION,
   safeDiagnosticHint,
+  safeDiagnosticMessage,
   RESOURCE_ENV_VARS,
   wait,
   resources,

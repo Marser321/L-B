@@ -136,6 +136,13 @@ test('upstream diagnostics keep only schema field names, never error values', ()
   assert.doesNotMatch(hint, /example|invalid|@/);
 });
 
+test('provider diagnostic text redacts identifiers and contact data before an operator can read it', () => {
+  const output = ghl.safeDiagnosticMessage({
+    message: 'contact test@example.test / +1 (202) 555-0199 / sk_test_very_secret_token_123 is invalid'
+  });
+  assert.equal(output, 'contact [redacted-email] / [redacted-phone] / [redacted-secret] is invalid');
+});
+
 test('the protected test status strips CRM contact, product, price, and invoice identifiers', () => {
   const output = testEndpoint._test.summary({
     _id: 'schedule-secret',
