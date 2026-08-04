@@ -182,6 +182,24 @@ Si lo canjea, la reserva se marca como visita de membresía y no se cobra ni dep
 servicio. Detectarlo son 2 llamadas al CRM en el paso de resumen: contacto por
 teléfono/email, y sus oportunidades.
 
+### Reglas de CONCESIÓN que hay que reimplementar
+
+Sacar Stripe borró el transporte, y con él las reglas que solo ocurren cuando entra un
+pago. Quedan escritas acá porque ya no están en código ni en tests, y la implementación
+con HighLevel las tiene que satisfacer:
+
+| Regla | Qué debe pasar |
+|---|---|
+| Activación | La primera factura pagada pone el contrato en `activa`, fija el ciclo y concede la cantidad del plan |
+| **Renovación sin acumular** | Un ciclo pagado **reinicia** el balance a la cantidad del plan; no suma. 2 + 2 nunca es 4 |
+| Impago | La factura fallida pasa el contrato a `vencida`: bloquea reservas nuevas y **no toca** la visita ya agendada del ciclo pagado |
+| Baja al fin del ciclo | Conserva el ciclo en curso y detiene la renovación |
+| Cancelado | Bloquea reservas futuras y conserva el historial |
+
+Lo que **sí** sigue en código y probado es el lado del gasto: 48 h de aviso, crédito
+consumido al completar, cancelación tardía y no-show que lo gastan igual, una sola visita
+abierta por contrato, y balance agotado que rechaza la siguiente reserva.
+
 ### Automatizaciones en el CRM
 
 | Disparador | Qué hace |

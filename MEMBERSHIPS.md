@@ -1,9 +1,19 @@
 # Memberships and recurring billing
 
-Stripe moves the money. Postgres decides what the money bought. HighLevel shows
-the office what happened.
-
-Companion doc: `AGENDA.md`, which covers how a visit gets a van.
+> **Stripe was removed on 2026-08-04.** Everything is kept in HighLevel so there is one
+> place a sale is recorded — see `DISENO-SIN-BASE-DE-DATOS.md`. This document is now a
+> **specification, not a description**: the commercial rules below are what the HighLevel
+> recurring-invoice implementation has to satisfy, and the parts that describe Stripe
+> checkout, webhooks and provisioning no longer exist in the code.
+>
+> What survives in code (`api/_lib/memberships.js`) is the SPEND side, still tested:
+> 48 hours of notice, the credit spent on completion rather than on booking, a late
+> cancel or a no-show spending it anyway, one open visit per contract, an exhausted
+> balance refusing the next booking.
+>
+> What is NOT in code any more, because it only happens when a payment lands, and has
+> to be rebuilt: activating a contract, setting its cycle, **resetting the balance on
+> renewal (credits do not roll over)**, marking it `past_due`, and cancelling it.
 
 ## The commercial model, as code
 

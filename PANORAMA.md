@@ -27,7 +27,7 @@ el navegador manda identificadores y el servidor resuelve el precio.
 | Depósito de reserva | $30 / $50 | Automático al reservar en la web | En vivo |
 | Link de pago manual | Cualquier servicio + add-ons + depósito | `POST /api/payments/links` con `OFFICE_API_TOKEN` | **Nuevo, sin usar en producción** |
 | Link desde el picker del CRM | Cualquier producto del catálogo | La oficina, a mano en HighLevel | **Habilitado por el catálogo nuevo** |
-| Membresías | Mensual recurrente | Checkout web | **Dos motores en paralelo — sin resolver** |
+| Membresías | Mensual recurrente | Facturas recurrentes de HighLevel | **Resuelto: Stripe eliminado el 4 ago; falta implementar el motor GHL** |
 
 ### Lo que cambió en esta tanda
 

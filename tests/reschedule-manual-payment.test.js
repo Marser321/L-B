@@ -7,7 +7,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { setupMemberships, callHandler, nextWeekday } = require('./support/harness.js');
-const fixtures = require('./support/stripe-fixtures.js');
 const memberships = require('../api/_lib/memberships.js');
 const visitsHandler = require('../api/memberships/visits.js');
 const manualPaymentHandler = require('../api/payments/manual.js');
@@ -17,31 +16,14 @@ const agenda = require('../api/_lib/agenda.js');
 const DAY = 24 * 60 * 60 * 1000;
 const OFFICE = { headers: { authorization: 'Bearer office-token' } };
 
-function line() {
-  return {
-    packageId: 'membresia-2x', sizeId: 'sedan',
-    vehicle: { make: 'Toyota', model: 'Camry', year: 2024, plate: 'ABC123' }
-  };
-}
-
-// Sells a membership and pays its first invoice, leaving an active contract.
+// An active contract with a paid cycle, seeded directly.
+//
+// This used to run a Stripe checkout and replay two webhooks. Stripe was removed on
+// 2026-08-04 and everything stays in HighLevel; what these tests exercise is that
+// MOVING an appointment does not cost a wash, which has nothing to do with who took
+// the payment.
 async function activeContract(ctx, now) {
-  await ctx.seedPriceMap(false);
-  const created = await memberships.createCheckout({
-    customer: { name: 'Jane Driver', email: 'jane@example.com', phone: '+12395550100' },
-    lines: [memberships.validateCheckoutLine(line(), 0)],
-    now
-  });
-  const session = ctx.stripe.sessions.get(created.stripeSessionId);
-  const items = session.lineItems.map((item, index) => ({ id: `si_${index + 1}`, price: { id: item.price }, quantity: item.quantity }));
-  ctx.addSubscription({ subscriptionId: 'sub_r1', customerId: session.customer, items, periodStartMs: now, periodEndMs: now + 30 * DAY });
-  await memberships.handleEvent(fixtures.checkoutCompleted({
-    sessionId: created.stripeSessionId, subscriptionId: 'sub_r1', customerId: session.customer, items
-  }), { now });
-  await memberships.handleEvent(fixtures.invoicePaid({
-    invoiceId: 'in_r1', subscriptionId: 'sub_r1', customerId: session.customer,
-    periodStartMs: now, periodEndMs: now + 30 * DAY
-  }), { now });
+  await ctx.activateContract({ packageId: 'membresia-2x', sizeId: 'sedan', now });
   return ctx.contracts()[0];
 }
 
@@ -146,10 +128,12 @@ test('a move still respects the 48-hour rule and the end of a cancelling members
   );
 
   // A membership set to end still moves inside the cycle it paid for, but not past it.
-  await memberships.handleEvent(fixtures.subscriptionUpdated({
-    subscriptionId: 'sub_r1', customerId: 'cus_0001', status: 'active', cancelAtPeriodEnd: true,
-    periodStartMs: now, periodEndMs: now + 10 * DAY
-  }), { now });
+  // Setting cancel-at-period-end was a payment-webhook job and went with Stripe, so
+  // the state is seeded — the rule under test reads the contract, not the event.
+  await ctx.repository.transaction(['seed'], async tx => tx.updateContract(contract.id, {
+    cancelAtPeriodEnd: true,
+    currentPeriodEndMs: now + 10 * DAY
+  }));
 
   await assert.rejects(
     memberships.rescheduleVisit({ visitId: booked.visit.id, date: nextWeekday(30), startTime: '09:00', now }),

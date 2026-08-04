@@ -31,13 +31,6 @@ function hasEnv(name) {
   return Boolean(String(process.env[name] || '').trim());
 }
 
-function stripeMode() {
-  const key = String(process.env.STRIPE_SECRET_KEY || '').trim();
-  if (!key) return 'not_configured';
-  if (key.startsWith('sk_test_')) return 'test';
-  if (key.startsWith('sk_live_')) return 'live';
-  return 'invalid_prefix';
-}
 
 async function databaseStatus() {
   if (!db.isConfigured()) {
@@ -82,13 +75,14 @@ async function dependencyStatus() {
       }
     },
     timezone,
-    stripe: {
-      configured: hasEnv('STRIPE_SECRET_KEY'),
-      webhookConfigured: hasEnv('STRIPE_WEBHOOK_SECRET'),
-      mode: stripeMode()
+    // No payment-provider key of our own: recurring billing runs on HighLevel's
+    // invoices, so what matters is whether deposit collection is switched on.
+    payments: {
+      depositsEnabled: String(process.env.GHL_DEPOSIT_PAYMENTS || '').trim() === 'on',
+      liveMode: String(process.env.GHL_DEPOSIT_LIVE_MODE || '').trim() === 'true'
     },
     cron: { configured: hasEnv('CRON_SECRET') }
   };
 }
 
-module.exports = { requireOfficeToken, dependencyStatus, databaseStatus, stripeMode };
+module.exports = { requireOfficeToken, dependencyStatus, databaseStatus };

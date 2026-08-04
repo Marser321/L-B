@@ -7,7 +7,7 @@ const diagnosticsHandler = require('../api/internal/dependencies.js');
 const { installEnv, callHandler } = require('./support/harness.js');
 
 test('dependency diagnostics require an office token and never return secret values', async () => {
-  installEnv({ OFFICE_API_TOKEN: 'diagnostic-token', STRIPE_SECRET_KEY: 'sk_test_harness', STRIPE_WEBHOOK_SECRET: 'whsec_harness' });
+  installEnv({ OFFICE_API_TOKEN: 'diagnostic-token', GHL_DEPOSIT_PAYMENTS: 'on' });
 
   const rejected = await callHandler(diagnosticsHandler, undefined, { method: 'GET' });
   assert.equal(rejected.statusCode, 401);
@@ -19,7 +19,10 @@ test('dependency diagnostics require an office token and never return secret val
   assert.equal(accepted.statusCode, 200);
   assert.equal(accepted.body.dependencies.database.configured, false);
   assert.equal(accepted.body.dependencies.highLevel.crewCalendars.configured, 4);
-  assert.equal(accepted.body.dependencies.stripe.mode, 'test');
+  // No payment-provider key of our own since Stripe was removed; what the runbook
+  // reports is whether deposit collection is on and in which mode.
+  assert.equal(accepted.body.dependencies.payments.depositsEnabled, true);
+  assert.equal(accepted.body.dependencies.payments.liveMode, false);
   const serialized = JSON.stringify(accepted.body);
   assert.equal(serialized.includes('diagnostic-token'), false);
   assert.equal(serialized.includes('sk_test_harness'), false);

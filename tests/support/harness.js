@@ -234,19 +234,18 @@ function setupAgenda(options = {}) {
   };
 }
 
-// Everything setupAgenda gives you, plus a fake Stripe, fake notification
-// workflows, and the provisioned price map already in the database.
+// Everything setupAgenda gives you, plus fake notification workflows and a way to
+// put an ACTIVE membership contract in the store.
+//
+// There is no payment provider here. Stripe was removed on 2026-08-04 and the
+// HighLevel replacement does not exist yet, so a test that needs a member creates the
+// contract directly with `activateContract`. That is how these tests should always
+// have worked: what they exercise is the membership RULES — notice, credits, late
+// cancels, no-shows — and none of those depend on who moved the money.
 function setupMemberships(options = {}) {
-  const { createStripeStub } = require('./stripe-fixtures.js');
-  const { priceMapRows } = require('./stripe-fixtures.js');
-
   const ctx = setupAgenda({
     ...options,
     env: {
-      STRIPE_SECRET_KEY: 'sk_test_harness',
-      STRIPE_WEBHOOK_SECRET: 'whsec_harness',
-      STRIPE_CHECKOUT_SUCCESS_URL: 'https://lyb.test/thanks',
-      STRIPE_CHECKOUT_CANCEL_URL: 'https://lyb.test/membership',
       GHL_WORKFLOW_SMS_URL: 'https://hooks.lyb.test/sms',
       GHL_WORKFLOW_EMAIL_URL: 'https://hooks.lyb.test/email',
       GHL_WORKFLOW_INTERNAL_URL: 'https://hooks.lyb.test/internal',
@@ -255,14 +254,12 @@ function setupMemberships(options = {}) {
     }
   });
 
-  const stripe = createStripeStub(options.stripe || {});
   // Messages the notification module actually posted to a workflow endpoint.
   const workflowPosts = [];
   const ghlFetch = globalThis.fetch;
 
   globalThis.fetch = async (url, init = {}) => {
     const target = String(url);
-    if (target.startsWith('https://api.stripe.com')) return stripe.fetchStub(url, init);
     if (target.startsWith('https://hooks.lyb.test/')) {
       if (options.workflowFails) return { ok: false, status: 500, json: async () => ({}) };
       workflowPosts.push({ url: target, body: init.body ? JSON.parse(init.body) : null });
@@ -271,18 +268,55 @@ function setupMemberships(options = {}) {
     return ghlFetch(url, init);
   };
 
-  const seedPriceMap = async (livemode = false) => {
-    const { setRepositoryForTests } = require('../../api/_lib/repository.js');
-    void setRepositoryForTests;
-    return ctx.repository.transaction(['seed'], async tx => tx.upsertPriceMapEntries(priceMapRows(livemode)));
-  };
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  // An active contract with a paid cycle and its credits granted, written straight to
+  // the store. `credits` defaults to the plan's allowance.
+  async function activateContract({
+    packageId = 'membresia-2x',
+    sizeId = 'sedan',
+    contactId = 'contact-1',
+    vehicleLabel = '2024 Toyota Camry',
+    credits = null,
+    status = 'active',
+    now = Date.now(),
+    periodStartMs = null,
+    periodEndMs = null,
+    cancelAtPeriodEnd = false
+  } = {}) {
+    const membershipCatalog = require('../../api/_lib/membership-catalog.js');
+    const allowance = credits == null ? membershipCatalog.creditsForPackage(packageId) : credits;
+    const contractId = `contract-${Math.random().toString(36).slice(2, 10)}`;
+    await ctx.repository.transaction(['seed'], async tx => {
+      await tx.insertContract({
+        id: contractId,
+        contactId,
+        packageId,
+        sizeId,
+        vehicleLabel,
+        status,
+        creditsPerCycle: membershipCatalog.creditsForPackage(packageId),
+        creditsRemaining: allowance,
+        currentPeriodStartMs: periodStartMs == null ? now - DAY_MS : periodStartMs,
+        currentPeriodEndMs: periodEndMs == null ? now + 29 * DAY_MS : periodEndMs,
+        cancelAtPeriodEnd,
+        // The dedupe key still carries a Stripe name in the schema. Renaming a column
+        // needs a migration and the tables are on their way out, so it is left alone
+        // and simply given a unique value here.
+        stripeSubscriptionItemId: `seed-item-${contractId}`,
+        lineIndex: 0,
+        // Stands in for the paid-cycle proof a payment provider used to write. The
+        // HighLevel implementation will put its paid invoice id here.
+        activatedByEventId: `seed-${contractId}`
+      });
+    });
+    return contractId;
+  }
 
   return {
     ...ctx,
-    stripe: stripe.state,
-    addSubscription: stripe.addSubscription,
     workflowPosts,
-    seedPriceMap,
+    activateContract,
     // Every notification row, whether or not it reached a workflow.
     notifications: () => ctx.repository.__store().membership.notifications,
     contracts: () => ctx.repository.__store().membership.contracts,

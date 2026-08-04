@@ -7,25 +7,22 @@
 // package and a size, and the server decides what that costs. There is no code
 // path that lets a request carry an amount, a price id, or a discount.
 //
-// These are the prices the Stripe provisioner creates recurring Prices for
-// (scripts/provision-stripe.mjs), and tests/membership-catalog.test.js pins them
-// against the public catalog in catalog-prices.json so the page and the charge can
-// never quietly disagree.
+// Stripe was removed on 2026-08-04 — everything is kept in HighLevel so there is one
+// place a sale is recorded (DISENO-SIN-BASE-DE-DATOS.md). What survives here is the
+// PRICE LIST and the credits each plan includes, which the HighLevel recurring-invoice
+// implementation needs exactly as much as Stripe did. tests/pricing.test.js pins these
+// against the public catalog so the page and the charge can never quietly disagree.
 
 const { RequestError } = require('./errors.js');
 const catalog = require('./catalog.js');
 
-// Bumped when the price list changes. Every provisioned Stripe price is stored
-// against the version that produced it, so an old subscription keeps billing at
-// the price it was sold at while new checkouts use the current version.
+// Bumped when the price list changes, so a provisioned recurring price can be traced
+// to the amounts that produced it.
 //
-// The August 2026 car price update deliberately did NOT bump it: Stripe was never
-// provisioned, so there is no subscriber on the old amounts to protect, and the
-// version is also baked into the CRM membership marker
-// (`lyb-membership-catalog:v1:…` in crm-catalog.js) — bumping it would make the
-// provisioner DUPLICATE the membership products HighLevel already has instead of
-// updating them. Bump it the day provision-stripe.mjs refuses to run with
-// "price … cannot be edited"; that error means real prices exist at v1.
+// It is baked into the CRM membership marker (`lyb-membership-catalog:v1:…` in
+// crm-catalog.js), so bumping it makes the provisioner DUPLICATE the membership
+// products HighLevel already has instead of updating them. The August 2026 car price
+// update deliberately did not bump it for that reason.
 const CATALOG_VERSION = 1;
 
 const BILLING_INTERVAL = 'month';
@@ -41,8 +38,8 @@ function dollars(amount) {
 }
 
 // packageId → { label, sizes: { sizeId: monthlyDollars } }
-// The labels are what appears on the Stripe product and on the customer's
-// invoice, so they are written for a human reading a bank statement.
+// The labels appear on the CRM product and on the customer's invoice, so they are
+// written for a human reading a bank statement.
 const MEMBERSHIP_PACKAGES = Object.freeze({
   'membresia-2x': {
     label: 'Membresía 2x — Cars & SUVs',
@@ -81,7 +78,7 @@ const MEMBERSHIP_PACKAGES = Object.freeze({
   }
 });
 
-// Human-readable size names for the Stripe price nickname, so the dashboard reads
+// Human-readable size names for the price nickname, so the CRM dashboard reads
 // "Membresía 2x — Cars & SUVs · SUV" instead of "membresia-2x/suv".
 const SIZE_LABELS = Object.freeze({
   sedan: 'Sedan', suv: 'SUV', truck: 'Truck', van_pequena: 'Small Van', van_xl: 'XL Van',
@@ -120,8 +117,8 @@ function entries() {
       currency: CURRENCY,
       interval: BILLING_INTERVAL,
       creditsPerCycle: creditsForPackage(packageId),
-      // Stable, human-greppable key used as the Stripe lookup_key and as the
-      // metadata marker that tells our products apart from the deposit products.
+      // Stable, human-greppable key used as the price lookup key and as the metadata
+      // marker that tells our products apart from the deposit products.
       lookupKey: `lyb_membership_v${CATALOG_VERSION}_${packageId}_${sizeId}`.replace(/-/g, '_')
     }))
   );
@@ -154,9 +151,9 @@ function priceFor(packageId, sizeId) {
   };
 }
 
-// Guard for the provisioner and for anything that touches Stripe products: our
-// membership objects always carry this metadata, and nothing else may be edited.
-// This is what keeps the existing $30/$50 deposit products out of reach.
+// Guard for the provisioner and for anything that touches membership products: ours
+// always carry this metadata, and nothing else may be edited. This is what keeps the
+// existing $30/$50 deposit products out of reach.
 const METADATA_NAMESPACE = 'lyb_membership';
 
 function metadataFor(entry) {
@@ -168,8 +165,8 @@ function metadataFor(entry) {
   };
 }
 
-function isOurs(stripeObject) {
-  const metadata = (stripeObject && stripeObject.metadata) || {};
+function isOurs(candidate) {
+  const metadata = (candidate && candidate.metadata) || {};
   return metadata.lyb_object === METADATA_NAMESPACE;
 }
 

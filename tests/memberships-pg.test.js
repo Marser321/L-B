@@ -19,7 +19,6 @@ const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
 const describe = DATABASE_URL ? test : test.skip;
 
 const { installEnv } = require('./support/harness.js');
-const { priceMapRows } = require('./support/stripe-fixtures.js');
 
 async function withPg(fn) {
   installEnv({ DATABASE_URL });
@@ -63,26 +62,6 @@ describe('pg: the membership schema and its constraints exist', async () => {
        where table_name = 'membership_credit_ledger' and column_name = 'contact_id'
     `);
     assert.equal(column.rows[0].is_nullable, 'YES');
-  });
-});
-
-describe('pg: the price map round-trips all 33 prices', async () => {
-  await withPg(async ({ db, repository }) => {
-    const rows = priceMapRows(false);
-    assert.equal(rows.length, 33);
-    await repository.transaction(['seed'], async tx => tx.upsertPriceMapEntries(rows));
-
-    const stored = await repository.listPriceMap(false);
-    assert.equal(stored.length, 33);
-
-    const sedan = await repository.getPriceMapEntry('membresia-2x', 'sedan', false);
-    assert.equal(sedan.monthlyCents, 13000);
-    assert.equal(sedan.creditsPerCycle, 2);
-
-    // Re-running the provisioner updates in place rather than duplicating.
-    await repository.transaction(['seed'], async tx => tx.upsertPriceMapEntries(rows));
-    const { rows: count } = await db.query('select count(*)::int as n from membership_price_map');
-    assert.equal(count[0].n, 33);
   });
 });
 
