@@ -206,7 +206,18 @@ Ese último es retención pura, y solo es posible porque los créditos son visib
 | `membership_*`, `crm_price_map` | **se van** si las membresías se cobran con facturas recurrentes de HighLevel en vez de Stripe |
 | `schema_migrations` | queda huérfana; se borra la base entera al final |
 
-La migración `004_one_van_per_address.sql` **nunca se corre** en este camino.
+La migración `004_one_van_per_address.sql` **sí hace falta mientras Postgres siga
+escribiendo `booking_assignments`**. Corrección de una afirmación anterior: cambiar el
+block-slot por una cita arregló el lado de HighLevel, pero las filas de asignación se
+siguen escribiendo una por vehículo sobre la misma camioneta, y
+`booking_assignments_resource_unique` las rechaza. Hoy en producción una reserva de
+**un** vehículo funciona y una de **dos o más** responde 500 `SCHEMA_CONFLICT`.
+
+Dos formas de cerrarlo, y son alternativas:
+
+1. Correr la 004 (dos `DROP CONSTRAINT`), y las reservas multi-vehículo funcionan ya.
+2. Dejar de escribir esas tablas, que es el objetivo final de este documento. Más
+   trabajo, pero la 004 deja de existir.
 
 ---
 
