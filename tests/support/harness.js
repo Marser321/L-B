@@ -214,6 +214,34 @@ function createGhlStub(options = {}) {
     }
 
     if (method === 'GET' && path.startsWith('/opportunities/pipelines')) {
+      if (state.membershipsPipeline !== false) {
+        return json({
+          pipelines: [
+            {
+              id: 'pipe-1',
+              name: 'Pipeline de Servicios',
+              stages: [
+                { id: 'stage-pending', name: 'Pendiente de Información' },
+                { id: 'stage-confirmed', name: 'Cita Confirmada' }
+              ]
+            },
+            {
+              id: 'pipe-memberships',
+              name: 'Memberships',
+              stages: [
+                { id: 'stage-mem-pending', name: 'Pending Payment' },
+                { id: 'stage-mem-active', name: 'Active' },
+                { id: 'stage-mem-past', name: 'Past Due' },
+                { id: 'stage-mem-cancel-end', name: 'Cancel at Period End' },
+                { id: 'stage-mem-canceled', name: 'Canceled' }
+              ]
+            }
+          ]
+        });
+      }
+    }
+
+    if (method === 'GET' && path.startsWith('/opportunities/pipelines')) {
       return json({
         pipelines: [{
           id: 'pipe-1',
@@ -256,6 +284,8 @@ function createGhlStub(options = {}) {
         opportunity: {
           id,
           contact: { id: state.contactId },
+          // The status is read from the STAGE, so the fake has to name one.
+          pipelineStageId: 'stage-mem-active',
           customFields: isMembership ? [
             { id: 'field-mem-plan', fieldValue: 'membresia-2x' },
             { id: 'field-mem-vehicle', fieldValue: '2024 Toyota Camry' },

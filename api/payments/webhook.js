@@ -72,6 +72,26 @@ function validateRequest(body) {
   if (!outcome) return { ignored: true, eventType };
 
   const externalEventId = text(body.id || body.eventId || body.invoiceId, 'id', 1, 200);
+
+  // A MEMBERSHIP invoice, not a booking deposit. Told apart by carrying a contractId
+  // (the CRM opportunity) instead of a hold: a recurring invoice has no hold, and a
+  // deposit has no contract. The workflow that calls this sends one or the other.
+  const rawContractId = body.contractId || (body.meta && body.meta.contractId) || '';
+  if (rawContractId) {
+    return {
+      ignored: false,
+      kind: 'membership',
+      eventType,
+      outcome,
+      externalEventId,
+      contractId: text(rawContractId, 'contractId', 8, 64),
+      // The invoice's OWN date, so re-applying the same invoice computes the same cycle
+      // end instead of pushing it out another month. Optional, and the fallback to now
+      // is deliberately not idempotent — the workflow is configured to send it.
+      cycleStartsAt: body.cycleStartsAt || body.issueDate || (body.meta && body.meta.issueDate) || '',
+      payload: body
+    };
+  }
   // A HighLevel workflow finds it easier to pass the submission id than the hold
   // id, so either identifies the reservation; the submission id is resolved back
   // to its hold below.
@@ -94,6 +114,49 @@ function validateRequest(body) {
   };
 }
 
+// Applies a membership invoice event to its contract. Resolves the custom-field ids by
+// name, the same way the member page does, so the two can never disagree about which
+// field holds what.
+async function applyMembershipEvent(event) {
+  const membershipCrm = require('../_lib/membership-crm.js');
+  const config = ghl.getConfig();
+
+  const data = await ghl.ghlRequest(config, `/locations/${encodeURIComponent(config.locationId)}/customFields?model=opportunity`, {
+    version: '2021-07-28'
+  });
+  const byName = new Map((data.customFields || []).map(field => [String(field.name || '').trim(), field.id]));
+  const fieldIds = {
+    status: byName.get('Membership Status') || '',
+    cycleEnds: byName.get('Membership Cycle Ends') || ''
+  };
+  if (!fieldIds.status || !fieldIds.cycleEnds) {
+    throw new RequestError('Membership fields are missing in the CRM', 503, 'MEMBERSHIP_FIELDS_MISSING');
+  }
+
+  if (event.outcome === 'failed') {
+    const result = await membershipCrm.markPastDue(config, fieldIds, event.contractId);
+    console.log('[webhook-membership] past_due', event.contractId, event.externalEventId);
+    return { contractId: event.contractId, ...result };
+  }
+
+  const parsed = event.cycleStartsAt ? Date.parse(event.cycleStartsAt) : NaN;
+  const cycleStartMs = Number.isFinite(parsed) ? parsed : Date.now();
+  // The Active stage id, so a paid invoice moves the card as well as writing the date.
+  // Resolved by name; if the pipeline is missing the fields still get written.
+  const pipelines = await ghl.ghlRequest(config, `/opportunities/pipelines?locationId=${encodeURIComponent(config.locationId)}`, {
+    version: '2021-07-28'
+  });
+  const memberships = (pipelines.pipelines || []).find(entry => String(entry.name || '').trim() === 'Memberships');
+  const activeStage = ((memberships && memberships.stages) || []).find(stage => String(stage.name || '').trim() === 'Active');
+
+  const result = await membershipCrm.grantCycle(config, fieldIds, event.contractId, {
+    cycleStartMs,
+    activeStageId: activeStage ? activeStage.id : ''
+  });
+  console.log('[webhook-membership] cycle granted', event.contractId, result.cycleEndsAt, event.externalEventId);
+  return { contractId: event.contractId, ...result };
+}
+
 async function handler(req, res) {
   if (!assertMethod(req, res, 'POST')) return undefined;
 
@@ -102,6 +165,14 @@ async function handler(req, res) {
     assertAuthentic(req, typeof req.body === 'string' ? req.body : JSON.stringify(body));
     const event = validateRequest(body);
     if (event.ignored) return sendJson(res, 200, { ok: true, ignored: true, type: event.eventType });
+
+    // Membership cycles are recorded straight onto the CRM contract. No database: the
+    // opportunity IS the contract, and the cycle end IS the credit reset (see
+    // membership-crm.grantCycle).
+    if (event.kind === 'membership') {
+      const result = await applyMembershipEvent(event);
+      return sendJson(res, 200, { ok: true, ...result });
+    }
 
     let config = null;
     try { config = ghl.getConfig(); } catch (error) { console.error('[payments] CRM not configured; confirming rows only'); }

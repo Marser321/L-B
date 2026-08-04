@@ -172,6 +172,19 @@ async function ghlRequest(config, path, options = {}) {
   throw lastError;
 }
 
+// Writes custom fields onto one opportunity, leaving everything else alone. Used to
+// record a paid membership cycle — the only thing that ever writes a contract's state.
+async function updateOpportunityFields(config, opportunityId, fields, { pipelineStageId = '' } = {}) {
+  await ghlRequest(config, `/opportunities/${encodeURIComponent(opportunityId)}`, {
+    method: 'PUT',
+    version: '2021-07-28',
+    body: {
+      customFields: fields.map(field => ({ id: field.id, field_value: field.value })),
+      ...(pipelineStageId ? { pipelineStageId } : {})
+    }
+  });
+}
+
 // The raw events on one calendar between two instants, as the crew panel needs them:
 // title, address, notes and status, not just the busy interval. Kept separate from
 // busyIntervalsForCalendar because the agenda must never be tempted to make a
@@ -473,6 +486,7 @@ module.exports = {
   busyIntervalsByResource,
   upsertContact,
   splitName,
+  updateOpportunityFields,
   calendarEventsForCalendar,
   createCashInvoice,
   recordCashPayment,

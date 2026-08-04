@@ -18,6 +18,8 @@ const signedLink = require('../api/_lib/signed-link.js');
 const SECRET = 'a-member-secret-long-enough-to-be-real';
 const CONTRACT = 'opp-membership-1';
 const DAY = 24 * 60 * 60 * 1000;
+const WEBHOOK_SECRET = 'a-webhook-secret-long-enough';
+const WEBHOOK_AUTH = { headers: { authorization: `Bearer ${WEBHOOK_SECRET}` } };
 
 function setup(options = {}) {
   memberHandler._test.resetFieldCache();
@@ -303,4 +305,99 @@ test('only times with a free van are offered, and only inside the rules', async 
   const later = await status(ctx, { date });
   assert.equal(later.body.slots.includes('08:00'), false);
   assert.ok(later.body.slots.includes('12:00'));
+});
+
+// ── Granting a cycle (the webhook the GHL workflow calls) ──────────────────
+
+test('a paid membership invoice activates the contract and moves the cycle', async t => {
+  const ctx = setup({ env: { PAYMENT_WEBHOOK_SECRET: WEBHOOK_SECRET } });
+  t.after(() => ctx.restore());
+
+  const webhookHandler = require('../api/payments/webhook.js');
+  const res = await callHandler(webhookHandler, {
+    type: 'InvoicePaid',
+    id: 'inv-cycle-1',
+    contractId: CONTRACT,
+    // The invoice's own date, which is what makes this idempotent.
+    cycleStartsAt: '2026-08-04T12:00:00.000Z'
+  }, WEBHOOK_AUTH);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.status, 'active');
+  // One month on, which is the ONLY thing that resets the balance: credits are counted
+  // inside the cycle window, so moving the window forward is the reset.
+  assert.equal(res.body.cycleEndsAt.slice(0, 10), '2026-09-04');
+
+  const update = ctx.ghl.calls.find(call => call.method === 'PUT' && call.path === `/opportunities/${CONTRACT}`);
+  const written = new Map(update.body.customFields.map(field => [field.id, field.field_value]));
+  assert.equal(written.get('field-mem-status'), 'active');
+  assert.equal(written.get('field-mem-cycle').slice(0, 10), '2026-09-04');
+});
+
+test('the same invoice delivered twice does not push the cycle out two months', async t => {
+  const ctx = setup({ env: { PAYMENT_WEBHOOK_SECRET: WEBHOOK_SECRET } });
+  t.after(() => ctx.restore());
+
+  const webhookHandler = require('../api/payments/webhook.js');
+  const event = { type: 'InvoicePaid', id: 'inv-cycle-1', contractId: CONTRACT, cycleStartsAt: '2026-08-04T12:00:00.000Z' };
+
+  const first = await callHandler(webhookHandler, event, WEBHOOK_AUTH);
+  const second = await callHandler(webhookHandler, event, WEBHOOK_AUTH);
+
+  // Idempotent by construction: the cycle end is computed FROM THE INVOICE, not from
+  // now, so a redelivery writes the same value rather than granting another month.
+  assert.equal(first.body.cycleEndsAt, second.body.cycleEndsAt);
+});
+
+// NOTE: HighLevel emits no "invoice payment failed" webhook — its invoice events are
+// Create/Sent/Paid/PartiallyPaid/Void/Update/Delete. So past_due arrives by the office
+// dragging the card to the Past Due stage, which the status reader already honours (see
+// the past_due test below). What IS webhook-driven is a VOIDED invoice.
+test('a voided invoice marks past_due and never touches the cycle', async t => {
+  const ctx = setup({ env: { PAYMENT_WEBHOOK_SECRET: WEBHOOK_SECRET } });
+  t.after(() => ctx.restore());
+
+  const webhookHandler = require('../api/payments/webhook.js');
+  const res = await callHandler(webhookHandler, {
+    type: 'InvoiceVoid', id: 'inv-void-1', contractId: CONTRACT
+  }, WEBHOOK_AUTH);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.status, 'past_due');
+  const update = ctx.ghl.calls.find(call => call.method === 'PUT' && call.path === `/opportunities/${CONTRACT}`);
+  const written = new Map(update.body.customFields.map(field => [field.id, field.field_value]));
+  assert.equal(written.get('field-mem-status'), 'past_due');
+  // The cycle the customer DID pay for is untouched, so the wash they already booked
+  // inside it survives.
+  assert.equal(written.has('field-mem-cycle'), false);
+});
+
+test('a past_due contract cannot book, and the member is told why', async t => {
+  const ctx = setup({
+    contracts: {
+      'opp-membership-late': {
+        contact: { id: 'contact-1' },
+        // The office dragged the card to Past Due. That IS the state change — there is no
+        // webhook for a failed invoice payment, and no field to keep in sync.
+        pipelineStageId: 'stage-mem-past',
+        customFields: [
+          { id: 'field-mem-plan', fieldValue: 'membresia-2x' },
+          { id: 'field-mem-vehicle', fieldValue: '2024 Toyota Camry' },
+          { id: 'field-mem-cycle', fieldValue: new Date(Date.now() + 20 * DAY).toISOString() }
+        ]
+      }
+    }
+  });
+  t.after(() => ctx.restore());
+
+  const shown = await status(ctx, { contractId: 'opp-membership-late' });
+  assert.equal(shown.body.canBook, false);
+  assert.equal(shown.body.reason, 'past_due');
+
+  const attempt = await callHandler(memberHandler, {
+    t: token('opp-membership-late'), date: bookableDate(), startTime: '09:00'
+  });
+  assert.equal(attempt.statusCode, 409);
+  assert.equal(attempt.body.code, 'MEMBERSHIP_PAST_DUE');
+  assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'appointment').length, 0);
 });

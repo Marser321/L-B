@@ -43,7 +43,12 @@ const FIELD_NAMES = Object.freeze({
   cycleEnds: 'Membership Cycle Ends'
 });
 
+// The Memberships pipeline, resolved by name for the same reason the fields are: ids
+// differ per sub-account. Cached alongside them.
+const PIPELINE_NAME = 'Memberships';
+
 let fieldCache = null;
+let stageCache = null;
 
 async function fieldIds(config) {
   if (fieldCache) return fieldCache;
@@ -78,9 +83,21 @@ function tokenFrom(req, body) {
   return text(fromQuery || (body && body.t), 't', 8, 200);
 }
 
+// stageId → stage name, for the pipeline the contracts live in. An absent pipeline is
+// tolerated: the status then falls back to the custom field.
+async function stageNames(config) {
+  if (stageCache) return stageCache;
+  const data = await ghl.ghlRequest(config, `/opportunities/pipelines?locationId=${encodeURIComponent(config.locationId)}`, {
+    version: '2021-07-28'
+  });
+  const pipeline = (data.pipelines || []).find(entry => String(entry.name || '').trim() === PIPELINE_NAME);
+  stageCache = Object.fromEntries(((pipeline && pipeline.stages) || []).map(stage => [stage.id, stage.name]));
+  return stageCache;
+}
+
 async function loadContract(config, token) {
   const contractId = signedLink.verify('member', token);
-  const ids = await fieldIds(config);
+  const [ids, stages] = await Promise.all([fieldIds(config), stageNames(config)]);
   let data;
   try {
     data = await ghl.ghlRequest(config, `/opportunities/${encodeURIComponent(contractId)}`, {
@@ -94,7 +111,7 @@ async function loadContract(config, token) {
     }
     throw error;
   }
-  return membershipCrm.readContract(data.opportunity || data, ids);
+  return membershipCrm.readContract(data.opportunity || data, ids, stages);
 }
 
 // The dates a member may choose: from 48 hours out to the end of the paid cycle, capped
@@ -208,4 +225,4 @@ async function handler(req, res) {
 }
 
 module.exports = handler;
-module.exports._test = { FIELD_NAMES, bookableRange, resetFieldCache: () => { fieldCache = null; } };
+module.exports._test = { FIELD_NAMES, PIPELINE_NAME, bookableRange, resetFieldCache: () => { fieldCache = null; stageCache = null; } };

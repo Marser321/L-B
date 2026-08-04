@@ -58,7 +58,26 @@ function fieldValue(opportunity, fieldId) {
 
 // The contract as the member page needs it. Throws when the opportunity is not a
 // membership, so a signed link to some other opportunity opens nothing.
-function readContract(opportunity, fieldIds) {
+// Stage name → the status the rest of the code branches on. Matched on the NAME so a
+// renamed or re-created pipeline keeps working, and unknown stages fall through to the
+// field rather than being guessed at.
+const STAGE_STATUS = Object.freeze({
+  'pending payment': 'pending_payment',
+  active: 'active',
+  'past due': 'past_due',
+  // Still entitled to the cycle already paid for, so it books like an active member.
+  // The difference is only that it will not renew.
+  'cancel at period end': 'active',
+  canceled: 'canceled'
+});
+
+function stageStatus(opportunity, stages) {
+  const stageId = opportunity.pipelineStageId || opportunity.stageId || '';
+  const name = String((stages || {})[stageId] || '').trim().toLowerCase();
+  return STAGE_STATUS[name] || '';
+}
+
+function readContract(opportunity, fieldIds, stages = {}) {
   if (!opportunity || !opportunity.id) throw new RequestError('Membership not found', 404, 'MEMBERSHIP_NOT_FOUND');
 
   const packageId = fieldValue(opportunity, fieldIds.plan).trim();
@@ -66,7 +85,22 @@ function readContract(opportunity, fieldIds) {
     throw new RequestError('That link is not a membership', 404, 'MEMBERSHIP_NOT_FOUND');
   }
 
-  const status = (fieldValue(opportunity, fieldIds.status) || 'active').trim().toLowerCase();
+  // The STATUS COMES FROM THE PIPELINE STAGE, not from a field.
+  //
+  // The Memberships pipeline already has exactly the five states this needs — Pending
+  // Payment, Active, Past Due, Cancel at Period End, Canceled — and the office works by
+  // dragging cards. Reading the stage means moving a card IS the state change: there is
+  // no field to keep in sync with it and no workflow needed to copy one to the other.
+  //
+  // It also covers a gap that cannot be automated: HighLevel emits no "invoice payment
+  // failed" event (its invoice webhooks are Create/Sent/Paid/PartiallyPaid/Void/Update/
+  // Delete), so `past_due` could never arrive by webhook. Dragging the card is how it
+  // arrives, and that works today with nothing built.
+  //
+  // The custom field is still read as a fallback, for an opportunity that predates this
+  // or lives outside the pipeline.
+  const status = (stageStatus(opportunity, stages) || fieldValue(opportunity, fieldIds.status) || 'active')
+    .trim().toLowerCase();
   const cycleEnds = fieldValue(opportunity, fieldIds.cycleEnds).trim();
   const cycleEndsMs = cycleEnds ? Date.parse(cycleEnds) : NaN;
 
@@ -236,7 +270,61 @@ async function bookVisit(config, contract, { date, startTime, now = Date.now() }
   throw new RequestError('No hay camioneta disponible en ese horario', 409, 'SLOT_UNAVAILABLE');
 }
 
+// ── Granting a cycle ───────────────────────────────────────────────────────
+
+// One month on from a cycle start, clamped to the end of a shorter month so the 31st
+// does not silently become the 1st of the month after next.
+function addOneMonth(ms) {
+  const start = new Date(ms);
+  const day = start.getUTCDate();
+  const target = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1, 12));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target.getTime();
+}
+
+// A paid cycle, written onto the contract.
+//
+// THE CYCLE END IS WHAT RESETS THE BALANCE. There is no balance field to clear: credits
+// are counted inside the cycle window (see cycleWindow), so moving the window forward
+// is the reset. That is the whole renewal rule — "credits do not roll over" — expressed
+// as one date.
+//
+// Idempotent BY CONSTRUCTION when the caller passes the invoice's own date: the same
+// invoice always computes the same cycle end, so a redelivered webhook writes the same
+// value instead of pushing the cycle out a second month. A caller that passes nothing
+// falls back to now, which is NOT idempotent — hence the workflow is configured to send
+// the invoice date.
+async function grantCycle(config, fieldIds, contractId, { cycleStartMs = Date.now(), activeStageId = '' } = {}) {
+  const cycleEndsMs = addOneMonth(cycleStartMs);
+  await ghl.updateOpportunityFields(config, contractId, [
+    { id: fieldIds.status, value: 'active' },
+    { id: fieldIds.cycleEnds, value: new Date(cycleEndsMs).toISOString() }
+    // The card is moved to Active in the same call (see updateOpportunityFields), so the
+    // office sees the payment land without doing anything.
+  ], { pipelineStageId: activeStageId });
+  return { status: 'active', cycleEndsAt: new Date(cycleEndsMs).toISOString() };
+}
+
+// A failed renewal. The contract stops accepting NEW bookings (see eligibility) and
+// nothing touches a visit already booked inside the cycle the customer did pay for.
+async function markPastDue(config, fieldIds, contractId) {
+  await ghl.updateOpportunityFields(config, contractId, [{ id: fieldIds.status, value: 'past_due' }]);
+  return { status: 'past_due' };
+}
+
+async function markCanceled(config, fieldIds, contractId) {
+  await ghl.updateOpportunityFields(config, contractId, [{ id: fieldIds.status, value: 'canceled' }]);
+  return { status: 'canceled' };
+}
+
 module.exports = {
+  STAGE_STATUS,
+  stageStatus,
+  addOneMonth,
+  grantCycle,
+  markPastDue,
+  markCanceled,
   CONTRACT_TAG,
   DELIVERED,
   OPEN,
