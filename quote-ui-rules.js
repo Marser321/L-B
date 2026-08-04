@@ -74,12 +74,54 @@
     return { added: true, lines: existing.concat([line]) };
   }
 
+  // Which services a category shows, given the whole catalog.
+  //
+  // A category may be sold INSIDE another one: paint protection is the fifth car
+  // service rather than a line of business of its own. It is still its own
+  // category everywhere that matters — duration, deposit, add-ons — and only the
+  // first two screens present it as belonging to cars. That split is why this is a
+  // presentation rule and not a catalog change.
+  //
+  // Returns cards in display order: the category's own packages first, then one
+  // `tierGroup` doorway per hosted category.
+  function serviceCards({ category, categories, packageType = 'onetime' }) {
+    if (!category) return [];
+    const all = Array.isArray(categories) ? categories : [];
+    const own = (category.packages || [])
+      .filter(pkg => (pkg.isMembership ? 'membership' : 'onetime') === packageType)
+      .map(pkg => ({ kind: 'package', id: pkg.id, package: pkg }));
+
+    // Memberships are never sold through a doorway: the toggle already separates
+    // them, and a hosted category has no membership tier.
+    if (packageType !== 'onetime') return own;
+
+    const doorways = all
+      .filter(entry => entry.displayIn === category.id && entry.tierGroup)
+      .map(entry => ({
+        kind: 'tierGroup',
+        id: entry.tierGroup.id,
+        categoryId: entry.id,
+        tierGroup: entry.tierGroup,
+        tierCount: (entry.packages || []).filter(pkg => !pkg.isMembership).length
+      }));
+
+    return own.concat(doorways);
+  }
+
+  // The category a customer is conceptually inside, for highlighting step 1.
+  function displayCategoryId(category) {
+    if (!category) return null;
+    return category.displayIn || category.id;
+  }
+
   return Object.freeze({
     hasMembership,
     authorizedDates,
     scheduleUiState,
     selectedSlotIsAuthorized,
     cartLimitState,
-    appendCartLine
+    appendCartLine,
+    serviceCards,
+    displayCategoryId
   });
 }));

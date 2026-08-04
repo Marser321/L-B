@@ -71,7 +71,7 @@ test('CRM recurring test draft resolves marked CRM prices and is always Stripe t
     status: 'draft',
     liveMode: false,
     lineCount: 2,
-    monthlyTotal: 450
+    monthlyTotal: 550
   });
   const contactCall = calls.find(call => call.path === '/contacts/upsert');
   assert.equal(contactCall.options.body.dnd, true);
@@ -91,8 +91,8 @@ test('CRM recurring test draft resolves marked CRM prices and is always Stripe t
   assert.deepEqual(invoiceCall.options.body.items.map(item => ({
     productId: item.productId, priceId: item.priceId, amount: item.amount, qty: item.qty, type: item.type
   })), [
-    { productId: 'product-a', priceId: 'price-a', amount: 130, qty: 1, type: 'recurring' },
-    { productId: 'product-b', priceId: 'price-b', amount: 320, qty: 1, type: 'recurring' }
+    { productId: 'product-a', priceId: 'price-a', amount: 150, qty: 1, type: 'recurring' },
+    { productId: 'product-b', priceId: 'price-b', amount: 400, qty: 1, type: 'recurring' }
   ]);
   assert.deepEqual(invoiceCall.options.body.discount.validOnProductIds, []);
   assert.equal(invoiceCall.options.body.invoiceNumberPrefix, 'INV-');

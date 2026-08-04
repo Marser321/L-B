@@ -787,6 +787,50 @@ html[data-lang="en"] .i18n-es { display: none !important; }
 }
 .opt-card:not(.has-media) .opt-price { margin-left: auto; }
 
+/* A service that opens into several tiers (paint protection, the fifth car
+   service). It is a doorway rather than a choice, so it carries no radio and says
+   how many options are behind it. */
+.tier-group-card { cursor: pointer; }
+.tier-group-card .opt-radio { display: none; }
+.tier-group-card::after {
+  content: '→';
+  position: absolute;
+  top: 0.9rem;
+  right: 1rem;
+  font-size: 1.1rem;
+  color: var(--accent-bright);
+  transition: transform 0.18s ease;
+}
+.tier-group-card:hover::after { transform: translateX(3px); }
+.tier-group-hint {
+  grid-area: includes;
+  align-self: start;
+  font-size: 0.82rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+/* Shown above the tiers so it is obvious the customer is still inside the car
+   services and can step back out. */
+.tier-group-back {
+  grid-column: 1 / -1;
+  justify-self: start;
+  background: none;
+  border: 0;
+  padding: 0.2rem 0;
+  color: var(--accent-bright);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tier-group-back:hover { text-decoration: underline; }
+.tier-group-lede {
+  grid-column: 1 / -1;
+  margin: 0 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 /* Package inclusions are shown before selection on every package card. */
 .package-includes {
   grid-area: includes;

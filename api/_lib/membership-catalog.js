@@ -18,6 +18,14 @@ const catalog = require('./catalog.js');
 // Bumped when the price list changes. Every provisioned Stripe price is stored
 // against the version that produced it, so an old subscription keeps billing at
 // the price it was sold at while new checkouts use the current version.
+//
+// The August 2026 car price update deliberately did NOT bump it: Stripe was never
+// provisioned, so there is no subscriber on the old amounts to protect, and the
+// version is also baked into the CRM membership marker
+// (`lyb-membership-catalog:v1:…` in crm-catalog.js) — bumping it would make the
+// provisioner DUPLICATE the membership products HighLevel already has instead of
+// updating them. Bump it the day provision-stripe.mjs refuses to run with
+// "price … cannot be edited"; that error means real prices exist at v1.
 const CATALOG_VERSION = 1;
 
 const BILLING_INTERVAL = 'month';
@@ -38,11 +46,11 @@ function dollars(amount) {
 const MEMBERSHIP_PACKAGES = Object.freeze({
   'membresia-2x': {
     label: 'Membresía 2x — Cars & SUVs',
-    sizes: { sedan: 130, suv: 160, truck: 190, van_pequena: 170, van_xl: 250 }
+    sizes: { sedan: 150, suv: 200, truck: 210, van_pequena: 180, van_xl: 260 }
   },
   'membresia-4x': {
     label: 'Membresía 4x — Cars & SUVs',
-    sizes: { sedan: 200, suv: 260, truck: 320, van_pequena: 300, van_xl: 460 }
+    sizes: { sedan: 290, suv: 390, truck: 400, van_pequena: 320, van_xl: 480 }
   },
   'box-truck-2x': {
     label: 'Membresía 2x — Box Truck',

@@ -87,9 +87,9 @@ test('price, duration, deposit and membership status come from the catalog, neve
     }]
   }));
 
-  // premium-detail/sedan $125 + limpieza-motor "Desde $30".
-  assert.equal(result.estimate.min, 155);
-  assert.equal(result.estimate.label, 'From $155');
+  // premium-detail/sedan $185 + limpieza-motor "Desde $30".
+  assert.equal(result.estimate.min, 215);
+  assert.equal(result.estimate.label, 'From $215');
   assert.equal(result.deposit, 30);
   assert.equal(result.schedule.durationMinutes, 90);
   assert.equal(result.vehicles[0].isMembership, false);
@@ -112,7 +112,7 @@ test('canonical client payload contains identifiers and reservation data only', 
     schedule: { date: DATE, timeWindow: '08:00', notes: 'Gate 4' }
   }));
 
-  assert.equal(result.estimate.min, 155);
+  assert.equal(result.estimate.min, 215);
   assert.equal(result.deposit, 30);
   assert.equal(result.schedule.durationMinutes, 90);
   assert.deepEqual(result.vehicles[0].addonIds, ['limpieza-motor']);
@@ -232,6 +232,36 @@ test('restricted add-ons are validated per vehicle against that vehicle package'
   for (const packageId of ['trailer-wash', 'trailer-2x', 'car-hauler-wash']) {
     assert.throws(() => validatePayload(heavy(packageId, 'limpieza-cabina')), /invalid for this package/i);
   }
+  // A towed unit has no engine, so engine cleaning cannot be sold on one.
+  assert.equal(validatePayload(heavy('semi-truck-wash', 'motor-pesado')).vehicles[0].addonIds[0], 'motor-pesado');
+  assert.equal(validatePayload(heavy('dump-truck-wash', 'motor-pesado')).vehicles[0].addonIds[0], 'motor-pesado');
+  for (const packageId of ['trailer-wash', 'trailer-4x', 'car-hauler-wash', 'car-hauler-2x']) {
+    assert.throws(() => validatePayload(heavy(packageId, 'motor-pesado')), /invalid for this package/i);
+  }
+
+  // Aluminium fuel tanks hang off the tractor and nothing else.
+  assert.equal(validatePayload(heavy('semi-truck-wash', 'pulido-tanques')).vehicles[0].addonIds[0], 'pulido-tanques');
+  for (const packageId of ['trailer-wash', 'garbage-truck-wash', 'dump-truck-wash', 'car-hauler-wash']) {
+    assert.throws(() => validatePayload(heavy(packageId, 'pulido-tanques')), /invalid for this package/i);
+  }
+  assert.throws(
+    () => validatePayload(heavy('box-truck-wash', 'pulido-tanques', 'size_10_16')),
+    /invalid for this package/i
+  );
+
+  // Waxing is not a heavy-truck service at all: no trailer or garbage truck gets
+  // waxed, so the add-on does not exist in that category.
+  for (const packageId of ['semi-truck-wash', 'trailer-wash', 'garbage-truck-wash', 'car-hauler-wash']) {
+    assert.throws(() => validatePayload(heavy(packageId, 'cera-rapida')), /invalid for this category/i);
+  }
+  // It is still sold on cars, where somebody does actually wax by hand.
+  assert.equal(
+    validatePayload(payload({
+      items: [{ ...item('premium-detail', 'sedan'), addons: [{ id: 'cera-rapida', name: 'Wax', price: '$20' }] }]
+    })).vehicles[0].addonIds[0],
+    'cera-rapida'
+  );
+
   // An add-on from another category never applies.
   assert.throws(() => validatePayload(heavy('semi-truck-wash', 'boat-teca')), /invalid for this category/i);
 });
@@ -304,7 +334,7 @@ test('the opportunity records the server price, the hold and the crew breakdown'
   const values = new Map(update.body.customFields.map(field => [field.id, field.fieldValue]));
 
   assert.equal(values.get('field-bookingStatus'), 'pending_payment');
-  assert.equal(values.get('field-estimate'), 'From $155');
+  assert.equal(values.get('field-estimate'), 'From $215');
   assert.equal(values.get('field-deposit'), '$30');
   assert.equal(values.get('field-duration'), '1h 30m');
   assert.match(values.get('field-crewAssignments'), /#1 camioneta_\d 08:00–09:30/);
@@ -400,7 +430,7 @@ test('cross-origin and wrong methods fail, while CRM configuration cannot block 
   const unconfigured = await callHandler(quoteHandler, payload());
   assert.equal(unconfigured.statusCode, 200);
   assert.equal(unconfigured.body.syncPending, true);
-  assert.equal(unconfigured.body.estimate.label, 'From $155');
+  assert.equal(unconfigured.body.estimate.label, 'From $215');
   assert.equal(ctx.repository.__store().holds.length, 0);
 });
 
@@ -567,7 +597,7 @@ test('a valid canonical quote is local when HighLevel is unavailable', async t =
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.syncPending, true);
-  assert.equal(res.body.estimate.label, 'From $155');
+  assert.equal(res.body.estimate.label, 'From $215');
   assert.equal(res.body.deposit, 30);
   assert.equal(ctx.ghl.calls.length, 0);
 });

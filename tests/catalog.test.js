@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const catalogHandler = require('../api/catalog.js');
+const catalog = require('../api/_lib/catalog.js');
 const { callHandler } = require('./support/harness.js');
 
 test('public catalog exposes server-owned ids, display metadata, membership policy, and the four-vehicle cap', async () => {
@@ -21,12 +22,56 @@ test('public catalog exposes server-owned ids, display metadata, membership poli
   const premiumPackage = cars.packages.find(pkg => pkg.id === 'premium-detail');
   assert.equal(membership.isMembership, true);
   assert.equal(premiumPackage.isMembership, false);
-  assert.equal(premiumPackage.displayPrices.sedan.en, '$125');
-  assert.equal(premiumPackage.displayFrom.es, 'Desde $125');
+  assert.equal(premiumPackage.displayPrices.sedan.en, '$185');
+  assert.equal(premiumPackage.displayFrom.es, 'Desde $185');
 });
 
 test('public catalog remains read-only', async () => {
   const res = await callHandler(catalogHandler, {}, { method: 'POST' });
   assert.equal(res.statusCode, 405);
   assert.equal(res.body.code, 'METHOD_NOT_ALLOWED');
+});
+
+// ── Scheduling invariants ──────────────────────────────────────────────────
+
+test('every sellable package occupies real time on a van', () => {
+  // A package that computes to zero minutes produces a booking whose start equals
+  // its end. Postgres rejects that (`duration_minutes > 0`, `ends_at > starts_at`)
+  // and the customer sees a 502 on an otherwise valid service — which is exactly
+  // what paint-enhancement did while it was missing from FULL_DAY_PACKAGES and its
+  // category duration was {service: 0, buffer: 0}.
+  const broken = [];
+  for (const packageId of Object.keys(catalog.SIZES_BY_PACKAGE)) {
+    try {
+      const minutes = catalog.vehicleDurationMinutes(packageId);
+      if (!Number.isFinite(minutes) || minutes <= 0) broken.push(`${packageId} → ${minutes}`);
+    } catch (error) {
+      broken.push(`${packageId} → ${error.message}`);
+    }
+  }
+  assert.deepEqual(broken, []);
+});
+
+test('a catalog entry that would schedule zero minutes throws instead of booking', () => {
+  // The guard itself. An UNKNOWN package is not the dangerous case — it falls back
+  // to the cars duration and books fine. The dangerous case is a category whose own
+  // duration sums to zero, which is how paint_correction shipped, so that is what
+  // is asserted here.
+  assert.throws(() => catalog.assertSchedulableMinutes(0, 'paint-enhancement'), /must occupy real time/);
+  assert.throws(() => catalog.assertSchedulableMinutes(-30, 'whatever'), /must occupy real time/);
+  assert.throws(() => catalog.assertSchedulableMinutes(NaN, 'whatever'), /must occupy real time/);
+  assert.equal(catalog.assertSchedulableMinutes(90, 'premium-detail'), 90);
+  // An unknown package still schedules, on the cars fallback.
+  assert.equal(catalog.vehicleDurationMinutes('not-a-real-package'), 90);
+});
+
+test('all three paint tiers hold the van for the working day', () => {
+  for (const packageId of ['paint-enhancement', 'paint-correction', 'ceramic-protection']) {
+    assert.equal(catalog.bookingModeForPackage(packageId), 'full_day', packageId);
+    assert.ok(catalog.vehicleDurationMinutes(packageId) > 0, packageId);
+    // Paint work keeps the larger deposit and its own category, which is what
+    // makes it safe to DISPLAY it inside cars without moving it there.
+    assert.equal(catalog.depositForPackages([packageId]), 50, packageId);
+    assert.equal(catalog.categoryForPackage(packageId), 'paint_correction', packageId);
+  }
 });

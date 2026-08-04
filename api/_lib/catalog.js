@@ -89,8 +89,10 @@ const ADDONS_BY_CATEGORY = Object.freeze({
     'pulido-faros', 'descontaminacion-pintura', 'cargo-bed', 'limpieza-chasis'
   ]),
   paint_correction: new Set(['faros-recup', 'tar-sap', 'water-spots', 'engine-bay', 'ext-plastics', 'repelente-cristales']),
+  // cera-rapida is deliberately absent: waxing is not a service that exists on a
+  // trailer or a garbage truck, so heavy trucks do not sell it at all.
   heavy_trucks: new Set([
-    'limpieza-cabina', 'cera-rapida', 'desengrasado-profundo', 'engrasado-camion',
+    'limpieza-cabina', 'desengrasado-profundo', 'engrasado-camion',
     'motor-pesado', 'volteo-aluminio', 'rines-aluminio', 'pulido-rines-llantas',
     'car-hauler-second-deck', 'lubricante-grafito', 'pulido-tanques'
   ]),
@@ -116,6 +118,15 @@ const PACKAGES_BY_RESTRICTED_ADDON = Object.freeze({
     'dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x',
     'garbage-truck-wash', 'garbage-truck-2x', 'garbage-truck-4x'
   ]),
+  // Same list as the cab, and for the same reason: a towed unit has no engine.
+  'motor-pesado': new Set([
+    'box-truck-wash', 'box-truck-2x', 'box-truck-4x',
+    'semi-truck-wash', 'semi-truck-2x', 'semi-truck-4x',
+    'dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x',
+    'garbage-truck-wash', 'garbage-truck-2x', 'garbage-truck-4x'
+  ]),
+  // Aluminium fuel tanks are mounted on the tractor. Nothing else has them.
+  'pulido-tanques': new Set(['semi-truck-wash', 'semi-truck-2x', 'semi-truck-4x']),
   'volteo-aluminio': new Set(['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x']),
   'car-hauler-second-deck': new Set([
     'car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x',
@@ -137,8 +148,13 @@ const CATEGORY_DURATIONS = Object.freeze({
   golf_cart: Object.freeze({ service: 30, buffer: 30 }),
   atv: Object.freeze({ service: 30, buffer: 30 }),
   driveway: Object.freeze({ service: 120, buffer: 30 }),
-  // Paint correction and ceramic coating take the whole day; see FULL_DAY_PACKAGES.
-  paint_correction: Object.freeze({ service: 0, buffer: 0 })
+  // Paint work occupies the van for the working day (see FULL_DAY_PACKAGES), so the
+  // per-category length below is only a floor. It is NOT zero: a category that
+  // computes to a zero-minute block produces a booking whose start equals its end,
+  // which Postgres rejects (`duration_minutes > 0`, `ends_at > starts_at`) and the
+  // customer sees as a 502. That is exactly what happened to paint-enhancement
+  // while it was missing from FULL_DAY_PACKAGES.
+  paint_correction: Object.freeze({ service: 480, buffer: 60 })
 });
 
 // Deposit charged once per booking. Compact vehicles pay the small deposit;
@@ -164,7 +180,10 @@ const CATEGORY_BY_PACKAGE = Object.freeze(Object.fromEntries(
 ));
 
 const MEMBERSHIP_PACKAGE_PATTERN = /membresia|membership|-2x$|-4x$/;
-const FULL_DAY_PACKAGES = new Set(['paint-correction', 'ceramic-protection']);
+// All three paint tiers hold the van for the working day. paint-enhancement was
+// missing here, which combined with a zero-length paint_correction duration made
+// the $299 tier unbookable — see the note on CATEGORY_DURATIONS above.
+const FULL_DAY_PACKAGES = new Set(['paint-enhancement', 'paint-correction', 'ceramic-protection']);
 
 // One van per vehicle, four vans in the fleet: a single visit can never cover
 // more than four vehicles at the same hour. Enforced server-side (HTTP 422) so a
@@ -203,9 +222,25 @@ function durationForPackage(packageId) {
 // buffer. This is the only duration the agenda schedules with — cart durations
 // are never added together, because each vehicle is washed by a different van at
 // the same time (see agenda.js).
+//
+// Throws rather than returning a non-positive number. A zero-minute block is not
+// a scheduling edge case, it is a broken catalog: it produces a booking whose
+// start equals its end, which Postgres refuses and the customer experiences as an
+// unbookable service. Failing here surfaces it in the test suite instead.
 function vehicleDurationMinutes(packageId) {
   const duration = durationForPackage(packageId);
-  return duration.service + duration.buffer;
+  return assertSchedulableMinutes(duration.service + duration.buffer, packageId);
+}
+
+// The guard, on its own so it can be tested directly. Note that an UNKNOWN package
+// is not the dangerous case — it falls back to the cars duration. The dangerous
+// case is a category whose own duration sums to zero, which is how
+// paint_correction shipped.
+function assertSchedulableMinutes(minutes, packageId) {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    throw new Error(`catalog: ${packageId} resolves to a ${minutes}-minute booking; every package must occupy real time`);
+  }
+  return minutes;
 }
 
 // One deposit per booking: the largest one any vehicle in the cart requires.
@@ -256,6 +291,7 @@ module.exports = {
   bookingModeForPackages,
   durationForPackage,
   vehicleDurationMinutes,
+  assertSchedulableMinutes,
   depositForPackages,
   noticeMsForPackages,
   addonAppliesToPackage

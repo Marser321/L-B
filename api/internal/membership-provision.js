@@ -9,7 +9,10 @@ const crypto = require('node:crypto');
 const { RequestError, HighLevelError } = require('../_lib/errors.js');
 const { sendJson, readBody, assertMethod } = require('../_lib/http.js');
 const ghl = require('../_lib/ghl.js');
-const provisioning = require('../_lib/crm-membership-provisioning.js');
+// The general catalog provisioner supersedes the membership-only one. It keeps
+// the membership markers byte-for-byte, so a location provisioned by the old tool
+// is recognised rather than duplicated.
+const provisioning = require('../_lib/crm-catalog-provisioning.js');
 
 function timingSafeEquals(left, right) {
   const a = Buffer.from(String(left));
@@ -30,13 +33,26 @@ async function handler(req, res) {
   try {
     assertAuthorized(req);
     const body = readBody(req) || {};
+    // Defaults to memberships so an existing runbook keeps behaving as before.
+    // Pass `kinds` to provision the rest of the catalog — services, add-ons and
+    // deposits — which is what makes a CRM payment link possible for a one-time
+    // job. `--kinds` on scripts/provision-crm-catalog.mjs is the same switch.
+    const kinds = Array.isArray(body.kinds) && body.kinds.length ? body.kinds : ['membership'];
     const result = await provisioning.provision({
       config: ghl.getConfig(),
       request: ghl.ghlRequest,
-      apply: body.apply === true
+      apply: body.apply === true,
+      kinds
     });
-    // No CRM ids, URLs, credentials, contacts, or payment data are returned.
-    return sendJson(res, 200, { ok: true, ...result });
+    // No CRM ids, URLs, credentials, contacts, or payment data are returned. The
+    // mapping carries ids, so it is summarised rather than echoed.
+    const { mapping, plan, ...safe } = result;
+    return sendJson(res, 200, {
+      ok: true,
+      ...safe,
+      planned: plan.length,
+      mapped: mapping.filter(entry => entry.crmPriceId).length
+    });
   } catch (error) {
     const statusCode = error instanceof RequestError || error instanceof HighLevelError ? error.statusCode : 502;
     if (statusCode >= 500) console.error('[membership-provision]', error.name || 'Error', statusCode, error.code || '');

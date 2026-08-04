@@ -82,8 +82,8 @@ test('the catalog holds 17 membership packages and 33 monthly prices', () => {
   assert.equal(membershipCatalog.entries().length, 33);
 
   // Spot-check every shape of price in the list.
-  assert.equal(membershipCatalog.priceFor('membresia-2x', 'sedan').monthlyCents, 13000);
-  assert.equal(membershipCatalog.priceFor('membresia-4x', 'van_xl').monthlyCents, 46000);
+  assert.equal(membershipCatalog.priceFor('membresia-2x', 'sedan').monthlyCents, 15000);
+  assert.equal(membershipCatalog.priceFor('membresia-4x', 'van_xl').monthlyCents, 48000);
   assert.equal(membershipCatalog.priceFor('box-truck-2x', 'size_21_26').monthlyCents, 25000);
   assert.equal(membershipCatalog.priceFor('trailer-4x', 'standard').monthlyCents, 70000);
   assert.equal(membershipCatalog.priceFor('jetski-membresia', 'qty_3').monthlyCents, 30000);
@@ -106,7 +106,7 @@ test('the client cannot influence the amount', async t => {
     ...line('membresia-4x', 'truck'),
     monthlyCents: 1, price: 1, amount: 1, stripePriceId: 'price_attacker', creditsPerCycle: 99
   }, 0);
-  assert.equal(validated.monthlyCents, 32000);
+  assert.equal(validated.monthlyCents, 40000);
   assert.equal(validated.creditsPerCycle, 4);
   assert.equal(validated.stripePriceId, undefined);
 
@@ -134,7 +134,7 @@ test('checkout reuses one Stripe customer and prices every line from the server'
   assert.equal(res.statusCode, 200);
   assert.match(res.body.checkoutUrl, /^https:\/\/checkout\.stripe\.test\//);
   assert.equal(res.body.lineCount, 2);
-  assert.equal(res.body.monthlyTotal, 130 + 320);
+  assert.equal(res.body.monthlyTotal, 150 + 400);
 
   // A second checkout for the same email must not mint a second Stripe customer.
   const again = await callHandler(checkoutHandler, {

@@ -90,6 +90,50 @@ function mapContract(row) {
   };
 }
 
+function mapCrmPrice(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    catalogVersion: row.catalog_version,
+    kind: row.kind,
+    productKey: row.product_key,
+    priceKey: row.price_key,
+    packageId: row.package_id,
+    sizeId: row.size_id,
+    addonId: row.addon_id,
+    amountCents: row.amount_cents,
+    currency: row.currency,
+    priceType: row.price_type,
+    crmProductId: row.crm_product_id,
+    crmPriceId: row.crm_price_id,
+    livemode: row.livemode,
+    active: row.active
+  };
+}
+
+function mapPaymentLink(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    idempotencyKey: row.idempotency_key,
+    purpose: row.purpose,
+    origin: row.origin,
+    holdId: row.hold_id,
+    parentBookingId: row.parent_booking_id,
+    contractId: row.contract_id,
+    contactId: row.contact_id,
+    lines: row.lines,
+    amountCents: row.amount_cents,
+    currency: row.currency,
+    crmInvoiceId: row.crm_invoice_id,
+    url: row.url,
+    status: row.status,
+    failureReason: row.failure_reason,
+    createdBy: row.created_by,
+    paidAtMs: ms(row.paid_at)
+  };
+}
+
 function mapVisit(row) {
   if (!row) return null;
   return {
@@ -132,6 +176,9 @@ const VISIT_COLUMNS = Object.freeze({
   holdId: 'hold_id',
   parentBookingId: 'parent_booking_id',
   bookingId: 'booking_id',
+  // Writable so a visit can be MOVED rather than cancelled and rebooked.
+  scheduledStartMs: 'scheduled_start',
+  scheduledEndMs: 'scheduled_end',
   status: 'status',
   creditConsumedAtMs: 'credit_consumed_at',
   cancelledAtMs: 'cancelled_at',
@@ -140,7 +187,7 @@ const VISIT_COLUMNS = Object.freeze({
 
 const TIMESTAMP_KEYS = new Set([
   'currentPeriodStartMs', 'currentPeriodEndMs', 'canceledAtMs',
-  'creditConsumedAtMs', 'cancelledAtMs'
+  'creditConsumedAtMs', 'cancelledAtMs', 'scheduledStartMs', 'scheduledEndMs'
 ]);
 
 function buildUpdate(table, columns, id, fields) {
@@ -286,6 +333,34 @@ function membershipReads(executor) {
         id: row.id, dedupeKey: row.dedupe_key, channel: row.channel, template: row.template,
         recipient: row.recipient, status: row.status, context: row.context
       }));
+    },
+
+    // ── CRM catalog map and payment links ──
+    async findCrmPrice({ kind, packageId = null, sizeId = null, addonId = null, productKey = null, livemode }) {
+      const { rows } = await executor.query(
+        `select * from crm_price_map
+          where kind = $1 and livemode = $2 and active
+            and ($3::text is null or package_id = $3)
+            and ($4::text is null or size_id = $4)
+            and ($5::text is null or addon_id = $5)
+            and ($6::text is null or product_key = $6)
+          order by catalog_version desc limit 1`,
+        [kind, livemode, packageId, sizeId, addonId, productKey]
+      );
+      return mapCrmPrice(rows[0]);
+    },
+
+    async listCrmPriceMap(livemode) {
+      const { rows } = await executor.query(
+        'select * from crm_price_map where livemode = $1 and active order by kind, product_key, price_key',
+        [livemode]
+      );
+      return rows.map(mapCrmPrice);
+    },
+
+    async getPaymentLinkByKey(idempotencyKey) {
+      const { rows } = await executor.query('select * from payment_links where idempotency_key = $1', [idempotencyKey]);
+      return mapPaymentLink(rows[0]);
     },
 
     async getHighLevelSync(entityType, localKey) {
@@ -464,6 +539,78 @@ function membershipWrites(client) {
     // { inserted } for a first sync, { changed } when the payload differs from what
     // we last pushed. Both false means HighLevel is already up to date and the
     // caller can skip the network entirely.
+    async upsertCrmPriceMap(rows) {
+      for (const row of rows) {
+        await client.query(
+          `insert into crm_price_map (
+             id, catalog_version, kind, product_key, price_key, package_id, size_id, addon_id,
+             amount_cents, currency, price_type, crm_product_id, crm_price_id, livemode, active
+           ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,'usd',$10,$11,$12,$13,true)
+           on conflict (catalog_version, kind, price_key, livemode) do update
+             set crm_product_id = excluded.crm_product_id,
+                 crm_price_id = excluded.crm_price_id,
+                 amount_cents = excluded.amount_cents,
+                 price_type = excluded.price_type,
+                 active = true,
+                 updated_at = now()`,
+          [
+            row.id, row.catalogVersion, row.kind, row.productKey, row.priceKey, row.packageId,
+            row.sizeId, row.addonId, row.amountCents, row.type || row.priceType,
+            row.crmProductId, row.crmPriceId, row.livemode
+          ]
+        );
+      }
+      return rows.length;
+    },
+
+    // Claims the key and returns { inserted }. A second click, or a retry after a
+    // timeout, finds the row already there and reuses the link instead of issuing
+    // a second invoice for the same thing.
+    async insertPaymentLink(row) {
+      const { rows } = await client.query(
+        `insert into payment_links (
+           id, idempotency_key, purpose, origin, hold_id, parent_booking_id, contract_id,
+           contact_id, lines, amount_cents, created_by, status
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending')
+         on conflict (idempotency_key) do nothing
+         returning *`,
+        [
+          row.id, row.idempotencyKey, row.purpose, row.origin, row.holdId, row.parentBookingId,
+          row.contractId, row.contactId, JSON.stringify(row.lines || []), row.amountCents, row.createdBy
+        ]
+      );
+      return { inserted: rows.length > 0, link: mapPaymentLink(rows[0]) };
+    },
+
+    async markPaymentLinkIssued(idempotencyKey, { crmInvoiceId, url }) {
+      await client.query(
+        `update payment_links set status = 'issued', crm_invoice_id = $2, url = $3, updated_at = now()
+          where idempotency_key = $1`,
+        [idempotencyKey, crmInvoiceId, url]
+      );
+    },
+
+    async markPaymentLinkFailed(idempotencyKey, reason) {
+      await client.query(
+        `update payment_links set status = 'failed', failure_reason = $2, updated_at = now()
+          where idempotency_key = $1`,
+        [idempotencyKey, String(reason).slice(0, 500)]
+      );
+    },
+
+    async markPaymentLinkPaid(crmInvoiceId, atMs) {
+      await client.query(
+        `update payment_links set status = 'paid', paid_at = $2, updated_at = now()
+          where crm_invoice_id = $1`,
+        [crmInvoiceId, iso(atMs)]
+      );
+    },
+
+    async getPaymentLinkByKey(idempotencyKey) {
+      const { rows } = await client.query('select * from payment_links where idempotency_key = $1', [idempotencyKey]);
+      return mapPaymentLink(rows[0]);
+    },
+
     async upsertHighLevelSync(entityType, localKey, { externalId = null, payloadHash = null } = {}) {
       const { rows: existing } = await client.query(
         'select * from highlevel_sync_state where entity_type = $1 and local_key = $2',

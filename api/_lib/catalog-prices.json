@@ -14,18 +14,18 @@
         {
           "id": "basico-exterior",
           "prices": {
-            "sedan": 45,
-            "suv": 65,
-            "truck": 85,
-            "van_pequena": 55,
-            "van_xl": 75
+            "sedan": 55,
+            "suv": 75,
+            "truck": 95,
+            "van_pequena": 65,
+            "van_xl": 85
           }
         },
         {
           "id": "basico-premium",
           "prices": {
-            "sedan": 75,
-            "suv": 95,
+            "sedan": 85,
+            "suv": 110,
             "truck": 115,
             "van_pequena": 100,
             "van_xl": 140
@@ -34,37 +34,37 @@
         {
           "id": "premium-detail",
           "prices": {
-            "sedan": 125,
-            "suv": 155,
-            "truck": 195
+            "sedan": 185,
+            "suv": 215,
+            "truck": 255
           }
         },
         {
           "id": "vip",
           "prices": {
-            "sedan": 220,
-            "suv": 250,
-            "truck": 270
+            "sedan": 285,
+            "suv": 315,
+            "truck": 335
           }
         },
         {
           "id": "membresia-2x",
           "prices": {
-            "sedan": 130,
-            "suv": 160,
-            "truck": 190,
-            "van_pequena": 170,
-            "van_xl": 250
+            "sedan": 150,
+            "suv": 200,
+            "truck": 210,
+            "van_pequena": 180,
+            "van_xl": 260
           }
         },
         {
           "id": "membresia-4x",
           "prices": {
-            "sedan": 200,
-            "suv": 260,
-            "truck": 320,
-            "van_pequena": 300,
-            "van_xl": 460
+            "sedan": 290,
+            "suv": 390,
+            "truck": 400,
+            "van_pequena": 320,
+            "van_xl": 480
           }
         }
       ],
@@ -335,11 +335,6 @@
           ]
         },
         {
-          "id": "cera-rapida",
-          "price": 20,
-          "range": "$20 - $40"
-        },
-        {
           "id": "desengrasado-profundo",
           "price": 30,
           "range": "$30 - $60"
@@ -350,7 +345,10 @@
         },
         {
           "id": "motor-pesado",
-          "price": 30
+          "price": 30,
+          "notForGroups": [
+            "trailer"
+          ]
         },
         {
           "id": "volteo-aluminio",
@@ -390,7 +388,12 @@
         {
           "id": "pulido-tanques",
           "price": 0,
-          "range": "Cotización personalizada"
+          "range": "Cotización personalizada",
+          "onlyFor": [
+            "semi-truck-wash",
+            "semi-truck-2x",
+            "semi-truck-4x"
+          ]
         }
       ]
     },

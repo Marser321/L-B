@@ -421,8 +421,8 @@ test('availability reports per-vehicle durations and a parallel visit length', a
   assert.equal(res.body.timezone, 'America/New_York');
   assert.equal(res.body.vehicleCount, 2);
   // Priced server-side from the ids, since sizes were supplied:
-  // premium-detail/sedan $125 + boat-basico/boat_16_20 $120.
-  assert.equal(res.body.estimate.min, 245);
+  // premium-detail/sedan $185 + boat-basico/boat_16_20 $120.
+  assert.equal(res.body.estimate.min, 305);
   const calendarReads = ctx.ghl.calls
     .filter(call => call.method === 'GET' && call.path.startsWith('/calendars/events?'))
     .map(call => new URLSearchParams(call.path.split('?')[1]).get('calendarId'));
@@ -678,6 +678,39 @@ test('a released hold frees its vans for the next customer', async t => {
   const afterRelease = await callHandler(holdsHandler, holdRequest([car()]), withKey('rel-c-0000001'));
   assert.equal(afterRelease.statusCode, 201);
   assert.equal(ctx.ghl.deleted.length, 4, 'the four block slots were removed from HighLevel');
+});
+
+test('every paint tier is bookable, including the one that used to compute to zero minutes', async t => {
+  // Regression: paint-enhancement was missing from FULL_DAY_PACKAGES while its
+  // category duration was {service: 0, buffer: 0}, so it produced an assignment
+  // whose start equalled its end. Postgres rejects that on two constraints, so the
+  // $299 tier answered 502 for every customer who tried to buy it.
+  for (const packageId of ['paint-enhancement', 'paint-correction', 'ceramic-protection']) {
+    const ctx = setupAgenda();
+    try {
+      const res = await callHandler(holdsHandler, holdRequest([{
+        packageId, sizeId: 'sedan', addonIds: [],
+        vehicle: { make: 'Toyota', model: 'Camry', year: 2024 }
+      }], { startTime: 'full_day' }), withKey(`paint-${packageId.slice(0, 8)}-01`));
+
+      assert.equal(res.statusCode, 201, `${packageId} must be bookable`);
+      assert.equal(res.body.bookingMode, 'full_day', packageId);
+
+      const assignment = res.body.assignments[0];
+      assert.ok(assignment.durationMinutes > 0, `${packageId} occupies real time`);
+      assert.ok(
+        Date.parse(assignment.endsAt) > Date.parse(assignment.startsAt),
+        `${packageId} must end after it starts`
+      );
+
+      // The same two conditions Postgres enforces, checked on the stored row.
+      const stored = ctx.repository.__store().assignments[0];
+      assert.ok(stored.durationMinutes > 0, packageId);
+      assert.ok(stored.endsAtMs > stored.startsAtMs, packageId);
+    } finally {
+      ctx.restore();
+    }
+  }
 });
 
 test('holds are refused outside the working day and off the 30-minute grid', async t => {

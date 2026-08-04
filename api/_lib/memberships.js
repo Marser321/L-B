@@ -793,6 +793,91 @@ async function completeVisit({ visitId, now = Date.now() }) {
   return { visit: await repository.getVisit(visitId), ...result };
 }
 
+// Moves a visit to another time WITHOUT charging for it.
+//
+// Until now the only way to change a date was to cancel and rebook, which inside
+// 24 hours spent the wash — a customer moving their appointment by one day paid as
+// if they had not shown up. Rescheduling is not a no-show and must not cost a credit.
+//
+// The order matters: the new slot is taken FIRST. If the fleet is full at the new
+// time the customer keeps the appointment they already had, instead of losing it
+// while trying to move it.
+async function rescheduleVisit({ visitId, date, startTime, now = Date.now(), config = null }) {
+  const repository = getRepository();
+  const visit = await repository.getVisit(visitId);
+  if (!visit) throw new RequestError('Visit not found', 404);
+  if (!['held', 'confirmed'].includes(visit.status)) {
+    throw new RequestError('Only an upcoming visit can be rescheduled', 409);
+  }
+
+  const contract = await repository.getContract(visit.contractId);
+  const timezone = time.bookingTimezone();
+  const startMs = time.zonedDateTimeToMs(date, startTime, timezone);
+
+  // The 48-hour rule and the cycle window apply to the NEW date, but a past_due or
+  // cancelled membership can still move a visit its paid cycle already covers:
+  // moving is not buying.
+  if (startMs < now + MEMBERSHIP_MIN_NOTICE_MS) {
+    throw new RequestError('Memberships must be booked at least 48 hours in advance', 409);
+  }
+  if (contract.cancelAtPeriodEnd && contract.currentPeriodEndMs && startMs > contract.currentPeriodEndMs) {
+    throw new RequestError('This membership ends before that date', 409);
+  }
+
+  const wasConfirmed = visit.status === 'confirmed';
+  const previousHoldId = visit.holdId;
+
+  // Take the new slot before giving up the old one.
+  const hold = await agenda.acquireHold({
+    idempotencyKey: `reschedule-${visitId}-${date}-${startTime}`,
+    date,
+    startTime,
+    vehicles: [{
+      vehicleIndex: 0,
+      categoryId: catalog.categoryForPackage(contract.packageId),
+      packageId: contract.packageId,
+      sizeId: contract.sizeId,
+      addonIds: [],
+      durationMinutes: catalog.vehicleDurationMinutes(contract.packageId),
+      bookingMode: catalog.bookingModeForPackage(contract.packageId),
+      isMembership: true,
+      label: contract.vehicleLabel || contract.packageId,
+      descriptor: contract.vehicle
+    }],
+    now,
+    config
+  });
+
+  await repository.transaction([`contract:${contract.id}`], async tx => {
+    await tx.updateVisit(visit.id, {
+      holdId: hold.holdId,
+      status: 'held',
+      parentBookingId: null,
+      bookingId: null,
+      scheduledStartMs: Date.parse(hold.slotStart),
+      scheduledEndMs: Date.parse(hold.slotEnd)
+    });
+  });
+
+  // Only now is the old reservation given back.
+  if (previousHoldId) {
+    await agenda.releaseHold({ holdId: previousHoldId, reason: 'rescheduled', config })
+      .catch(error => console.error('[membership] old hold release failed', previousHoldId, error.message));
+  }
+
+  // A visit that was already confirmed stays confirmed at its new time: the cycle
+  // that paid for it has not changed, so the customer should not have to confirm again.
+  if (wasConfirmed) await confirmVisit({ visitId, now, config });
+
+  const updated = await repository.getVisit(visitId);
+  return {
+    visit: updated,
+    hold,
+    creditConsumed: false,
+    startsAt: new Date(updated.scheduledStartMs).toISOString()
+  };
+}
+
 // Cancelling inside 24 hours, or not being there, spends the wash anyway. Earlier
 // than that and it costs nothing.
 async function cancelVisit({ visitId, reason = 'customer_cancelled', now = Date.now(), config = null }) {
@@ -877,6 +962,7 @@ module.exports = {
   bookingEligibility,
   bookVisit,
   confirmVisit,
+  rescheduleVisit,
   completeVisit,
   cancelVisit,
   markNoShow

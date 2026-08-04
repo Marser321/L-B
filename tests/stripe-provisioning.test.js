@@ -46,8 +46,8 @@ test('an empty account plans 17 products and 33 prices', () => {
   assert.equal(summary.prices.create, 33);
   assert.equal(productPlan.every(item => item.action === 'create'), true);
   assert.equal(pricePlan.every(item => item.action === 'create'), true);
-  // $10,080 a month if one of each were sold — the sum of the published list.
-  assert.equal(summary.totalMonthlyCents, 1008000);
+  // $10,520 a month if one of each were sold — the sum of the published list.
+  assert.equal(summary.totalMonthlyCents, 1052000);
 });
 
 test('the existing $30/$50 deposit products are never read, reused or edited', () => {

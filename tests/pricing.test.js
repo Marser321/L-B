@@ -49,19 +49,19 @@ test('every add-on the API accepts has a server-side price', () => {
 });
 
 test('known totals are priced exactly', () => {
-  // premium-detail/sedan is $125; limpieza-motor is "Desde $30", so the total is a
+  // premium-detail/sedan is $185; limpieza-motor is "Desde $30", so the total is a
   // "from" price rather than a flat one.
   const car = pricing.estimateForVehicle({ packageId: 'premium-detail', sizeId: 'sedan', addonIds: ['limpieza-motor'] });
-  assert.equal(car.min, 155);
-  assert.equal(car.label, 'From $155');
+  assert.equal(car.min, 215);
+  assert.equal(car.label, 'From $215');
 
   const plain = pricing.estimateForVehicle({ packageId: 'premium-detail', sizeId: 'sedan', addonIds: [] });
-  assert.equal(plain.label, '$125');
+  assert.equal(plain.label, '$185');
 
   // Spanish labels use the same numbers.
   assert.equal(
     pricing.estimateForVehicle({ packageId: 'premium-detail', sizeId: 'sedan', addonIds: ['limpieza-motor'] }, 'es').label,
-    'Desde $155'
+    'Desde $215'
   );
 });
 
@@ -70,7 +70,7 @@ test('money adds up across a cart even though duration does not', () => {
     { packageId: 'premium-detail', sizeId: 'sedan', addonIds: [] },
     { packageId: 'car-hauler-wash', sizeId: 'standard', addonIds: [] }
   ]);
-  assert.equal(total.min, 125 + 120);
+  assert.equal(total.min, 185 + 120);
   assert.equal(total.perVehicle.length, 2);
   // Two vans, in parallel: 90 and 120 minutes, so the visit is 120 — not 210.
   assert.equal(catalog.vehicleDurationMinutes('premium-detail'), 90);

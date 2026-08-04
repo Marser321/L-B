@@ -31,7 +31,9 @@ function emptyMembershipStore() {
     visits: [],
     stripeEvents: [],
     notifications: [],
-    highlevelSync: []
+    highlevelSync: [],
+    crmPriceMap: [],
+    paymentLinks: []
   };
 }
 
@@ -125,6 +127,68 @@ function membershipApi(state) {
 
     async getHighLevelSync(entityType, localKey) {
       return store.highlevelSync.find(row => row.entityType === entityType && row.localKey === localKey) || null;
+    },
+
+    // ── CRM catalog map and payment links ──
+    async findCrmPrice({ kind, packageId = null, sizeId = null, addonId = null, productKey = null, livemode }) {
+      return store.crmPriceMap
+        .filter(row => row.kind === kind && row.livemode === livemode && row.active !== false)
+        .filter(row => packageId == null || row.packageId === packageId)
+        .filter(row => sizeId == null || row.sizeId === sizeId)
+        .filter(row => addonId == null || row.addonId === addonId)
+        .filter(row => productKey == null || row.productKey === productKey)
+        .sort((a, b) => b.catalogVersion - a.catalogVersion)[0] || null;
+    },
+
+    async listCrmPriceMap(livemode) {
+      return store.crmPriceMap.filter(row => row.livemode === livemode && row.active !== false);
+    },
+
+    async upsertCrmPriceMap(rows) {
+      for (const row of rows) {
+        const index = store.crmPriceMap.findIndex(entry =>
+          entry.catalogVersion === row.catalogVersion && entry.kind === row.kind &&
+          entry.priceKey === row.priceKey && entry.livemode === row.livemode
+        );
+        const normalized = { ...row, priceType: row.priceType || row.type, active: true };
+        if (index === -1) store.crmPriceMap.push(normalized);
+        else store.crmPriceMap[index] = { ...store.crmPriceMap[index], ...normalized };
+      }
+      return rows.length;
+    },
+
+    async insertPaymentLink(row) {
+      if (store.paymentLinks.some(entry => entry.idempotencyKey === row.idempotencyKey)) {
+        return { inserted: false, link: null };
+      }
+      const created = { ...row, status: 'pending', crmInvoiceId: null, url: null, paidAtMs: null };
+      store.paymentLinks.push(created);
+      return { inserted: true, link: created };
+    },
+
+    async markPaymentLinkIssued(idempotencyKey, { crmInvoiceId, url }) {
+      const link = store.paymentLinks.find(row => row.idempotencyKey === idempotencyKey);
+      if (!link) return;
+      link.status = 'issued';
+      link.crmInvoiceId = crmInvoiceId;
+      link.url = url;
+    },
+
+    async markPaymentLinkFailed(idempotencyKey, reason) {
+      const link = store.paymentLinks.find(row => row.idempotencyKey === idempotencyKey);
+      if (!link) return;
+      link.status = 'failed';
+      link.failureReason = String(reason).slice(0, 500);
+    },
+
+    async markPaymentLinkPaid(crmInvoiceId, atMs) {
+      store.paymentLinks
+        .filter(row => row.crmInvoiceId === crmInvoiceId)
+        .forEach(row => { row.status = 'paid'; row.paidAtMs = atMs; });
+    },
+
+    async getPaymentLinkByKey(idempotencyKey) {
+      return store.paymentLinks.find(row => row.idempotencyKey === idempotencyKey) || null;
     },
 
     // ── writes ──

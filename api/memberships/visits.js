@@ -26,7 +26,10 @@ const { isValidDateOnly, START_TIME_PATTERN } = require('../_lib/time.js');
 const ghl = require('../_lib/ghl.js');
 const memberships = require('../_lib/memberships.js');
 
-const CUSTOMER_ACTIONS = new Set(['book', 'confirm']);
+// Rescheduling is customer-facing on purpose: moving an appointment is not a
+// commercial decision, and forcing it through the office is what pushed people
+// into cancelling instead — which inside 24 hours cost them the wash.
+const CUSTOMER_ACTIONS = new Set(['book', 'confirm', 'reschedule']);
 const OFFICE_ACTIONS = new Set(['complete', 'cancel', 'no_show']);
 
 function assertOfficeToken(req) {
@@ -76,6 +79,24 @@ async function handler(req, res) {
     }
 
     const visitId = text(body.visitId, 'visitId', 8, 64);
+
+    if (action === 'reschedule') {
+      const date = text(body.date, 'date', 10, 10);
+      if (!isValidDateOnly(date)) throw new RequestError('date is invalid');
+      const startTime = text(body.startTime, 'startTime', 4, 5);
+      if (!START_TIME_PATTERN.test(startTime)) throw new RequestError('startTime is invalid');
+
+      const result = await memberships.rescheduleVisit({ visitId, date, startTime, config });
+      return sendJson(res, 200, {
+        ok: true,
+        visitId,
+        status: result.visit.status,
+        startsAt: result.startsAt,
+        // Stated explicitly: moving an appointment never costs a wash.
+        creditConsumed: false,
+        crew: result.hold.assignments
+      });
+    }
 
     if (action === 'confirm') {
       const result = await memberships.confirmVisit({ visitId, config });

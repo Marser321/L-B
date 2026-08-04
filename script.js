@@ -93,7 +93,7 @@
         id: 'cars',
         name: 'Cars & SUVs',
         image: 'assets/service-cars.webp',
-        from: '$45',
+        from: '$55',
         packages: [
           {
             id: 'basico-exterior',
@@ -111,11 +111,11 @@
               'Inspección final de calidad'
             ],
             prices: {
-              sedan: 45,
-              suv: 65,
-              truck: 85,
-              van_pequena: 55,
-              van_xl: 75
+              sedan: 55,
+              suv: 75,
+              truck: 95,
+              van_pequena: 65,
+              van_xl: 85
             }
           },
           {
@@ -136,8 +136,8 @@
               'Secado manual con toallas de microfibra'
             ],
             prices: {
-              sedan: 75,
-              suv: 95,
+              sedan: 85,
+              suv: 110,
               truck: 115,
               van_pequena: 100,
               van_xl: 140
@@ -163,9 +163,9 @@
               'Protección de pintura hasta por 4 meses'
             ],
             prices: {
-              sedan: 125,
-              suv: 155,
-              truck: 195
+              sedan: 185,
+              suv: 215,
+              truck: 255
             }
           },
           {
@@ -187,9 +187,9 @@
               'Protección de pintura hasta por 6 meses'
             ],
             prices: {
-              sedan: 220,
-              suv: 250,
-              truck: 270
+              sedan: 285,
+              suv: 315,
+              truck: 335
             }
           },
           {
@@ -204,11 +204,11 @@
               'Programar con al menos 48 horas de anticipación'
             ],
             prices: {
-              sedan: 130,
-              suv: 160,
-              truck: 190,
-              van_pequena: 170,
-              van_xl: 250
+              sedan: 150,
+              suv: 200,
+              truck: 210,
+              van_pequena: 180,
+              van_xl: 260
             }
           },
           {
@@ -223,11 +223,11 @@
               'Programar con al menos 48 horas de anticipación'
             ],
             prices: {
-              sedan: 200,
-              suv: 260,
-              truck: 320,
-              van_pequena: 300,
-              van_xl: 460
+              sedan: 290,
+              suv: 390,
+              truck: 400,
+              van_pequena: 320,
+              van_xl: 480
             }
           }
         ],
@@ -259,6 +259,25 @@
         name: 'Paint Correction & Protection',
         image: 'assets/service-paint-correction.webp',
         from: '$299',
+        // Paint work is sold as the FIFTH service of cars, not as a line of
+        // business of its own: the customer picks "Paint Protection" among the car
+        // services and then chooses one of the three tiers below.
+        //
+        // Only the presentation moves. The category stays `paint_correction` for
+        // every server-side decision, which is what keeps its full-day duration,
+        // its $50 deposit and its own six add-ons intact. Filing these packages
+        // under `cars` for real would silently turn them into 90-minute jobs with a
+        // $30 deposit and the wrong add-on list.
+        displayIn: 'cars',
+        tierGroup: {
+          id: 'paint-protection',
+          name: { en: 'Paint Protection', es: 'Protección de Pintura' },
+          description: {
+            en: 'Gloss enhancement, paint correction and ceramic protection. Three levels of depth.',
+            es: 'Mejora de brillo, corrección de pintura y protección cerámica. Tres niveles de profundidad.'
+          },
+          image: 'assets/service-paint-protection.jpg'
+        },
         packages: [
           {
             id: 'paint-enhancement',
@@ -597,17 +616,26 @@
           { id: 'standard', name: 'Medida Estándar' }
         ],
         extras: [
+          // No hand/spray wax here on purpose: nobody waxes a 53-foot trailer or a
+          // garbage truck, and a $20–40 line could never cover the surface anyway.
+          // Wax lives in `cars` (cera-rapida) and in boats (boat-cera-marina).
+          // NOTE: keep apostrophes out of comments inside this literal —
+          // scripts/extract-catalog.mjs matches braces and treats one as a string.
           { id: 'limpieza-cabina', name: 'Limpieza Interior de Cabina', price: 25, range: '$25 - $60', notForGroups: ['trailer'] },
-          { id: 'cera-rapida', name: 'Cera Rápida', price: 20, range: '$20 - $40' },
           { id: 'desengrasado-profundo', name: 'Desengrasado Profundo', price: 30, range: '$30 - $60' },
           { id: 'engrasado-camion', name: 'Engrasado para Camiones', price: 50 },
-          { id: 'motor-pesado', name: 'Limpieza de Motor', price: 30 },
+          // A trailer and a car hauler are towed units: no engine to clean. The
+          // "trailer" group covers both (see PACKAGE_GROUP_OVERRIDES).
+          { id: 'motor-pesado', name: 'Limpieza de Motor', price: 30, notForGroups: ['trailer'] },
           { id: 'volteo-aluminio', name: 'Caja de Aluminio', price: 120, onlyFor: ['dump-truck-wash', 'dump-truck-2x', 'dump-truck-4x'] },
           { id: 'rines-aluminio', name: 'Ácido para Rines de Aluminio', price: 25 },
           { id: 'pulido-rines-llantas', name: 'Pulido de Rines y Llantas', price: 25 },
           { id: 'car-hauler-second-deck', name: 'Lavado del Segundo Piso', price: 100, onlyFor: CAR_HAULER_PACKAGE_IDS },
           { id: 'lubricante-grafito', name: 'Lubricante de Grafito', price: 180, onlyFor: CAR_HAULER_PACKAGE_IDS },
-          { id: 'pulido-tanques', name: 'Pulido Tanques de Aluminio (Cotiz.)', price: 0, range: 'Cotización personalizada' }
+          // Aluminium fuel tanks hang off the TRACTOR. A box truck, a trailer and a
+          // garbage truck have none, so they were being offered a service that does
+          // not exist on their unit.
+          { id: 'pulido-tanques', name: 'Pulido Tanques de Aluminio (Cotiz.)', price: 0, range: 'Cotización personalizada', onlyFor: ['semi-truck-wash', 'semi-truck-2x', 'semi-truck-4x'] }
         ]
       },
       {
@@ -989,7 +1017,6 @@
         },
         extras: {
           'limpieza-cabina': ['Interior Cab Cleaning', '$25 - $60'],
-          'cera-rapida': ['Quick Wax', '$20 - $40'],
           'desengrasado-profundo': ['Deep Degreasing', '$30 - $60'],
           'engrasado-camion': ['Truck Chassis Greasing'],
           'motor-pesado': ['Engine Cleaning'],
@@ -1339,7 +1366,9 @@
   // ──────────────────────────────────────────────
   const CATEGORY_CLUSTERS = {
     cars: 'vehicles',
-    paint_correction: 'paint_protection',
+    // Paint work belongs to the car cluster now: it is shown as the fifth car
+    // service rather than as a route of its own.
+    paint_correction: 'vehicles',
     boats: 'marine',
     jetski: 'marine',
     golf_cart: 'recreation',
@@ -1352,7 +1381,6 @@
   const CLUSTER_FILTERS = [
     { id: 'all', label: 'All' },
     { id: 'vehicles', label: 'Vehicle Detailing' },
-    { id: 'paint_protection', label: 'Paint Protection' },
     { id: 'marine', label: 'Marine' },
     { id: 'recreation', label: 'Recreation' },
     { id: 'fleet_property', label: 'Fleet & Property' }
@@ -1372,7 +1400,6 @@
 
   const SERVICE_ROUTES = {
     vehicles: { filter: 'vehicles' },
-    paint_protection: { filter: 'paint_protection' },
     marine: { filter: 'marine' },
     recreation: { filter: 'recreation' },
     fleet_property: { filter: 'fleet_property' }
@@ -1537,19 +1564,18 @@
     'path.a.title': { en: 'Vehicle Detailing', es: 'Detailing de Vehículos' },
     'path.a.desc': { en: 'Maintenance washes, deep interior care, and paint-safe detailing for daily drivers, SUVs, trucks, and vans.', es: 'Lavados de mantenimiento, cuidado profundo de interiores y detailing seguro para la pintura de autos, SUVs, camionetas y vans.' },
     'path.a.cta': { en: 'Start Vehicle Quote', es: 'Cotizar Vehículo' },
-    'path.b.kicker': { en: 'Path B', es: 'Ruta B' },
-    'path.b.title': { en: 'Paint Protection', es: 'Protección de Pintura' },
-    'path.b.desc': { en: 'Gloss enhancement, paint correction, sealants, ceramic protection, and surface prep for a deeper finish.', es: 'Realce de brillo, corrección de pintura, selladores, protección cerámica y preparación de superficie para un acabado superior.' },
-    'path.b.cta': { en: 'Start Paint Quote', es: 'Cotizar Pintura' },
-    'path.c.kicker': { en: 'Path C', es: 'Ruta C' },
+    // Paint protection used to be Path B and is now the fifth car service, so the
+    // remaining routes renumber. The KEYS keep their original letters — they are
+    // internal ids referenced from index.html — while the labels close the gap.
+    'path.c.kicker': { en: 'Path B', es: 'Ruta B' },
     'path.c.title': { en: 'Marine', es: 'Náutica' },
     'path.c.desc': { en: 'Boat and jet ski washing, salt removal, marine-safe surface care, and cleanups after Southwest Florida water days.', es: 'Lavado de botes y jet skis, remoción de sal, cuidado seguro para superficies marinas y limpieza después de tus días en el agua.' },
     'path.c.cta': { en: 'Start Marine Quote', es: 'Cotizar Náutica' },
-    'path.d.kicker': { en: 'Path D', es: 'Ruta D' },
+    'path.d.kicker': { en: 'Path C', es: 'Ruta C' },
     'path.d.title': { en: 'Recreation', es: 'Recreación' },
     'path.d.desc': { en: 'Golf cart and ATV cleaning for communities, weekend toys, trails, mud, dust, and outdoor storage buildup.', es: 'Limpieza de carritos de golf y ATVs para comunidades, vehículos de fin de semana, senderos, barro, polvo y acumulación por almacenamiento.' },
     'path.d.cta': { en: 'Start Recreation Quote', es: 'Cotizar Recreación' },
-    'path.e.kicker': { en: 'Path E', es: 'Ruta E' },
+    'path.e.kicker': { en: 'Path D', es: 'Ruta D' },
     'path.e.title': { en: 'Fleet & Property', es: 'Flotas y Propiedades' },
     'path.e.desc': { en: 'Commercial trucks, recurring fleet care, mobile home soft washing, driveways, patios, and pressure washing.', es: 'Camiones comerciales, cuidado recurrente de flotas, soft wash de casas móviles, entradas, patios y lavado a presión.' },
     'path.e.cta': { en: 'Start Fleet Quote', es: 'Cotizar Flota' },
@@ -1578,7 +1604,11 @@
     'qbar.label': { en: 'Live estimate', es: 'Estimado en vivo' },
     'filter.all': { en: 'All', es: 'Todos' },
     'filter.vehicles': { en: 'Vehicle Detailing', es: 'Detailing de Vehículos' },
-    'filter.paint_protection': { en: 'Paint Protection', es: 'Protección de Pintura' },
+    // Paint protection is no longer a filter of its own: it is the fifth car
+    // service. These label the card that opens it and the way back out.
+    'tierGroup.one': { en: '1 option', es: '1 opción' },
+    'tierGroup.many': { en: '{n} options', es: '{n} opciones' },
+    'tierGroup.back': { en: 'Back to {host}', es: 'Volver a {host}' },
     'filter.marine': { en: 'Marine', es: 'Náutica' },
     'filter.recreation': { en: 'Recreation', es: 'Recreación' },
     'filter.fleet_property': { en: 'Fleet & Property', es: 'Flotas y Propiedades' },
@@ -2818,12 +2848,39 @@
     state.draftVehicle = blankVehicle();
   }
 
+  // Categories that are sold as a service INSIDE another category rather than as a
+  // category of their own (today: paint protection, which is the fifth car
+  // service). They keep their own identity everywhere except this first screen.
+  function hostedCategories(hostId) {
+    // Same rule the tests exercise (quote-ui-rules.serviceCards), so the browser
+    // and the suite can never disagree about what cars shows.
+    return UI_RULES
+      .serviceCards({
+        category: SERVICES_DATA.categories.find(c => c.id === hostId),
+        categories: SERVICES_DATA.categories,
+        packageType: 'onetime'
+      })
+      .filter(card => card.kind === 'tierGroup')
+      .map(card => SERVICES_DATA.categories.find(c => c.id === card.categoryId))
+      .filter(Boolean);
+  }
+
+  function hostCategoryFor(cat) {
+    return cat && cat.displayIn
+      ? SERVICES_DATA.categories.find(c => c.id === cat.displayIn) || null
+      : null;
+  }
+
   // Step 1: Render Categories (filtered by intent)
   function renderCategories() {
     const cats = SERVICES_DATA.categories
+      .filter(c => !c.displayIn)
       .filter(c => state.catFilter === 'all' || c.cluster === state.catFilter)
       .sort((a, b) => CATEGORY_ORDER.indexOf(a.id) - CATEGORY_ORDER.indexOf(b.id));
-    const isSel = (cat) => state.selectedCategory && state.selectedCategory.id === cat.id;
+    // A hosted category counts as its host being selected, so the card stays lit
+    // while the customer is choosing a paint tier.
+    const selectedId = UI_RULES.displayCategoryId(state.selectedCategory);
+    const isSel = (cat) => selectedId === cat.id;
 
     catGrid.innerHTML = cats.map(cat => `
       <div class="cat-card ${isSel(cat) ? 'selected' : ''}" data-id="${cat.id}" role="radio" tabindex="0" aria-checked="${isSel(cat)}" aria-label="${cat.name}, ${t('from').toLowerCase()} ${cat.from}">
@@ -2848,6 +2905,18 @@
       });
       attachSpotlight(card);
     });
+  }
+
+  // Moves the wizard to another category without leaving step 2 — used to step
+  // into paint protection from the car services and back out again.
+  function enterCategory(categoryId) {
+    const category = SERVICES_DATA.categories.find(c => c.id === categoryId);
+    if (!category || (state.selectedCategory && state.selectedCategory.id === category.id)) return;
+    resetFromCategory(category);
+    renderCategories();
+    renderPackages();
+    validateStep();
+    updateQuoteBar();
   }
 
   function selectPackage(pkgId) {
@@ -2881,6 +2950,37 @@
         ${includes}
         <span class="opt-price">${packageFromLabel(pkg)}</span>
       </div>`;
+  }
+
+  // The bridge card: a hosted category rendered as one more service of its host.
+  // Choosing it does not select a package — it moves the wizard into the hosted
+  // category, where its own tiers, sizes and add-ons take over.
+  function tierGroupCardHTML(hosted) {
+    const group = hosted.tierGroup;
+    const tierCount = (hosted.packages || []).filter(p => p.type !== 'membership').length;
+    const label = tierCount === 1 ? t('tierGroup.one') : t('tierGroup.many').replace('{n}', String(tierCount));
+    return `
+      <div class="opt-card has-media tier-group-card" data-tier-group="${hosted.id}" role="button" tabindex="0"
+           aria-label="${escapeHTML(loc(group.name))}">
+        <div class="opt-radio"></div>
+        <img class="opt-img" src="${group.image || hosted.image}" alt="" loading="lazy" decoding="async" ${imgErrAttr()} />
+        <div class="opt-text">
+          <span class="opt-name">${escapeHTML(loc(group.name))}</span>
+          <span class="opt-desc">${escapeHTML(loc(group.description))}</span>
+        </div>
+        <span class="tier-group-hint">${escapeHTML(label)}</span>
+        <span class="opt-price">${t('from')} ${hosted.from}</span>
+      </div>`;
+  }
+
+  // Shown above the tiers so the customer knows they are still inside the car
+  // services and can step back out.
+  function tierGroupBackHTML(host, hosted) {
+    return `
+      <button type="button" class="tier-group-back" data-tier-back="${host.id}">
+        ← ${escapeHTML(t('tierGroup.back').replace('{host}', host.name))}
+      </button>
+      <p class="tier-group-lede">${escapeHTML(loc(hosted.tierGroup.description))}</p>`;
   }
 
   function packageIncludesHTML(pkg) {
@@ -2979,12 +3079,34 @@
 
     // C. Render — compare view for tiered categories, else option cards
     const useCompare = cat.compareView && state.pkgType === 'onetime' && pkgs.length >= 2;
+    // Categories sold inside this one (paint protection inside cars) appear as one
+    // extra service card each, after the host's own one-time packages.
+    const hosted = state.pkgType === 'onetime' ? hostedCategories(cat.id) : [];
+    const host = hostCategoryFor(cat);
+
     optGrid.className = useCompare ? 'compare-grid' : 'option-grid';
-    optGrid.innerHTML = useCompare ? compareCardsHTML(pkgs) : pkgs.map(optCardHTML).join('');
+    optGrid.innerHTML = [
+      host ? tierGroupBackHTML(host, cat) : '',
+      useCompare ? compareCardsHTML(pkgs) : pkgs.map(optCardHTML).join(''),
+      hosted.map(tierGroupCardHTML).join('')
+    ].join('');
 
     optGrid.querySelectorAll('[data-id]').forEach(card => {
       bindActivation(card, () => selectPackage(card.dataset.id));
       if (useCompare) attachSpotlight(card);
+    });
+
+    // Entering a hosted category really does change the operational category, so
+    // duration, deposit and add-ons all come from paint_correction from here on.
+    optGrid.querySelectorAll('[data-tier-group]').forEach(card => {
+      bindActivation(card, () => enterCategory(card.dataset.tierGroup));
+      attachSpotlight(card);
+    });
+    optGrid.querySelectorAll('[data-tier-back]').forEach(button => {
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        enterCategory(button.dataset.tierBack);
+      });
     });
     optGrid.querySelectorAll('.package-details').forEach(details => {
       details.addEventListener('click', e => e.stopPropagation());

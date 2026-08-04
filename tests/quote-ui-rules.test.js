@@ -12,6 +12,77 @@ const membershipRules = {
   locationTimeZone: 'America/New_York'
 };
 
+// ── Paint protection as the fifth car service ──────────────────────────────
+
+const carsCategory = {
+  id: 'cars',
+  packages: [
+    { id: 'basico-exterior', isMembership: false },
+    { id: 'basico-premium', isMembership: false },
+    { id: 'premium-detail', isMembership: false },
+    { id: 'vip', isMembership: false },
+    { id: 'membresia-2x', isMembership: true },
+    { id: 'membresia-4x', isMembership: true }
+  ]
+};
+const paintCategory = {
+  id: 'paint_correction',
+  displayIn: 'cars',
+  tierGroup: { id: 'paint-protection', name: { en: 'Paint Protection', es: 'Protección de Pintura' } },
+  packages: [
+    { id: 'paint-enhancement', isMembership: false },
+    { id: 'paint-correction', isMembership: false },
+    { id: 'ceramic-protection', isMembership: false }
+  ]
+};
+const catalogCategories = [carsCategory, paintCategory, { id: 'boats', packages: [{ id: 'boat-basico', isMembership: false }] }];
+
+test('cars offers five one-time services, the fifth being the paint doorway', () => {
+  const cards = ui.serviceCards({ category: carsCategory, categories: catalogCategories, packageType: 'onetime' });
+
+  assert.equal(cards.length, 5, 'four car packages plus one doorway');
+  assert.deepEqual(cards.slice(0, 4).map(card => card.id), [
+    'basico-exterior', 'basico-premium', 'premium-detail', 'vip'
+  ]);
+
+  const fifth = cards[4];
+  assert.equal(fifth.kind, 'tierGroup');
+  assert.equal(fifth.id, 'paint-protection');
+  assert.equal(fifth.categoryId, 'paint_correction');
+  // The three tiers the customer described: $299, $599 and $999.
+  assert.equal(fifth.tierCount, 3);
+});
+
+test('the paint doorway opens onto exactly its three tiers', () => {
+  const cards = ui.serviceCards({ category: paintCategory, categories: catalogCategories, packageType: 'onetime' });
+  assert.deepEqual(cards.map(card => card.id), ['paint-enhancement', 'paint-correction', 'ceramic-protection']);
+  assert.ok(cards.every(card => card.kind === 'package'));
+});
+
+test('paint protection never appears as a category of its own, but keeps its identity', () => {
+  // Step 1 hides it...
+  const topLevel = catalogCategories.filter(category => !category.displayIn).map(category => category.id);
+  assert.deepEqual(topLevel, ['cars', 'boats']);
+  // ...while a customer choosing a paint tier still reads as "inside cars".
+  assert.equal(ui.displayCategoryId(paintCategory), 'cars');
+  assert.equal(ui.displayCategoryId(carsCategory), 'cars');
+  // But the operational category is unchanged, which is what preserves the
+  // full-day duration, the $50 deposit and the paint-specific add-ons.
+  assert.equal(paintCategory.id, 'paint_correction');
+});
+
+test('the membership toggle never shows a doorway', () => {
+  const cards = ui.serviceCards({ category: carsCategory, categories: catalogCategories, packageType: 'membership' });
+  assert.deepEqual(cards.map(card => card.id), ['membresia-2x', 'membresia-4x']);
+  assert.ok(cards.every(card => card.kind === 'package'));
+});
+
+test('a category that hosts nothing is unaffected', () => {
+  const boats = catalogCategories[2];
+  const cards = ui.serviceCards({ category: boats, categories: catalogCategories, packageType: 'onetime' });
+  assert.deepEqual(cards.map(card => card.id), ['boat-basico']);
+});
+
 test('membership notice stays at 48 hours while availability is loading', () => {
   const state = ui.scheduleUiState({
     packages: membershipPackage,

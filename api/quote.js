@@ -27,6 +27,7 @@ const pricing = require('./_lib/pricing.js');
 const time = require('./_lib/time.js');
 const ghl = require('./_lib/ghl.js');
 const agenda = require('./_lib/agenda.js');
+const paymentLinks = require('./_lib/payment-links.js');
 
 const PIPELINE_NAME = 'Pipeline de Servicios';
 const PIPELINE_STAGE_NAME = 'Pendiente de Información';
@@ -462,9 +463,49 @@ async function updateOpportunitySafely(config, metadata, opportunityId, payload,
 
 // ── Deposit ────────────────────────────────────────────────────────────────
 
-// Creates the deposit invoice and returns its hosted payment URL. The holdId
-// travels in the invoice name so the payment webhook can map the payment back to
-// the reservation it confirms.
+// The deposit link for a website booking.
+//
+// Built through the shared payment-links module, so it is composed of the same
+// CRM products the office picks from when it sends a link by hand — instead of the
+// free-text "Booking Deposit" line this used to write, which no report could break
+// down and no operator could reuse.
+//
+// Idempotent on the hold: a retried submit returns the first link rather than
+// invoicing the customer twice. A failure is logged and swallowed, exactly as
+// before — the vans are held either way and the office can still invoice by hand.
+async function createDepositPaymentLink(config, payload, hold, contact) {
+  try {
+    const lines = await paymentLinks.buildLines({
+      purpose: 'booking_deposit',
+      deposit: { amount: payload.deposit },
+      livemode: Boolean(config.depositPaymentsLiveMode)
+    });
+    const link = await paymentLinks.issuePaymentLink({
+      idempotencyKey: `deposit:${hold.holdId}`,
+      purpose: 'booking_deposit',
+      origin: 'web',
+      contact: {
+        id: contact.id,
+        name: payload.customer.name,
+        phone: payload.customer.phone,
+        email: payload.customer.email
+      },
+      lines,
+      holdId: hold.holdId,
+      createdBy: payload.submissionId,
+      config
+    });
+    if (!link.url) return null;
+    return { depositUrl: link.url, depositRef: link.invoiceId };
+  } catch (error) {
+    console.error('[quote] deposit payment link failed', payload.submissionId, error.name || 'Error', error.code || '');
+    return null;
+  }
+}
+
+// TODO(remove-legacy-deposit): the original free-text implementation, kept until
+// the CRM catalog is provisioned in production and the new path has been seen to
+// work against the live sub-account. Nothing calls it.
 async function createDepositPayment(config, payload, hold, contactId) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEPOSIT_PAYMENT_TIMEOUT_MS);
@@ -677,7 +718,7 @@ async function handler(req, res) {
 
       let depositPayment = null;
       if (config.depositPaymentsEnabled) {
-        depositPayment = await createDepositPayment(config, payload, hold, contact.id);
+        depositPayment = await createDepositPaymentLink(config, payload, hold, contact);
       }
       const synced = await updateOpportunitySafely(config, metadata, opportunity.id, payload, hold, {
         bookingStatus: 'pending_payment',

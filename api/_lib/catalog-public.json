@@ -6,7 +6,7 @@
       "id": "cars",
       "name": "Cars & SUVs",
       "image": "assets/service-cars.webp",
-      "from": "$45",
+      "from": "$55",
       "packages": [
         {
           "id": "basico-exterior",
@@ -24,11 +24,11 @@
             "Inspección final de calidad"
           ],
           "prices": {
-            "sedan": 45,
-            "suv": 65,
-            "truck": 85,
-            "van_pequena": 55,
-            "van_xl": 75
+            "sedan": 55,
+            "suv": 75,
+            "truck": 95,
+            "van_pequena": 65,
+            "van_xl": 85
           }
         },
         {
@@ -49,8 +49,8 @@
             "Secado manual con toallas de microfibra"
           ],
           "prices": {
-            "sedan": 75,
-            "suv": 95,
+            "sedan": 85,
+            "suv": 110,
             "truck": 115,
             "van_pequena": 100,
             "van_xl": 140
@@ -76,9 +76,9 @@
             "Protección de pintura hasta por 4 meses"
           ],
           "prices": {
-            "sedan": 125,
-            "suv": 155,
-            "truck": 195
+            "sedan": 185,
+            "suv": 215,
+            "truck": 255
           }
         },
         {
@@ -100,9 +100,9 @@
             "Protección de pintura hasta por 6 meses"
           ],
           "prices": {
-            "sedan": 220,
-            "suv": 250,
-            "truck": 270
+            "sedan": 285,
+            "suv": 315,
+            "truck": 335
           }
         },
         {
@@ -117,11 +117,11 @@
             "Programar con al menos 48 horas de anticipación"
           ],
           "prices": {
-            "sedan": 130,
-            "suv": 160,
-            "truck": 190,
-            "van_pequena": 170,
-            "van_xl": 250
+            "sedan": 150,
+            "suv": 200,
+            "truck": 210,
+            "van_pequena": 180,
+            "van_xl": 260
           }
         },
         {
@@ -136,11 +136,11 @@
             "Programar con al menos 48 horas de anticipación"
           ],
           "prices": {
-            "sedan": 200,
-            "suv": 260,
-            "truck": 320,
-            "van_pequena": 300,
-            "van_xl": 460
+            "sedan": 290,
+            "suv": 390,
+            "truck": 400,
+            "van_pequena": 320,
+            "van_xl": 480
           }
         }
       ],
@@ -251,6 +251,19 @@
       "name": "Paint Correction & Protection",
       "image": "assets/service-paint-correction.webp",
       "from": "$299",
+      "displayIn": "cars",
+      "tierGroup": {
+        "id": "paint-protection",
+        "name": {
+          "en": "Paint Protection",
+          "es": "Protección de Pintura"
+        },
+        "description": {
+          "en": "Gloss enhancement, paint correction and ceramic protection. Three levels of depth.",
+          "es": "Mejora de brillo, corrección de pintura y protección cerámica. Tres niveles de profundidad."
+        },
+        "image": "assets/service-paint-protection.jpg"
+      },
       "packages": [
         {
           "id": "paint-enhancement",
@@ -649,12 +662,6 @@
           ]
         },
         {
-          "id": "cera-rapida",
-          "name": "Cera Rápida",
-          "price": 20,
-          "range": "$20 - $40"
-        },
-        {
           "id": "desengrasado-profundo",
           "name": "Desengrasado Profundo",
           "price": 30,
@@ -668,7 +675,10 @@
         {
           "id": "motor-pesado",
           "name": "Limpieza de Motor",
-          "price": 30
+          "price": 30,
+          "notForGroups": [
+            "trailer"
+          ]
         },
         {
           "id": "volteo-aluminio",
@@ -714,7 +724,12 @@
           "id": "pulido-tanques",
           "name": "Pulido Tanques de Aluminio (Cotiz.)",
           "price": 0,
-          "range": "Cotización personalizada"
+          "range": "Cotización personalizada",
+          "onlyFor": [
+            "semi-truck-wash",
+            "semi-truck-2x",
+            "semi-truck-4x"
+          ]
         }
       ]
     },
