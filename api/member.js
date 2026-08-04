@@ -81,9 +81,19 @@ function tokenFrom(req, body) {
 async function loadContract(config, token) {
   const contractId = signedLink.verify('member', token);
   const ids = await fieldIds(config);
-  const data = await ghl.ghlRequest(config, `/opportunities/${encodeURIComponent(contractId)}`, {
-    version: '2021-07-28'
-  });
+  let data;
+  try {
+    data = await ghl.ghlRequest(config, `/opportunities/${encodeURIComponent(contractId)}`, {
+      version: '2021-07-28'
+    });
+  } catch (error) {
+    // A contract that no longer exists is not an outage. Left as a 502 the member would
+    // read "temporarily unavailable" and retry a link that will never work again.
+    if (error instanceof HighLevelError && error.upstreamStatus === 404) {
+      throw new RequestError('Membership not found', 404, 'MEMBERSHIP_NOT_FOUND');
+    }
+    throw error;
+  }
   return membershipCrm.readContract(data.opportunity || data, ids);
 }
 

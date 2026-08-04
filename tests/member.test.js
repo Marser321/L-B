@@ -260,6 +260,17 @@ test('a link to an opportunity that is not a membership opens nothing', async t 
   assert.equal(res.body.code, 'MEMBERSHIP_NOT_FOUND');
 });
 
+test('a link to a contract that no longer exists says so, rather than looking like an outage', async t => {
+  const ctx = setup({ contracts: { 'opp-membership-gone': null } });
+  t.after(() => ctx.restore());
+
+  const res = await status(ctx, { contractId: 'opp-membership-gone' });
+  // Not a 502: the member would read "temporarily unavailable" and retry a link that
+  // will never work again.
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body.code, 'MEMBERSHIP_NOT_FOUND');
+});
+
 test('a weak secret refuses to sign rather than defaulting', t => {
   const ctx = setup({ env: { MEMBER_LINK_SECRET: 'short' } });
   t.after(() => ctx.restore());
