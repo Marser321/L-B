@@ -15,7 +15,7 @@
 
 const { RequestError, HighLevelError, asValidationError } = require('../_lib/errors.js');
 const { sendJson, readBody, assertSameOrigin, requireIdempotencyKey } = require('../_lib/http.js');
-const { text } = require('../_lib/validate.js');
+const { text, optionalText, normalizePhone, validateEmail } = require('../_lib/validate.js');
 const { normalizeVehicles } = require('../_lib/selection.js');
 const { isValidDateOnly, START_TIME_PATTERN, BUSINESS_DAY } = require('../_lib/time.js');
 const agenda = require('../_lib/agenda.js');
@@ -54,15 +54,32 @@ function validateRequest(body) {
   const startTime = rawStart === 'full_day' ? BUSINESS_DAY.start : rawStart;
   if (!START_TIME_PATTERN.test(startTime)) throw new RequestError('startTime is invalid');
 
-  // requireDescriptor: a hold names the vehicles it is for, so the block slot on
-  // each van's calendar says which vehicle it is holding.
+  // requireDescriptor: a hold names the vehicles it is for, so the appointment on
+  // the van's calendar says which vehicle it is holding.
   const vehicles = normalizeVehicles(body.vehicles, {
     requirePricing: true,
     requireDescriptor: true,
     language: body.language === 'es' ? 'es' : 'en'
   });
 
-  return { date, startTime, vehicles };
+  // The hold's footprint in HighLevel is an APPOINTMENT, and appointments need a
+  // contact — so a hold now carries the customer. The wizard already has these
+  // fields validated in the same step it picks a time, so nothing new is being
+  // asked of the customer; the browser simply has to send what it already holds.
+  // Same shape and same limits as /api/quote, so a cart cannot be held under one
+  // identity and booked under another.
+  const customer = (body && body.customer) || {};
+  const contact = {
+    name: text(customer.name, 'customer.name', 2, 100),
+    phone: normalizePhone(customer.phone),
+    email: validateEmail(customer.email),
+    address: text(customer.address, 'customer.address', 4, 160),
+    unit: optionalText(customer.unit, 'customer.unit', 40),
+    city: text(customer.city, 'customer.city', 2, 80),
+    zip: text(customer.zip, 'customer.zip', 5, 10)
+  };
+
+  return { date, startTime, vehicles, customer: contact };
 }
 
 async function handler(req, res) {

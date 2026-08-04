@@ -2554,6 +2554,19 @@
           date: state.schedule.date,
           startTime: state.schedule.timeWindow,
           language: LANG,
+          // The hold reserves the van as a real appointment in the CRM, and an
+          // appointment needs a contact. These fields are already filled and
+          // validated by contactValid() before this runs — step 4 holds both the
+          // customer and the calendar — so sending them costs the customer nothing.
+          customer: {
+            name: state.schedule.name,
+            phone: state.schedule.phone,
+            email: state.schedule.email,
+            address: state.schedule.address,
+            unit: state.schedule.unit || '',
+            city: state.schedule.city,
+            zip: state.schedule.zip
+          },
           vehicles: holdVehicles()
         })
       });

@@ -54,7 +54,7 @@ function createGhlStub(options = {}) {
     created: [],
     deleted: [],
     calendarEvents: options.calendarEvents || {},
-    blockSlotFailsAt: options.blockSlotFailsAt ?? null,
+    appointmentFailsAt: options.appointmentFailsAt ?? null,
     deleteFails: options.deleteFails || false,
     contactId: options.contactId || 'contact-1',
     opportunityId: options.opportunityId || 'opp-1',
@@ -93,20 +93,55 @@ function createGhlStub(options = {}) {
       return json({ events });
     }
 
+    // Block slots are gone from the agenda: the real sub-account answers 400 "The
+    // calendar is not an event calendar." on every van, because the vans are Personal
+    // calendars. The fake says the same thing so nothing can quietly start using them
+    // again and pass its tests.
     if (method === 'POST' && path === '/calendars/events/block-slots') {
-      const index = state.created.length;
-      if (state.blockSlotFailsAt != null && index >= state.blockSlotFailsAt) {
-        return json({ message: 'calendar unavailable' }, 500);
-      }
-      const id = `block-${index + 1}`;
-      state.created.push({ kind: 'block', id, calendarId: body.calendarId, body });
-      return json({ id, ...body });
+      return json({ message: 'The calendar is not an event calendar.', statusCode: 400 }, 400);
     }
 
     if (method === 'POST' && path === '/calendars/events/appointments') {
-      const id = `appt-${state.created.filter(entry => entry.kind === 'appointment').length + 1}`;
+      const index = state.created.filter(entry => entry.kind === 'appointment').length;
+      if (state.appointmentFailsAt != null && index >= state.appointmentFailsAt) {
+        return json({ message: 'calendar unavailable' }, 500);
+      }
+      // HighLevel's own slot validation, which the agenda now relies on instead of
+      // block slots. Verified against the live sub-account on 2026-08-04: an
+      // overlapping appointment is refused with this exact message, and concurrent
+      // attempts serialize so only one wins. `ignoreFreeSlotValidation: true` waives
+      // it — that is how a status update on an existing appointment gets through.
+      if (body.ignoreFreeSlotValidation !== true) {
+        const start = Date.parse(body.startTime);
+        const end = Date.parse(body.endTime);
+        const clash = state.created.some(entry =>
+          entry.kind === 'appointment' &&
+          !state.deleted.includes(entry.id) &&
+          entry.calendarId === body.calendarId &&
+          Date.parse(entry.body.startTime) < end &&
+          start < Date.parse(entry.body.endTime)
+        ) || (state.calendarEvents[body.calendarId] || []).some(event =>
+          event.start < end && start < event.end
+        );
+        if (clash) {
+          return json({ message: 'The slot you have selected is no longer available.', statusCode: 400 }, 400);
+        }
+      }
+      const id = `appt-${index + 1}`;
       state.created.push({ kind: 'appointment', id, calendarId: body.calendarId, body });
       return json({ id, ...body });
+    }
+
+    // Status/label updates on an existing appointment. Confirming a booking is now a
+    // PUT rather than a create-then-delete, so the fake has to answer it — without
+    // this, every confirmation logged a failure and the tests still passed because
+    // they only inspected the recorded call.
+    if (method === 'PUT' && path.startsWith('/calendars/events/appointments/')) {
+      const id = decodeURIComponent(path.split('/').pop());
+      const existing = state.created.find(entry => entry.kind === 'appointment' && entry.id === id);
+      if (!existing) return json({ message: 'Appointment not found' }, 404);
+      existing.body = { ...existing.body, ...body };
+      return json({ id, ...existing.body });
     }
 
     if (method === 'DELETE' && path.startsWith('/calendars/events/')) {

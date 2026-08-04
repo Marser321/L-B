@@ -347,39 +347,10 @@ function opportunityFieldValue(opportunity, fieldId) {
 
 // ── HighLevel writes ───────────────────────────────────────────────────────
 
-function splitName(fullName) {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
-  return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] };
-}
-
-async function upsertContact(config, payload) {
-  const names = splitName(payload.customer.name);
-  const contactBody = {
-    locationId: config.locationId,
-    name: payload.customer.name,
-    firstName: names.firstName,
-    lastName: names.lastName,
-    phone: payload.customer.phone,
-    address1: payload.customer.address,
-    city: payload.customer.city,
-    postalCode: payload.customer.zip,
-    country: 'US',
-    source: 'L&B Website Booking',
-    assignedTo: config.assignedUserId,
-    createNewIfDuplicateAllowed: false
-  };
-  if (payload.customer.email) contactBody.email = payload.customer.email;
-
-  const contactResult = await ghl.ghlRequest(config, '/contacts/upsert', {
-    method: 'POST',
-    version: '2021-07-28',
-    body: contactBody
-  });
-  const contact = contactResult.contact || contactResult;
-  if (!contact || !contact.id) throw new HighLevelError(502);
-  return contact;
-}
+// Both live in ghl.js now: the hold needs the same upsert, because a hold is an
+// appointment and an appointment needs a contact.
+const splitName = ghl.splitName;
+const upsertContact = (config, payload) => ghl.upsertContact(config, payload.customer);
 
 async function findOpportunityBySubmission(config, metadata, contactId, submissionId) {
   const searchParams = new URLSearchParams({

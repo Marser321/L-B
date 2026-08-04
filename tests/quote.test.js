@@ -318,7 +318,7 @@ test('a booking holds the vans, records the CRM, and stays pending until payment
 
   // The CRM got a contact, an opportunity in the PENDING stage, and the one van
   // blocked for both vehicles.
-  const blocks = ctx.ghl.created.filter(entry => entry.kind === 'block');
+  const blocks = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
   assert.equal(blocks.length, 2, 'one block per vehicle, back to back');
   assert.equal(new Set(blocks.map(block => block.calendarId)).size, 1, 'all on the same van calendar');
   const opportunity = ctx.ghl.created.find(entry => entry.kind === 'opportunity');
@@ -354,7 +354,9 @@ test('a booking adopts a hold the browser already owns, and refuses a mismatched
     vehicles: [{
       packageId: 'premium-detail', sizeId: 'sedan', addonIds: ['limpieza-motor'],
       vehicle: { make: 'Toyota', model: 'Camry', year: 2024 }
-    }]
+    }],
+    // A hold is an appointment now, so it carries the contact it belongs to.
+    customer: payload().customer
   }, { headers: { 'idempotency-key': 'adopt-00000001' } });
   assert.equal(held.statusCode, 201);
 
@@ -495,7 +497,8 @@ test('a timed-out calendar read is retried, but a failed write never is', async 
   let blockPosts = 0;
   const stubFetch = globalThis.fetch;
   globalThis.fetch = async (url, options = {}) => {
-    if (String(url).endsWith('/calendars/events/block-slots')) {
+    // The hold reserves the van with an APPOINTMENT now, not a block slot.
+    if (String(url).endsWith('/calendars/events/appointments') && (options.method || 'GET').toUpperCase() === 'POST') {
       blockPosts += 1;
       return { ok: false, status: 503, json: async () => ({}) };
     }

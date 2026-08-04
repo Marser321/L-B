@@ -237,41 +237,133 @@ async function createCalendarEvent(config, { calendarId, contactId, title, descr
   };
 }
 
-// The hold's footprint in HighLevel.
+function splitName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] };
+}
+
+// One contact per customer, matched on phone/email by HighLevel itself.
 //
-// A hold happens before we know who the customer is, and HighLevel appointments
-// require a contact — so a hold is written as a BLOCK SLOT instead, the same
-// primitive the office uses to mark a van unavailable. That is what stops someone
-// booking the van by hand into a slot the website has already promised (rule: the
-// hold must block the external calendar too).
-//
-// Endpoint: POST /calendars/events/block-slots, Version 2021-07-28. On
-// confirmation the real appointment is created first and the block removed after
-// (see agenda.confirmPayment), so the van is never momentarily free.
-async function createBlockSlot(config, { calendarId, title, startTime, endTime, assignedUserId }) {
-  const result = await ghlRequest(config, '/calendars/events/block-slots', {
+// Lives here rather than in quote.js because the hold needs it too: a hold is now an
+// appointment, and an appointment needs a contact. Upserting twice for one booking is
+// harmless — `createNewIfDuplicateAllowed: false` means the second call returns the
+// same contact instead of minting a duplicate.
+async function upsertContact(config, customer) {
+  const names = splitName(customer.name);
+  const body = {
+    locationId: config.locationId,
+    name: customer.name,
+    firstName: names.firstName,
+    lastName: names.lastName,
+    phone: customer.phone,
+    address1: customer.address,
+    city: customer.city,
+    postalCode: customer.zip,
+    country: 'US',
+    source: 'L&B Website Booking',
+    assignedTo: config.assignedUserId,
+    createNewIfDuplicateAllowed: false
+  };
+  if (customer.email) body.email = customer.email;
+
+  const result = await ghlRequest(config, '/contacts/upsert', {
     method: 'POST',
     version: CALENDAR_API_VERSION,
+    body
+  });
+  const contact = result.contact || result;
+  if (!contact || !contact.id) throw new HighLevelError(502);
+  return contact;
+}
+
+// The hold's footprint in HighLevel: an appointment in the `new` status.
+//
+// This used to be a BLOCK SLOT, on the reasoning that a hold happens before the
+// customer is known and appointments require a contact. Both halves were wrong:
+//
+//   · Block slots DO NOT WORK on these calendars. Verified against the live
+//     sub-account on 2026-08-04: `POST /calendars/events/block-slots` answers
+//     400 "The calendar is not an event calendar." on every van, with API versions
+//     2021-07-28 and 2021-04-15. The vans are Personal calendars; block slots need
+//     an event calendar. Every hold has been failing in production because of it.
+//   · The customer IS known by then. The contact fields live in the same wizard
+//     step as the calendar and are validated before the hold is attempted, so the
+//     hold can upsert the contact and use it.
+//
+// `ignoreFreeSlotValidation` is deliberately FALSE, which is the other half of the
+// change. HighLevel then refuses an overlapping appointment itself — 400 "The slot
+// you have selected is no longer available." — and it serializes concurrent
+// attempts (4 racing requests, exactly 1 winner, three runs, verified). That makes
+// the CRM a real guard rather than a mirror, which is what lets Postgres go
+// (see DISENO-SIN-BASE-DE-DATOS.md).
+//
+// `ignoreDateRange` stays TRUE: the website owns the notice and grid rules
+// (30-minute starts, per-cart lengths, 48h for memberships), and they are already
+// enforced server-side in catalog.js.
+async function createHoldAppointment(config, { calendarId, contactId, title, description, address, startTime, endTime, assignedUserId }) {
+  const result = await ghlRequest(config, '/calendars/events/appointments', {
+    method: 'POST',
+    version: CALENDAR_API_VERSION,
+    // Needed only so isSlotTakenError can tell "the van just went" apart from a
+    // genuine integration fault. The message is regex-matched and never returned to
+    // the browser, and safeDiagnosticMessage has already redacted emails, phone
+    // numbers, secrets and long identifiers out of it.
+    diagnostic: true,
     body: {
       calendarId,
       locationId: config.locationId,
+      contactId,
       title: String(title).slice(0, 160),
+      // `new` is the hold; a verified payment promotes it to `confirmed`.
+      appointmentStatus: 'new',
+      ...(description ? { description } : {}),
+      ...(address ? { address, meetingLocationType: 'address', overrideLocationConfig: true } : {}),
       startTime,
       endTime,
+      ignoreDateRange: true,
+      ignoreFreeSlotValidation: false,
+      toNotify: false,
       assignedUserId: assignedUserId || config.assignedUserId
     }
   });
-  const event = result.event || result;
-  if (!event || !event.id) throw new HighLevelError(502);
-  return { id: event.id, startTime, endTime };
+  const appointment = result.appointment || result;
+  if (!appointment || !appointment.id) throw new HighLevelError(502);
+  return { id: appointment.id, startTime, endTime };
 }
 
-async function updateCalendarEventStatus(config, eventId, status) {
+// HighLevel's refusal when the van is already taken for that window. Distinguished
+// from every other 400 so the caller can answer "that slot just went" (409) instead
+// of "the CRM is broken" (502).
+const SLOT_TAKEN_PATTERN = /slot .*(no longer available|not available|already)/i;
+
+function isSlotTakenError(error) {
+  return error instanceof HighLevelError &&
+    error.upstreamStatus === 400 &&
+    SLOT_TAKEN_PATTERN.test(String(error.diagnosticMessage || ''));
+}
+
+// Moves an existing appointment along the status machine, optionally relabelling
+// it. `ignoreFreeSlotValidation` is TRUE here on purpose and it is not the same
+// decision as on creation: the slot is ALREADY ours, so re-validating it against
+// itself is what would fail. Creation is the step that must be validated.
+async function updateCalendarEvent(config, eventId, { status, title, description } = {}) {
   await ghlRequest(config, `/calendars/events/appointments/${encodeURIComponent(eventId)}`, {
     method: 'PUT',
     version: CALENDAR_API_VERSION,
-    body: { appointmentStatus: status }
+    body: {
+      ...(status ? { appointmentStatus: status } : {}),
+      ...(title ? { title: String(title).slice(0, 160) } : {}),
+      ...(description ? { description } : {}),
+      ignoreFreeSlotValidation: true,
+      ignoreDateRange: true,
+      toNotify: false
+    }
   });
+}
+
+function updateCalendarEventStatus(config, eventId, status) {
+  return updateCalendarEvent(config, eventId, { status });
 }
 
 async function deleteCalendarEvent(config, eventId) {
@@ -312,8 +404,12 @@ module.exports = {
   isTransientGhlError,
   busyIntervalsForCalendar,
   busyIntervalsByResource,
-  createBlockSlot,
+  upsertContact,
+  splitName,
+  createHoldAppointment,
+  isSlotTakenError,
   createCalendarEvent,
+  updateCalendarEvent,
   updateCalendarEventStatus,
   deleteCalendarEvent,
   deleteCalendarEventsQuietly

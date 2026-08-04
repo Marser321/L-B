@@ -175,6 +175,11 @@ test('the endpoint exposes reschedule to the customer, without the office token'
   assert.equal(res.body.crew.length, 1);
 });
 
+const HOLD_CUSTOMER = Object.freeze({
+  name: 'Jane Driver', phone: '(239) 555-0100', email: 'jane@example.com',
+  address: '1234 Palm Ave', city: 'Fort Myers', zip: '33901'
+});
+
 // ── Manual payment ─────────────────────────────────────────────────────────
 
 test('a payment taken in cash confirms the booking, once', async t => {
@@ -183,7 +188,9 @@ test('a payment taken in cash confirms the booking, once', async t => {
 
   const held = await callHandler(holdsHandler, {
     date: nextWeekday(7), startTime: '09:00',
-    vehicles: [{ packageId: 'premium-detail', sizeId: 'sedan', addonIds: [], vehicle: { make: 'Toyota', model: 'Camry', year: 2024 } }]
+    vehicles: [{ packageId: 'premium-detail', sizeId: 'sedan', addonIds: [], vehicle: { make: 'Toyota', model: 'Camry', year: 2024 } }],
+    // A hold is an appointment now, and an appointment needs a contact.
+    customer: HOLD_CUSTOMER
   }, { headers: { 'idempotency-key': 'manual-pay-0001' } });
   assert.equal(held.statusCode, 201);
   assert.equal(held.body.deposit, 30);
@@ -213,7 +220,8 @@ test('recording less than the deposit does not confirm anything', async t => {
 
   const held = await callHandler(holdsHandler, {
     date: nextWeekday(7), startTime: '09:00',
-    vehicles: [{ packageId: 'semi-truck-wash', sizeId: 'standard', addonIds: [], vehicle: { make: 'Freightliner', model: 'Cascadia', year: 2021 } }]
+    vehicles: [{ packageId: 'semi-truck-wash', sizeId: 'standard', addonIds: [], vehicle: { make: 'Freightliner', model: 'Cascadia', year: 2021 } }],
+    customer: HOLD_CUSTOMER
   }, { headers: { 'idempotency-key': 'manual-short-01' } });
   assert.equal(held.body.deposit, 50);
 
@@ -251,7 +259,9 @@ test('a manual payment is recorded through the same verified-payment path', asyn
 
   const held = await callHandler(holdsHandler, {
     date: nextWeekday(7), startTime: '09:00',
-    vehicles: [{ packageId: 'premium-detail', sizeId: 'sedan', addonIds: [], vehicle: { make: 'Toyota', model: 'Camry', year: 2024 } }]
+    vehicles: [{ packageId: 'premium-detail', sizeId: 'sedan', addonIds: [], vehicle: { make: 'Toyota', model: 'Camry', year: 2024 } }],
+    // A hold is an appointment now, and an appointment needs a contact.
+    customer: HOLD_CUSTOMER
   }, { headers: { 'idempotency-key': 'manual-audit-01' } });
 
   await callHandler(manualPaymentHandler, {

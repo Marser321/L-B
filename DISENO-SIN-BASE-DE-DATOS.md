@@ -53,12 +53,18 @@ Esto resuelve de paso **el segundo bug encontrado el 4 de agosto**: el hold de h
 calendar."` en los calendarios de camioneta (son tipo *Personal*). Las citas sí
 funcionan. El hold pasa a ser una cita en estado `new`.
 
-### Requisito nuevo: el contacto se crea antes de elegir el horario
+### El contacto ya está disponible en el momento del hold
 
-Una cita exige `contactId`, y hoy el hold ocurre antes de saber quién es el cliente.
-Hay que mover la captura de nombre/teléfono/email **antes** del paso de calendario.
-No es una pérdida: es el orden habitual en cualquier reserva, y elimina el
-placeholder-y-reasignar, que es frágil.
+Una cita exige `contactId`, así que la primera lectura de esto fue "hay que reordenar el
+wizard". **No hace falta.** Los campos del cliente viven en el **paso 4**, junto al
+calendario, y el hold se toma al **salir** del paso 4 (`script.js`, `acquireTemporaryHold`).
+`contactValid()` ya exige nombre, teléfono, email, calle, ciudad y código postal antes de
+habilitar el botón.
+
+Los datos están completos y validados cuando se pide el hold; el frontend simplemente no
+los estaba enviando. El hold pasa a crear el contacto (`/contacts/upsert`, que ya se usa
+en `quote.js`) y con ese `contactId` crea la cita. Nada de contactos placeholder que
+después hay que reasignar.
 
 ### Expiración perezosa, sin cron frecuente
 

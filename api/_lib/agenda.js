@@ -356,12 +356,17 @@ function assertBookable(window, vehicles, date, now, timezone) {
   }
 }
 
-// Creates a 15-minute hold over N vans, or fails without leaving a trace.
+// Creates a 15-minute hold on ONE van, or fails without leaving a trace.
 //
 // Returns { replayed: true, ... } when the same Idempotency-Key already produced a
 // hold for the same request, so a browser that retries a dropped response gets its
-// original hold back instead of a second set of vans.
-async function acquireHold({ idempotencyKey, date, startTime, vehicles, now = Date.now(), config = null }) {
+// original hold back instead of a second van.
+//
+// `customer` is required now: the hold's footprint in HighLevel is an appointment,
+// and appointments need a contact. The wizard already has the customer validated by
+// the time it asks for a hold, so this costs the caller nothing — see the note on
+// ghl.createHoldAppointment.
+async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer = null, now = Date.now(), config = null }) {
   const activeConfig = config || ghl.getConfig();
   const repository = getRepository();
   const timezone = time.bookingTimezone();
@@ -541,7 +546,13 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, now = Da
 
   // Committed. Now block the vans' own calendars so the office cannot book over a
   // slot the website has promised.
-  await blockExternalCalendars({
+  // The contact has to exist before the appointment that references it. Done after
+  // the transaction commits, like every other network call in this file.
+  const contact = customer ? await ghl.upsertContact(activeConfig, customer) : null;
+
+  await reserveExternalCalendars({
+    contactId: contact ? contact.id : null,
+    address: customer ? customer.address : '',
     repository,
     config: activeConfig,
     hold: outcome.hold,
@@ -552,25 +563,41 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, now = Da
   return { ...describeHold(outcome.hold, outcome.assignments), replayed: false };
 }
 
-// Writes one block slot per van and records its id. If ANY of them fails, every
-// block created for this hold is deleted again and the hold is marked failed, so
-// the fleet is never left partially blocked by a reservation that doesn't exist.
-async function blockExternalCalendars({ repository, config, hold, allocations, assignments }) {
+// Writes one `new` appointment per vehicle on the van's calendar and records its
+// id. If ANY of them fails, every appointment created for this hold is deleted
+// again and the hold is marked failed, so the fleet is never left partially
+// reserved by a booking that does not exist.
+//
+// These used to be block slots, which HighLevel rejects outright on the vans'
+// Personal calendars — see the note on ghl.createHoldAppointment. Appointments also
+// bring their own conflict validation, so HighLevel refusing one is meaningful: the
+// van went to someone else between our read and our write. That is a 409 for the
+// customer ("that slot just went, pick another"), not a 503 ("we are broken").
+async function reserveExternalCalendars({ repository, config, hold, allocations, assignments, contactId, address }) {
   const created = [];
   try {
     for (const allocation of allocations) {
       const assignment = assignments.find(entry => entry.vehicleIndex === allocation.vehicleIndex);
-      const event = await ghl.createBlockSlot(config, {
+      const event = await ghl.createHoldAppointment(config, {
         calendarId: allocation.calendarId,
-        title: `HOLD — ${assignment ? assignment.vehicleLabel : 'website booking'}`,
+        contactId,
+        address,
+        title: `RESERVA (sin pagar) — ${assignment ? assignment.vehicleLabel : 'website booking'}`,
+        description: `Hold ${hold.id} · expira ${new Date(hold.expiresAtMs).toISOString()}`,
         startTime: new Date(allocation.startsAtMs).toISOString(),
         endTime: new Date(allocation.endsAtMs).toISOString()
       });
       created.push({ allocation, assignment, eventId: event.id });
     }
   } catch (error) {
-    console.error('[agenda] external hold failed', hold.id, error.name || 'Error', error.statusCode || 502);
-    await compensateHold({ repository, config, hold, createdEvents: created.map(entry => entry.eventId) });
+    const taken = ghl.isSlotTakenError(error);
+    console.error('[agenda] external hold failed', hold.id, error.name || 'Error', taken ? 'slot-taken' : (error.statusCode || 502));
+    await compensateHold({
+      repository, config, hold,
+      createdEvents: created.map(entry => entry.eventId),
+      reason: taken ? 'slot_taken_upstream' : 'external_calendar_failed'
+    });
+    if (taken) throw new SlotUnavailableError();
     throw new RequestError('Could not reserve the crew calendars — please try again', 503);
   }
 
@@ -729,42 +756,37 @@ async function confirmPayment({ provider, externalEventId, eventType, outcome, h
   });
 
   if (result.confirmed && config) {
-    await promoteBlocksToAppointments({ repository, config, hold, result });
+    await confirmExternalAppointments({ repository, config, hold, result });
   }
   return result;
 }
 
-// Once paid, each van's block slot becomes a real appointment with the customer on
-// it. The appointment is created BEFORE the block is deleted, so the van is never
-// momentarily free for someone to book into. A leftover block (delete failed) is
-// harmless: it blocks a van that is genuinely busy.
-async function promoteBlocksToAppointments({ repository, config, hold, result }) {
+// Promotes the hold's appointments to `confirmed` once a payment is verified.
+//
+// This used to CREATE a real appointment and then delete the block slot it
+// replaced. Now the hold already IS the appointment, so confirming is a status
+// change on an object that exists — no create, no delete, and no window in which
+// the van looks free to someone else. It also cannot fail on a slot conflict,
+// because the slot is already ours.
+async function confirmExternalAppointments({ repository, config, hold, result }) {
   const parent = await repository.getBooking(result.parentBookingId);
   const customer = (parent && parent.customer) || {};
-  const contactId = result.contactId;
-  if (!contactId) return;
 
   for (const assignment of result.assignments) {
-    const blockEventId = assignment.externalEventId;
+    if (!assignment.externalEventId) continue;
     try {
-      const appointment = await ghl.createCalendarEvent(config, {
-        calendarId: assignment.calendarId,
-        contactId,
+      await ghl.updateCalendarEvent(config, assignment.externalEventId, {
+        status: 'confirmed',
+        // Drops the "sin pagar" label the hold carried, so the crew's calendar
+        // shows what the crew needs to see.
         title: `${assignment.vehicleLabel} — ${customer.name || 'Website booking'}`,
-        description: `[Booking ${result.parentBookingId}] vehicle ${assignment.vehicleIndex + 1} of ${result.assignments.length}`,
-        address: customer.address || '',
-        startTime: new Date(assignment.startsAtMs).toISOString(),
-        endTime: new Date(assignment.endsAtMs).toISOString()
+        description: `[Booking ${result.parentBookingId}] vehículo ${assignment.vehicleIndex + 1} de ${result.assignments.length}${customer.address ? ` · ${customer.address}` : ''}`
       });
-      await repository.transaction([`day:${hold.slotDate}`], async tx => {
-        await tx.setAssignmentExternalEvent(assignment.id, appointment.id, assignment.calendarId);
-      });
-      if (blockEventId) await ghl.deleteCalendarEventsQuietly(config, [blockEventId]);
     } catch (error) {
-      // The booking is paid and confirmed in Postgres; the block slot is still in
-      // place, so the van stays reserved. Only the nicer-looking appointment is
-      // missing, and that is a CRM cosmetic the office can fix.
-      console.error('[agenda] appointment promotion failed', result.parentBookingId, assignment.id, error.name || 'Error');
+      // The booking is paid and confirmed in Postgres, and the appointment is still
+      // on the van's calendar holding the slot — only its status and label are
+      // stale. That is a CRM cosmetic the office can fix, never a lost van.
+      console.error('[agenda] appointment confirmation failed', result.parentBookingId, assignment.id, error.name || 'Error');
     }
   }
 }
@@ -824,7 +846,7 @@ async function confirmHoldForMembership({ holdId, reason, now = Date.now(), conf
   });
 
   if (config && result.contactId) {
-    await promoteBlocksToAppointments({ repository, config, hold, result });
+    await confirmExternalAppointments({ repository, config, hold, result });
   }
   return result;
 }

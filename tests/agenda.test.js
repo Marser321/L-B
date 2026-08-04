@@ -42,8 +42,22 @@ function membership() {
   };
 }
 
-function holdRequest(vehicles, { date = DATE, startTime = '09:00' } = {}) {
-  return { date, startTime, vehicles };
+function holdRequest(vehicles, { date = DATE, startTime = '09:00', customer } = {}) {
+  return {
+    date,
+    startTime,
+    vehicles,
+    // A hold reserves the van as a real appointment, and an appointment needs a
+    // contact. The wizard has these validated before it asks for a hold.
+    customer: customer || {
+      name: 'Jane Driver',
+      phone: '(239) 555-0100',
+      email: 'jane@example.com',
+      address: '1234 Palm Ave',
+      city: 'Fort Myers',
+      zip: '33901'
+    }
+  };
 }
 
 function withKey(key) {
@@ -78,7 +92,7 @@ test('one to four vehicles all ride on ONE van, and a fifth is rejected with 422
       }
 
       // One calendar, one van, and the whole visit blocked on it.
-      const blocked = ctx.ghl.created.filter(entry => entry.kind === 'block');
+      const blocked = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
       assert.equal(new Set(blocked.map(entry => entry.calendarId)).size, 1);
       blocked.forEach(entry => assert.ok(CALENDARS.includes(entry.calendarId)));
     } finally {
@@ -190,7 +204,7 @@ test('two requests racing for the last van: one wins, the other gets 409 and lea
   assert.equal(store.bookings.filter(booking => !booking.parentBookingId).length, 4);
   assert.equal(store.bookings.filter(booking => booking.parentBookingId).length, 4);
   // And it blocked no extra calendars.
-  assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'block').length, 4);
+  assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'appointment').length, 4);
 });
 
 test('a parent reservation with one child booking per vehicle, all on one van', async t => {
@@ -262,30 +276,54 @@ test('rotation skips vans that are busy and only ever picks free ones', async t 
   assert.equal(res.body.assignments[0].resource, 'camioneta_3');
 });
 
-test('a hold blocks the vans in HighLevel so the office cannot book over it', async t => {
+test('a hold reserves the van in HighLevel so the office cannot book over it', async t => {
   const ctx = setupAgenda();
   t.after(() => ctx.restore());
 
   const res = await callHandler(holdsHandler, holdRequest([car(0), car(1)]), withKey('block-00000001'));
   assert.equal(res.statusCode, 201);
 
-  const blocks = ctx.ghl.created.filter(entry => entry.kind === 'block');
-  assert.equal(blocks.length, 2);
-  blocks.forEach(block => {
-    assert.match(block.body.title, /^HOLD — /);
-    assert.equal(block.body.locationId, 'loc-1');
+  const held = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
+  assert.equal(held.length, 2);
+  held.forEach(entry => {
+    assert.match(entry.body.title, /^RESERVA \(sin pagar\) — /);
+    assert.equal(entry.body.locationId, 'loc-1');
+    // Unpaid until a verified payment says otherwise.
+    assert.equal(entry.body.appointmentStatus, 'new');
+    // The contact exists by hold time, which is what makes an appointment possible.
+    assert.equal(entry.body.contactId, 'contact-1');
+    // THE decision that lets Postgres go: HighLevel validates the slot itself.
+    assert.equal(entry.body.ignoreFreeSlotValidation, false);
   });
+  // One address, one van, one calendar.
+  assert.equal(new Set(held.map(entry => entry.calendarId)).size, 1);
 
-  // The block id is recorded on both the allocation and the assignment, which is
-  // what lets expiry and compensation clean them up later.
+  // The appointment id is recorded on both the allocation and the assignment, which
+  // is what lets expiry and compensation clean them up later.
   const store = ctx.repository.__store();
-  store.allocations.forEach(allocation => assert.match(allocation.externalEventId, /^block-/));
-  store.assignments.forEach(assignment => assert.match(assignment.externalEventId, /^block-/));
+  store.allocations.forEach(allocation => assert.match(allocation.externalEventId, /^appt-/));
+  store.assignments.forEach(assignment => assert.match(assignment.externalEventId, /^appt-/));
 });
 
-test('a failed calendar block compensates every event already created and frees the slot', async t => {
-  // Two vans block fine, the third fails.
-  const ctx = setupAgenda({ blockSlotFailsAt: 2 });
+test('block slots are never used: the vans reject them outright', async t => {
+  const ctx = setupAgenda();
+  t.after(() => ctx.restore());
+
+  // The vans are Personal calendars and answer 400 "The calendar is not an event
+  // calendar." Every hold used to fail in production because of it, so nothing may
+  // go back to using them.
+  const res = await callHandler(holdsHandler, holdRequest([car(0)]), withKey('noblocks-0001'));
+  assert.equal(res.statusCode, 201);
+  assert.equal(
+    ctx.ghl.calls.some(call => call.path === '/calendars/events/block-slots'),
+    false,
+    'the agenda must not call the block-slots endpoint'
+  );
+});
+
+test('a failed calendar write compensates every appointment already created and frees the slot', async t => {
+  // Two vehicles reserve fine, the third fails.
+  const ctx = setupAgenda({ appointmentFailsAt: 2 });
   t.after(() => ctx.restore());
 
   const res = await callHandler(
@@ -299,7 +337,7 @@ test('a failed calendar block compensates every event already created and frees 
 
   // Both blocks that did get created were deleted again — no van is left blocked
   // by a reservation that does not exist.
-  assert.deepEqual(ctx.ghl.deleted.sort(), ['block-1', 'block-2']);
+  assert.deepEqual(ctx.ghl.deleted.sort(), ['appt-1', 'appt-2']);
 
   const store = ctx.repository.__store();
   assert.equal(store.holds[0].status, 'failed');
@@ -313,7 +351,7 @@ test('a failed calendar block compensates every event already created and frees 
   assert.equal(busy.length, 0);
 });
 
-test('a hold expires after 15 minutes: the vans come back and their blocks are removed', async t => {
+test('a hold expires after 15 minutes: the van comes back and its appointments are removed', async t => {
   const ctx = setupAgenda();
   t.after(() => ctx.restore());
 
@@ -335,7 +373,7 @@ test('a hold expires after 15 minutes: the vans come back and their blocks are r
   assert.equal(store.holds[0].status, 'expired');
   store.assignments.forEach(assignment => assert.equal(assignment.status, 'released'));
   store.bookings.forEach(booking => assert.equal(booking.status, 'expired'));
-  assert.deepEqual(ctx.ghl.deleted.sort(), ['block-1', 'block-2']);
+  assert.deepEqual(ctx.ghl.deleted.sort(), ['appt-1', 'appt-2']);
 
   // The slot is free again for the next customer.
   const busy = await ctx.repository.busyAssignments({ fromMs: 0, toMs: Date.now() + 1e11 });
@@ -656,10 +694,22 @@ test('a booking is confirmed only by a verified payment, and confirming is idemp
   assert.equal(replay.alreadyProcessed, true);
   assert.equal(ctx.repository.__store().ledger.length, 0);
 
-  // Confirmation turns each block slot into a real appointment on the same van.
+  // Confirmation is a STATUS CHANGE on the appointments the hold already created —
+  // nothing new is created and nothing is deleted. That is the point: there is no
+  // moment where the van looks free between deleting a hold and writing a booking.
   const appointments = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
-  assert.equal(appointments.length, 2);
-  assert.deepEqual(ctx.ghl.deleted.sort(), ['block-1', 'block-2']);
+  assert.equal(appointments.length, 2, 'the two hold appointments, and no more');
+  assert.deepEqual(ctx.ghl.deleted, [], 'confirming deletes nothing');
+
+  // Each one was promoted to confirmed and relabelled away from "sin pagar".
+  const updates = ctx.ghl.calls.filter(call =>
+    call.method === 'PUT' && call.path.startsWith('/calendars/events/appointments/')
+  );
+  assert.equal(updates.length, 2);
+  updates.forEach(update => {
+    assert.equal(update.body.appointmentStatus, 'confirmed');
+    assert.equal(/sin pagar/.test(update.body.title || ''), false);
+  });
 });
 
 test('a failed payment releases every van immediately', async t => {
