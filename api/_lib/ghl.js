@@ -202,11 +202,11 @@ async function busyIntervalsByResource(config, startMs, endMs) {
   ));
 }
 
-// Creates the blocking appointment for ONE vehicle on ONE van's calendar.
-// ignoreFreeSlotValidation is on because the website owns the grid (30-minute
-// starts, per-vehicle lengths) — a shape HighLevel's own slot validation cannot
-// express. Postgres already decided this van is free; this call is what stops a
-// human in the CRM from double-booking it.
+// Creates a confirmed appointment on a van's calendar. Used by the membership sync,
+// which writes a visit that is already paid for and already allocated, so
+// `ignoreFreeSlotValidation` stays on here: the slot was decided upstream and
+// re-validating it would only reject our own reservation. The website's booking path
+// does NOT come through here — it uses createHoldAppointment, which validates.
 async function createCalendarEvent(config, { calendarId, contactId, title, description, address, startTime, endTime, status = 'confirmed' }) {
   const result = await ghlRequest(config, '/calendars/events/appointments', {
     method: 'POST',
@@ -301,7 +301,7 @@ async function upsertContact(config, customer) {
 // `ignoreDateRange` stays TRUE: the website owns the notice and grid rules
 // (30-minute starts, per-cart lengths, 48h for memberships), and they are already
 // enforced server-side in catalog.js.
-async function createHoldAppointment(config, { calendarId, contactId, title, description, address, startTime, endTime, assignedUserId }) {
+async function createHoldAppointment(config, { calendarId, contactId, title, description, address, startTime, endTime }) {
   const result = await ghlRequest(config, '/calendars/events/appointments', {
     method: 'POST',
     version: CALENDAR_API_VERSION,
@@ -323,8 +323,15 @@ async function createHoldAppointment(config, { calendarId, contactId, title, des
       endTime,
       ignoreDateRange: true,
       ignoreFreeSlotValidation: false,
-      toNotify: false,
-      assignedUserId: assignedUserId || config.assignedUserId
+      toNotify: false
+      // NO assignedUserId. Each van has its own PERSONAL calendar whose single team
+      // member is that van's user, and HighLevel answers 422 "The user id not part
+      // of calendar team." when an appointment on it is assigned to anyone else —
+      // which is exactly what happened when this function inherited
+      // `config.assignedUserId` (the office user) from the block-slot code it
+      // replaced. Verified against the live sub-account: the office user 422s, the
+      // calendar's own member and omitting the field both return 201. The van's
+      // calendar already says who does the work, so omitting it is also the truth.
     }
   });
   const appointment = result.appointment || result;

@@ -8,6 +8,12 @@ const { setRepositoryForTests } = require('../../api/_lib/repository.js');
 
 const CALENDARS = ['cal-van-1', 'cal-van-2', 'cal-van-3', 'cal-van-4'];
 
+// One team member per van calendar, mirroring the live sub-account. Only this user
+// may be named as assignedUserId on that calendar; the office user cannot.
+const CALENDAR_TEAM_MEMBER = Object.freeze(Object.fromEntries(
+  CALENDARS.map((calendarId, index) => [calendarId, `van-user-${index + 1}`])
+));
+
 function installEnv(overrides = {}) {
   const env = {
     BOOKING_TIMEZONE: 'America/New_York',
@@ -102,6 +108,14 @@ function createGhlStub(options = {}) {
     }
 
     if (method === 'POST' && path === '/calendars/events/appointments') {
+      // Each van has its own PERSONAL calendar with exactly one team member. Assigning
+      // an appointment on it to anybody else is 422 "The user id not part of calendar
+      // team." — the real failure that took every hold down in production, because the
+      // hold code inherited the office user id from the block-slot call it replaced.
+      // Modelled here so nothing can put that field back and still pass its tests.
+      if (body.assignedUserId && body.assignedUserId !== CALENDAR_TEAM_MEMBER[body.calendarId]) {
+        return json({ message: 'The user id not part of calendar team.', statusCode: 422 }, 422);
+      }
       const index = state.created.filter(entry => entry.kind === 'appointment').length;
       if (state.appointmentFailsAt != null && index >= state.appointmentFailsAt) {
         return json({ message: 'calendar unavailable' }, 500);
