@@ -143,7 +143,21 @@ No requiere base de datos ni la requería.
 Nota: **no** conviene configurar las 48 h en el calendario de HighLevel, porque
 aplicaría también a los clientes que no son miembros.
 
-### El flujo del miembro: un link, no una cuenta
+### El flujo del miembro: un link, no una cuenta — **IMPLEMENTADO 4 ago 2026**
+
+`mi-membresia.html` (estático) + `api/member.js` + `api/_lib/membership-crm.js`.
+El link se emite con `node scripts/member-link.mjs <opportunityId>`.
+
+**Sin una sola consulta a Postgres.** Es el primer flujo escrito enteramente como va a
+ser todo: el contrato es la oportunidad, el saldo se cuenta del calendario, y reservar es
+probar camionetas en orden dejando que HighLevel arbitre.
+
+Lo que quedó acotado y cubierto por tests: un link abre **un** contrato; no expone
+teléfono, email, dirección ni datos de otro miembro; solo puede reservar algo a lo que el
+contrato ya da derecho, con 48 h de aviso y dentro del ciclo pagado; y no puede cancelar,
+reprogramar, cambiar de plan ni mover plata.
+
+
 
 Usuarios y contraseñas son un subsistema entero (registro, recupero, sesiones). Para
 esto alcanza un **link personal firmado**:

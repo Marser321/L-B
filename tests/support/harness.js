@@ -67,6 +67,9 @@ function createGhlStub(options = {}) {
     opportunityId: options.opportunityId || 'opp-1',
     opportunities: options.opportunities || [],
     customFields: options.customFields || null,
+    // Per-id contract overrides for the member tests: an object replaces the default,
+    // null makes the id a 404.
+    contracts: options.contracts || {},
     invoiceUrl: options.invoiceUrl || 'https://pay.example/invoice-1',
     failures: options.failures || {}
   };
@@ -225,10 +228,44 @@ function createGhlStub(options = {}) {
 
     if (method === 'GET' && path.includes('/customFields')) {
       const { OPPORTUNITY_FIELDS } = require('../../api/quote.js')._test;
-      const customFields = state.customFields || Object.entries(OPPORTUNITY_FIELDS).map(([key, name]) => ({
+      const quoteFields = Object.entries(OPPORTUNITY_FIELDS).map(([key, name]) => ({
         id: `field-${key}`, name, model: 'opportunity'
       }));
+      // The membership contract fields the sub-account really has, so the member link
+      // resolves them by name the way it does in production.
+      const membershipFields = [
+        { id: 'field-mem-plan', name: 'Membership Plan', model: 'opportunity' },
+        { id: 'field-mem-vehicle', name: 'Membership Vehicle', model: 'opportunity' },
+        { id: 'field-mem-status', name: 'Membership Status', model: 'opportunity' },
+        { id: 'field-mem-cycle', name: 'Membership Cycle Ends', model: 'opportunity' }
+      ];
+      const customFields = state.customFields || [...quoteFields, ...membershipFields];
       return json({ customFields });
+    }
+
+    // One opportunity by id — how the member link loads its contract. `opp-membership-*`
+    // is a membership; anything else is deliberately not, so a signed link to some
+    // other opportunity can be shown to open nothing.
+    if (method === 'GET' && /^\/opportunities\/[^/]+$/.test(path) && !path.startsWith('/opportunities/search')) {
+      const id = decodeURIComponent(path.split('/')[2]);
+      const override = (state.contracts || {})[id];
+      if (override === null) return json({ message: 'Not found' }, 404);
+      if (override) return json({ opportunity: { id, ...override } });
+      const isMembership = id.startsWith('opp-membership');
+      return json({
+        opportunity: {
+          id,
+          contact: { id: state.contactId },
+          customFields: isMembership ? [
+            { id: 'field-mem-plan', fieldValue: 'membresia-2x' },
+            { id: 'field-mem-vehicle', fieldValue: '2024 Toyota Camry' },
+            { id: 'field-mem-status', fieldValue: 'active' },
+            // Twenty days out, so "inside the cycle" and "past the cycle" are both
+            // reachable from a test.
+            { id: 'field-mem-cycle', fieldValue: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString() }
+          ] : []
+        }
+      });
     }
 
     if (method === 'GET' && path.startsWith('/opportunities/search')) {

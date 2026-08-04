@@ -50,14 +50,14 @@ test('a link opens exactly one van, and nothing without a secret', t => {
 
   // A different van's token is a different string, and neither validates as the other.
   assert.notEqual(crewLink.sign('camioneta_1'), token);
-  assert.throws(() => crewLink.verify('camioneta_1.' + token.split('.')[1]), /Invalid crew link/);
+  assert.throws(() => crewLink.verify('camioneta_1.' + token.split('.')[1]), /Invalid link/);
 
   // Tampering with the van, the signature, or the shape.
-  assert.throws(() => crewLink.verify('camioneta_2.deadbeef'), /Invalid crew link/);
-  assert.throws(() => crewLink.verify('camioneta_2'), /Invalid crew link/);
-  assert.throws(() => crewLink.verify(''), /Invalid crew link/);
+  assert.throws(() => crewLink.verify('camioneta_2.deadbeef'), /Invalid link/);
+  assert.throws(() => crewLink.verify('camioneta_2'), /Invalid link/);
+  assert.throws(() => crewLink.verify(''), /Invalid link/);
   // A key that is not a van key never reaches the HMAC.
-  assert.throws(() => crewLink.verify('../../etc/passwd.x'), /Invalid crew link/);
+  assert.throws(() => crewLink.verify('../../etc/passwd.x'), /Invalid link/);
 });
 
 test('a weak or missing secret refuses to sign rather than defaulting', t => {
