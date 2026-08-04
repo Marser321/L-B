@@ -1783,6 +1783,12 @@
     'hold.paymentFailed': { en: 'The payment did not complete, so the temporary reservation was released. Choose a new time.', es: 'El pago no se completó, por lo que la reserva temporal fue liberada. Elige un nuevo horario.' },
     'hold.released': { en: 'This temporary reservation is no longer available. Choose a new time.', es: 'Esta reserva temporal ya no está disponible. Elige un nuevo horario.' },
     'form.durationVehicle': { en: 'Vehicle {n}: {duration}', es: 'Vehículo {n}: {duration}' },
+    // One van works the vehicles one after another, so the hint leads with the TOTAL
+    // time the crew is at the address and then lists the running order.
+    'form.durationVisit': {
+      en: 'One crew, {duration} on site',
+      es: 'Una cuadrilla, {duration} en el lugar'
+    },
     'sum.duration': { en: 'Estimated time per vehicle', es: 'Tiempo estimado por vehículo' },
     'wa.quick': { en: "Hi L&B Elite! I'd like to book a service.", es: 'Hola L&B Elite, me gustaría reservar un servicio.' },
     'waFloat.aria': { en: 'Contact us on WhatsApp', es: 'Contactar por WhatsApp' }
@@ -2009,11 +2015,13 @@
   // (same address, date and time window → one appointment), duplicate lines are
   // allowed, restricted add-ons apply per line, and the visit books the full
   // day when ANY line uses a full-day package.
-  // Mirror of MAX_VEHICLES in api/_lib/catalog.js. Four vans means four vehicles
-  // per visit: each vehicle is washed by its own van at the same time. The server
-  // rejects a fifth with HTTP 422 regardless of what this constant says.
-  // Hydrated by GET /api/catalog. The server is still the backstop if a stale
-  // tab or a tampered client tries to add more.
+  // Mirror of the cap in api/_lib/catalog.js. ONE van serves the whole address and
+  // works the vehicles one after another, so the fleet size is not the limit here —
+  // the limit is how much of a working day one visit may consume. Four for the
+  // compact categories, two when the cart holds marine work (two hours a unit).
+  // Hydrated by GET /api/catalog and refined per cart by /api/availability, which
+  // returns the cap that applies to what is actually in the cart. The server is
+  // still the backstop if a stale tab or a tampered client tries to add more.
   let CART_MAX_ITEMS = 4;
 
   // Resolve a stored cart line against the live catalog (null when stale).
@@ -3409,9 +3417,17 @@
     if (durationHint) {
       const perVehicle = state.availability.perVehicleDurationMinutes || [];
       durationHint.hidden = fullDay || !perVehicle.length;
-      durationHint.textContent = perVehicle.map((minutes, index) =>
-        t('form.durationVehicle').replace('{n}', String(index + 1)).replace('{duration}', durationLabel(minutes))
-      ).join(' · ');
+      // The visit total comes first: one van serves the whole address, so the
+      // vehicles are worked in sequence and their times add up. Listing only the
+      // per-vehicle figures would read as though they happened at once.
+      durationHint.textContent = [
+        t('form.durationVisit').replace('{duration}', durationLabel(state.availability.durationMinutes || 0)),
+        perVehicle.length > 1
+          ? perVehicle.map((minutes, index) =>
+              t('form.durationVehicle').replace('{n}', String(index + 1)).replace('{duration}', durationLabel(minutes))
+            ).join(' → ')
+          : ''
+      ].filter(Boolean).join(' · ');
     }
 
     const day = selectedAvailabilityDay();
@@ -3458,8 +3474,8 @@
         loading: false,
         error: '',
         bookingMode: result.bookingMode,
-        // The visit lasts as long as its longest vehicle: the vans work in
-        // parallel, one per vehicle, so this is never the sum of the cart.
+        // How long the crew is at the address: one van works the cart one vehicle
+        // after another, so this is the SUM of the services plus one travel buffer.
         durationMinutes: Number(result.visitDurationMinutes) || 0,
         perVehicleDurationMinutes: Array.isArray(result.perVehicleDurationMinutes) ? result.perVehicleDurationMinutes.map(Number) : [],
         deposit: Number(result.deposit) || 0,
@@ -3468,6 +3484,9 @@
         // time in the LOCATION's timezone, already resolved by the server.
         dates: Array.isArray(result.dates) ? result.dates : []
       };
+      // The cap is per cart, not global: adding a boat drops it from four to two.
+      // Trust the server's answer for the cart it just priced.
+      if (Number(result.maxVehicles) > 0) CART_MAX_ITEMS = Number(result.maxVehicles);
     } catch (error) {
       state.availability = { cartKey, loading: false, error: t('availability.error'), bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, dates: [] };
     }
@@ -3633,9 +3652,16 @@
     const many = entries.length > 1;
     const row = (lab, val) => val ? `<div class="summary-row"><span class="lab">${escapeHTML(lab)}</span><span class="val">${escapeHTML(val)}</span></div>` : '';
     const scheduleVal = [prettyDate(s.date), timeWindowLabel(s.timeWindow)].filter(Boolean).join(' · ');
-    const perVehicleDuration = (state.availability.perVehicleDurationMinutes || []).map((minutes, index) =>
+    // Same reasoning as the date-picker hint: the arrow says "then", not "meanwhile".
+    const perVehicleList = (state.availability.perVehicleDurationMinutes || []).map((minutes, index) =>
       t('form.durationVehicle').replace('{n}', String(index + 1)).replace('{duration}', durationLabel(minutes))
-    ).join(' · ');
+    ).join(' → ');
+    const perVehicleDuration = [
+      state.availability.durationMinutes
+        ? t('form.durationVisit').replace('{duration}', durationLabel(state.availability.durationMinutes))
+        : '',
+      many ? perVehicleList : ''
+    ].filter(Boolean).join(' · ');
 
     const lineBlocks = entries.map(({ line, resolved, est }, index) => {
       const { cat, pkg, size, addons } = resolved;

@@ -43,7 +43,7 @@ test('every sellable package occupies real time on a van', () => {
   const broken = [];
   for (const packageId of Object.keys(catalog.SIZES_BY_PACKAGE)) {
     try {
-      const minutes = catalog.vehicleDurationMinutes(packageId);
+      const minutes = catalog.vehicleServiceMinutes(packageId);
       if (!Number.isFinite(minutes) || minutes <= 0) broken.push(`${packageId} → ${minutes}`);
     } catch (error) {
       broken.push(`${packageId} → ${error.message}`);
@@ -61,14 +61,16 @@ test('a catalog entry that would schedule zero minutes throws instead of booking
   assert.throws(() => catalog.assertSchedulableMinutes(-30, 'whatever'), /must occupy real time/);
   assert.throws(() => catalog.assertSchedulableMinutes(NaN, 'whatever'), /must occupy real time/);
   assert.equal(catalog.assertSchedulableMinutes(90, 'premium-detail'), 90);
-  // An unknown package still schedules, on the cars fallback.
-  assert.equal(catalog.vehicleDurationMinutes('not-a-real-package'), 90);
+  // An unknown package still schedules, on the cars fallback (60 of service).
+  assert.equal(catalog.vehicleServiceMinutes('not-a-real-package'), 60);
+  // And a whole visit made of it is that service plus the cars buffer.
+  assert.equal(catalog.visitDurationMinutes(['not-a-real-package']), 90);
 });
 
 test('all three paint tiers hold the van for the working day', () => {
   for (const packageId of ['paint-enhancement', 'paint-correction', 'ceramic-protection']) {
     assert.equal(catalog.bookingModeForPackage(packageId), 'full_day', packageId);
-    assert.ok(catalog.vehicleDurationMinutes(packageId) > 0, packageId);
+    assert.ok(catalog.vehicleServiceMinutes(packageId) > 0, packageId);
     // Paint work keeps the larger deposit and its own category, which is what
     // makes it safe to DISPLAY it inside cars without moving it there.
     assert.equal(catalog.depositForPackages([packageId]), 50, packageId);

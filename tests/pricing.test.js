@@ -72,9 +72,10 @@ test('money adds up across a cart even though duration does not', () => {
   ]);
   assert.equal(total.min, 185 + 120);
   assert.equal(total.perVehicle.length, 2);
-  // Two vans, in parallel: 90 and 120 minutes, so the visit is 120 — not 210.
-  assert.equal(catalog.vehicleDurationMinutes('premium-detail'), 90);
-  assert.equal(catalog.vehicleDurationMinutes('car-hauler-wash'), 120);
+  // One van, back to back: 60 of car plus 90 of hauler, then one 30-minute buffer.
+  assert.equal(catalog.vehicleServiceMinutes('premium-detail'), 60);
+  assert.equal(catalog.vehicleServiceMinutes('car-hauler-wash'), 90);
+  assert.equal(catalog.visitDurationMinutes(['premium-detail', 'car-hauler-wash']), 180);
 });
 
 test('a custom-quote add-on labels the estimate instead of inventing a number', () => {
@@ -95,12 +96,24 @@ test('price text is parsed the same way the frontend parses it', () => {
 });
 
 test('per-category durations and deposits match the crew rules', () => {
-  assert.equal(catalog.vehicleDurationMinutes('premium-detail'), 90);
-  assert.equal(catalog.vehicleDurationMinutes('semi-truck-wash'), 120);
-  assert.equal(catalog.vehicleDurationMinutes('boat-detail'), 180);
-  assert.equal(catalog.vehicleDurationMinutes('golf-premium'), 60);
-  assert.equal(catalog.vehicleDurationMinutes('mobile-home-basico'), 120);
-  assert.equal(catalog.vehicleDurationMinutes('driveway-basico'), 150);
+  // Hands-on service per vehicle, with no buffer attached.
+  assert.equal(catalog.vehicleServiceMinutes('premium-detail'), 60);
+  assert.equal(catalog.vehicleServiceMinutes('semi-truck-wash'), 90);
+  assert.equal(catalog.vehicleServiceMinutes('boat-detail'), 120);
+  assert.equal(catalog.vehicleServiceMinutes('golf-premium'), 30);
+  assert.equal(catalog.vehicleServiceMinutes('mobile-home-basico'), 90);
+  assert.equal(catalog.vehicleServiceMinutes('driveway-basico'), 120);
+
+  // A one-vehicle visit is that service plus its own travel buffer.
+  assert.equal(catalog.visitDurationMinutes(['premium-detail']), 90);
+  assert.equal(catalog.visitDurationMinutes(['semi-truck-wash']), 120);
+  assert.equal(catalog.visitDurationMinutes(['boat-detail']), 180);
+
+  // Several vehicles at one address: the services add up, the buffer is charged
+  // once, and a mixed cart takes the largest buffer of the two.
+  assert.equal(catalog.visitDurationMinutes(['premium-detail', 'premium-detail']), 150);
+  assert.equal(catalog.visitDurationMinutes(Array(4).fill('premium-detail')), 270);
+  assert.equal(catalog.visitDurationMinutes(['premium-detail', 'boat-detail']), 240);
 
   assert.equal(catalog.depositForPackages(['premium-detail']), 30);
   assert.equal(catalog.depositForPackages(['semi-truck-wash']), 50);
@@ -110,5 +123,12 @@ test('per-category durations and deposits match the crew rules', () => {
   assert.equal(catalog.isMembershipPackage('membresia-2x'), true);
   assert.equal(catalog.isMembershipPackage('box-truck-4x'), true);
   assert.equal(catalog.isMembershipPackage('premium-detail'), false);
+  // Four vehicles per visit, but marine work is capped at two: each unit is two
+  // hours of service, so four would swallow a van's whole day.
   assert.equal(catalog.MAX_VEHICLES, 4);
+  assert.equal(catalog.maxVehiclesForPackages(['premium-detail', 'semi-truck-wash']), 4);
+  assert.equal(catalog.maxVehiclesForPackages(['boat-detail']), 2);
+  assert.equal(catalog.maxVehiclesForPackages(['jetski-premium']), 2);
+  // A mixed cart takes the strictest cap — one van, one visit.
+  assert.equal(catalog.maxVehiclesForPackages(['premium-detail', 'boat-detail']), 2);
 });

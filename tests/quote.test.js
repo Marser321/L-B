@@ -65,7 +65,8 @@ test('normalizes the customer and derives its own booking label', t => {
   // The client's label is thrown away and rebuilt from the server's own duration.
   assert.equal(result.schedule.timeLabel, '8am–9:30am');
   assert.equal(result.schedule.durationMinutes, 90);
-  assert.deepEqual(result.schedule.perVehicleDurationMinutes, [90]);
+  // 60 of hands-on service; the 90 above is that plus the travel buffer.
+  assert.deepEqual(result.schedule.perVehicleDurationMinutes, [60]);
   assert.equal(result.schedule.timezone, 'America/New_York');
   assert.equal(splitName('Jane Driver').lastName, 'Driver');
   assert.equal(normalizePhone('239-555-0100'), '+12395550100');
@@ -157,16 +158,17 @@ test('a fifth vehicle is rejected with 422 even when the frontend is tampered wi
   assert.equal(four.vehicles.length, 4);
 });
 
-test('per-vehicle durations are reported and the visit is the longest of them', t => {
+test('per-vehicle services are reported and the visit is their sum plus one buffer', t => {
   const ctx = fresh();
   t.after(() => ctx.restore());
 
   const result = validatePayload(payload({
     items: [item('premium-detail', 'sedan'), item('semi-truck-wash', 'standard'), item('golf-premium', 'standard')]
   }));
-  // 90, 120 and 60 minutes. In parallel that is a two-hour visit, not 4h30.
-  assert.deepEqual(result.schedule.perVehicleDurationMinutes, [90, 120, 60]);
-  assert.equal(result.schedule.durationMinutes, 120);
+  // One van works all three at the address: 60 + 90 + 30 of service, then a single
+  // 30-minute travel buffer. Not a two-hour visit — three and a half.
+  assert.deepEqual(result.schedule.perVehicleDurationMinutes, [60, 90, 30]);
+  assert.equal(result.schedule.durationMinutes, 210);
   assert.equal(result.deposit, 50, 'the largest deposit any vehicle requires');
 });
 
@@ -301,7 +303,7 @@ test('a booking holds the vans, records the CRM, and stays pending until payment
   assert.ok(res.body.expiresAt);
   assert.equal(res.body.holdMinutes, 15);
   assert.equal(res.body.crew.length, 2);
-  assert.equal(new Set(res.body.crew.map(entry => entry.resource)).size, 2, 'one van per vehicle');
+  assert.equal(new Set(res.body.crew.map(entry => entry.resource)).size, 1, 'one van per address');
 
   // The reservation exists in Postgres as parent + children + assignments.
   const store = ctx.repository.__store();
@@ -314,15 +316,15 @@ test('a booking holds the vans, records the CRM, and stays pending until payment
     assert.equal(booking.submissionId, '123e4567-e89b-12d3-a456-426614174000');
   });
 
-  // The CRM got a contact, an opportunity in the PENDING stage, and two blocked vans.
-  const kinds = ctx.ghl.created.map(entry => entry.kind);
-  assert.equal(kinds.filter(kind => kind === 'block').length, 2);
+  // The CRM got a contact, an opportunity in the PENDING stage, and the one van
+  // blocked for both vehicles.
+  const blocks = ctx.ghl.created.filter(entry => entry.kind === 'block');
+  assert.equal(blocks.length, 2, 'one block per vehicle, back to back');
+  assert.equal(new Set(blocks.map(block => block.calendarId)).size, 1, 'all on the same van calendar');
   const opportunity = ctx.ghl.created.find(entry => entry.kind === 'opportunity');
   assert.equal(opportunity.body.pipelineStageId, 'stage-pending');
-  // The vans are blocked on their own calendars, not on a round-robin calendar.
-  ctx.ghl.created.filter(entry => entry.kind === 'block').forEach(block => {
-    assert.ok(CALENDARS.includes(block.calendarId));
-  });
+  // The van is blocked on its own calendar, not on a round-robin calendar.
+  blocks.forEach(block => assert.ok(CALENDARS.includes(block.calendarId)));
 });
 
 test('the opportunity records the server price, the hold and the crew breakdown', async t => {

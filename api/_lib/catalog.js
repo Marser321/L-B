@@ -136,9 +136,15 @@ const PACKAGES_BY_RESTRICTED_ADDON = Object.freeze({
   'lubricante-grafito': new Set(['car-hauler-wash', 'car-hauler-2x', 'car-hauler-4x'])
 });
 
-// Per-category block length: the service itself plus the travel/setup buffer the
-// crew needs afterwards. One van is busy for service + buffer, which is why two
-// bookings on the same van can never be scheduled back to back without the gap.
+// Per-category block length, split into the two things it is made of:
+//
+//   service  hands-on minutes for ONE vehicle
+//   buffer   the travel/setup gap the crew needs BETWEEN ADDRESSES
+//
+// The split matters because a visit is one van working through the vehicles at one
+// address, one after another (see visitDurationMinutes). The services add up; the
+// buffer is charged once, at the end, because the crew does not travel between two
+// cars parked in the same driveway.
 const CATEGORY_DURATIONS = Object.freeze({
   cars: Object.freeze({ service: 60, buffer: 30 }),
   heavy_trucks: Object.freeze({ service: 90, buffer: 30 }),
@@ -185,10 +191,26 @@ const MEMBERSHIP_PACKAGE_PATTERN = /membresia|membership|-2x$|-4x$/;
 // the $299 tier unbookable — see the note on CATEGORY_DURATIONS above.
 const FULL_DAY_PACKAGES = new Set(['paint-enhancement', 'paint-correction', 'ceramic-protection']);
 
-// One van per vehicle, four vans in the fleet: a single visit can never cover
-// more than four vehicles at the same hour. Enforced server-side (HTTP 422) so a
-// tampered frontend cannot book a fifth.
+// One van per ADDRESS, four vans in the fleet: the fleet size caps how many
+// separate customers can be served at the same hour, NOT how many vehicles one
+// customer may bring. A visit is one van working through the vehicles in the
+// driveway one after another, so the real limit on a single booking is how much of
+// the working day it consumes.
+//
+// Four is the cap for the compact categories: four cars is 4×60 + 30 = 4h30, which
+// still leaves start times across most of the day. Marine work is capped at two
+// because each unit is two hours of service — two jet skis already run 4h60, and
+// four would be a nine-hour visit that swallows one van's entire day.
 const MAX_VEHICLES = 4;
+const MAX_VEHICLES_MARINE = 2;
+const MARINE_CATEGORIES = new Set(['boats', 'jetski']);
+
+// The cap that applies to one cart. Mixed carts take the strictest one, since all
+// the vehicles share a single van and a single visit.
+function maxVehiclesForPackages(packageIds) {
+  const marine = packageIds.some(id => MARINE_CATEGORIES.has(CATEGORY_BY_PACKAGE[id]));
+  return marine ? MAX_VEHICLES_MARINE : MAX_VEHICLES;
+}
 
 // One hour of notice for a normal booking. Memberships are the only service that
 // requires 48 hours, because they are routed to a recurring plan the office has
@@ -218,18 +240,43 @@ function durationForPackage(packageId) {
   return CATEGORY_DURATIONS[CATEGORY_BY_PACKAGE[packageId]] || CATEGORY_DURATIONS.cars;
 }
 
-// How long ONE van is occupied by ONE vehicle: its own service plus its own
-// buffer. This is the only duration the agenda schedules with — cart durations
-// are never added together, because each vehicle is washed by a different van at
-// the same time (see agenda.js).
+// Hands-on minutes for ONE vehicle, with no buffer attached. This is what gets
+// added up across a cart, because one van works through the vehicles in the
+// driveway one after another.
 //
 // Throws rather than returning a non-positive number. A zero-minute block is not
 // a scheduling edge case, it is a broken catalog: it produces a booking whose
 // start equals its end, which Postgres refuses and the customer experiences as an
 // unbookable service. Failing here surfaces it in the test suite instead.
-function vehicleDurationMinutes(packageId) {
-  const duration = durationForPackage(packageId);
-  return assertSchedulableMinutes(duration.service + duration.buffer, packageId);
+function vehicleServiceMinutes(packageId) {
+  return assertSchedulableMinutes(durationForPackage(packageId).service, packageId);
+}
+
+// The travel/setup gap after the visit. A mixed cart takes the largest one: the
+// crew packing up after a boat needs the boat's gap, not a sedan's.
+function visitBufferMinutes(packageIds) {
+  return packageIds.reduce(
+    (largest, packageId) => Math.max(largest, durationForPackage(packageId).buffer),
+    0
+  );
+}
+
+// How long ONE van is occupied by a whole visit.
+//
+// THIS IS THE LOAD-BEARING RULE: a visit with N vehicles is one van working N
+// times at one address, so the services ADD UP. It is not N vans working at once,
+// and it is not the longest vehicle — both of which this function used to return,
+// which had the site quoting 1h30 for three cars that really take 3h30 and blocking
+// three separate vans for one driveway.
+//
+// The buffer is added once, at the end. There is no travel between two cars parked
+// in the same driveway, so charging a gap per vehicle would invent dead time the
+// crew does not take.
+function visitDurationMinutes(packageIds) {
+  const ids = [...packageIds];
+  if (!ids.length) throw new Error('catalog: a visit needs at least one vehicle');
+  const service = ids.reduce((total, packageId) => total + vehicleServiceMinutes(packageId), 0);
+  return assertSchedulableMinutes(service + visitBufferMinutes(ids), ids.join('+'));
 }
 
 // The guard, on its own so it can be tested directly. Note that an UNKNOWN package
@@ -281,6 +328,8 @@ module.exports = {
   MEMBERSHIP_PACKAGE_PATTERN,
   FULL_DAY_PACKAGES,
   MAX_VEHICLES,
+  MAX_VEHICLES_MARINE,
+  MARINE_CATEGORIES,
   MIN_BOOKING_NOTICE_MS,
   MEMBERSHIP_BOOKING_NOTICE_MS,
   BOOKING_WINDOW_DAYS,
@@ -290,7 +339,10 @@ module.exports = {
   bookingModeForPackage,
   bookingModeForPackages,
   durationForPackage,
-  vehicleDurationMinutes,
+  vehicleServiceMinutes,
+  visitBufferMinutes,
+  visitDurationMinutes,
+  maxVehiclesForPackages,
   assertSchedulableMinutes,
   depositForPackages,
   noticeMsForPackages,

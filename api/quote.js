@@ -174,7 +174,7 @@ function validatePayload(body) {
       timezone,
       // The visit lasts as long as its longest vehicle — the vans work in parallel.
       durationMinutes: Math.round((window.endMs - window.startMs) / 60000),
-      perVehicleDurationMinutes: window.perVehicle.map(vehicle => vehicle.durationMinutes),
+      perVehicleDurationMinutes: window.perVehicle.map(vehicle => vehicle.serviceMinutes),
       notes: optionalText(schedule.notes, 'schedule.notes', 1000)
     }
   };

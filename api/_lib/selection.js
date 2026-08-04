@@ -55,8 +55,10 @@ function normalizeVehicle(input, field, { requirePricing = true, language = 'en'
     packageId,
     sizeId,
     addonIds,
-    // Server-owned, every one of them.
-    durationMinutes: catalog.vehicleDurationMinutes(packageId),
+    // Server-owned, every one of them. This is the vehicle's own hands-on time,
+    // with no buffer: one van works the cart back to back, so agenda.js chains
+    // these and adds a single travel buffer at the end of the visit.
+    durationMinutes: catalog.vehicleServiceMinutes(packageId),
     bookingMode: catalog.bookingModeForPackage(packageId),
     isMembership: catalog.isMembershipPackage(packageId)
   };
@@ -88,11 +90,19 @@ function vehicleLabel(descriptor) {
   return `${descriptor.year} ${descriptor.make} ${descriptor.model}`.trim();
 }
 
-// The list of vehicles in one visit. More than four is a 422 and not a 400: the
-// request is perfectly well formed, there just aren't five vans.
+// The list of vehicles in one visit. Over the cap is a 422 and not a 400: the
+// request is perfectly well formed, that many vehicles just will not fit in one
+// van's day. The cap depends on what is in the cart — marine work is two hours a
+// unit, so it allows fewer (catalog.maxVehiclesForPackages).
 function normalizeVehicles(input, { requirePricing = true, requireDescriptor = false, language = 'en', field = 'vehicles' } = {}) {
   if (!Array.isArray(input) || !input.length) throw new RequestError(`${field} must contain at least one vehicle`);
-  if (input.length > catalog.MAX_VEHICLES) throw new TooManyVehiclesError(catalog.MAX_VEHICLES);
+  // Read the packages first so the cap is the one that applies to THIS cart. The
+  // ids are re-validated per vehicle below; an unknown id falls back to the
+  // permissive cap here and is rejected there.
+  const cap = catalog.maxVehiclesForPackages(
+    input.map(entry => (entry && (entry.packageId ?? (entry.package && entry.package.id))) || '')
+  );
+  if (input.length > cap) throw new TooManyVehiclesError(cap);
 
   return input.map((entry, index) => {
     const vehicle = normalizeVehicle(entry, `${field}[${index}]`, { requirePricing, language });

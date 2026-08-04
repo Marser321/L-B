@@ -50,7 +50,7 @@ function withKey(key) {
   return { headers: { 'idempotency-key': key } };
 }
 
-test('one to four vehicles each get their own van, and a fifth is rejected with 422', async t => {
+test('one to four vehicles all ride on ONE van, and a fifth is rejected with 422', async t => {
   for (const count of [1, 2, 3, 4]) {
     const ctx = setupAgenda();
     try {
@@ -60,14 +60,26 @@ test('one to four vehicles each get their own van, and a fifth is rejected with 
       assert.equal(res.statusCode, 201, `expected ${count} vehicles to be held`);
       assert.equal(res.body.assignments.length, count);
 
-      // One van per vehicle: never two vehicles on the same van.
+      // One van per ADDRESS: every vehicle of the booking is on the same van,
+      // because the crew drives to the customer once.
       const vans = res.body.assignments.map(assignment => assignment.resource);
-      assert.equal(new Set(vans).size, count, `expected ${count} distinct vans, got ${vans.join(',')}`);
+      assert.equal(new Set(vans).size, 1, `expected 1 van for ${count} vehicles, got ${vans.join(',')}`);
 
-      // Each vehicle is blocked on its own van's calendar.
+      // Back to back on that one van's calendar, in cart order, with no gaps.
+      const windows = res.body.assignments
+        .slice()
+        .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+      for (let index = 1; index < windows.length; index += 1) {
+        assert.equal(
+          Date.parse(windows[index].startsAt),
+          Date.parse(windows[index - 1].endsAt),
+          'each vehicle starts exactly where the previous one finished'
+        );
+      }
+
+      // One calendar, one van, and the whole visit blocked on it.
       const blocked = ctx.ghl.created.filter(entry => entry.kind === 'block');
-      assert.equal(blocked.length, count);
-      assert.equal(new Set(blocked.map(entry => entry.calendarId)).size, count);
+      assert.equal(new Set(blocked.map(entry => entry.calendarId)).size, 1);
       blocked.forEach(entry => assert.ok(CALENDARS.includes(entry.calendarId)));
     } finally {
       ctx.restore();
@@ -86,36 +98,75 @@ test('one to four vehicles each get their own van, and a fifth is rejected with 
   assert.equal(ctx.repository.__store().holds.length, 0);
 });
 
-test('vehicles are washed in parallel: the visit lasts as long as the slowest one, never the sum', async t => {
+test('vehicles are washed one after another: the visit is the SUM of the services plus one buffer', async t => {
   const ctx = setupAgenda();
   t.after(() => ctx.restore());
 
-  // 90 + 120 + 180 minutes. Summed that would be 6h30 and would not even fit
-  // before 18:00; in parallel it is a three-hour visit.
+  // Car 60 + boat 120 = 180 minutes of service, plus ONE trailing buffer. The buffer
+  // is the LARGEST of the categories (the boat's 60, not the car's 30) and is charged
+  // once, because the crew does not travel between vehicles in the same driveway.
+  // Two vehicles, not three: a cart with marine work is capped at two.
   const res = await callHandler(
     holdsHandler,
-    holdRequest([car(), hauler(), boat()]),
-    withKey('parallel-000001')
+    holdRequest([car(), boat()], { startTime: '08:00' }),
+    withKey('sequential-0001')
   );
 
   assert.equal(res.statusCode, 201);
   const start = Date.parse(res.body.slotStart);
   const end = Date.parse(res.body.slotEnd);
-  assert.equal((end - start) / 60000, 180, 'visit should last as long as the boat, the longest vehicle');
+  assert.equal((end - start) / 60000, 60 + 120 + 60, 'the visit is the chain, not the longest vehicle');
 
-  // Every vehicle starts together and ends on its own duration.
-  const durations = res.body.assignments.map(assignment => assignment.durationMinutes).sort((a, b) => a - b);
-  assert.deepEqual(durations, [90, 120, 180]);
-  res.body.assignments.forEach(assignment => {
-    assert.equal(Date.parse(assignment.startsAt), start, 'all vehicles start at the same time');
-  });
+  // Blocks in cart order: the car's 60, then the boat's 120 + the 60-minute buffer.
+  const inOrder = res.body.assignments
+    .slice()
+    .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  assert.deepEqual(inOrder.map(assignment => assignment.durationMinutes), [60, 180]);
+
+  // Nothing starts at the same time, and nothing leaves a gap.
+  assert.equal(Date.parse(inOrder[0].startsAt), start);
+  for (let index = 1; index < inOrder.length; index += 1) {
+    assert.equal(Date.parse(inOrder[index].startsAt), Date.parse(inOrder[index - 1].endsAt));
+  }
+
+  // All three on one van.
+  assert.equal(new Set(res.body.assignments.map(assignment => assignment.resource)).size, 1);
 });
 
-test('two requests racing for the same four vans: one wins, the other gets 409 and leaves nothing behind', async t => {
+test('four addresses fill the fleet; the fifth customer at that hour gets 409', async t => {
   const ctx = setupAgenda();
   t.after(() => ctx.restore());
 
-  const request = holdRequest([car(0), car(1), car(2), car(3)]);
+  // The fleet caps CUSTOMERS, not vehicles. Four separate single-car bookings at the
+  // same hour take all four vans — one booking of four cars would only take one.
+  for (const index of [0, 1, 2, 3]) {
+    const res = await callHandler(holdsHandler, holdRequest([car(index)]), withKey(`addr-${index}-000001`));
+    assert.equal(res.statusCode, 201, `van ${index + 1} should still be free`);
+    assert.equal(res.body.assignments.length, 1);
+  }
+
+  // Every van is on a different address, so all four are distinct.
+  const store = ctx.repository.__store();
+  assert.equal(new Set(store.assignments.map(assignment => assignment.resourceKey)).size, 4);
+
+  const fifth = await callHandler(holdsHandler, holdRequest([car(4)]), withKey('addr-4-000001'));
+  assert.equal(fifth.statusCode, 409, 'no van is left for a fifth address at that hour');
+  // The refusal wrote nothing.
+  assert.equal(store.holds.length, 4);
+  assert.equal(store.assignments.length, 4);
+});
+
+test('two requests racing for the last van: one wins, the other gets 409 and leaves nothing behind', async t => {
+  const ctx = setupAgenda();
+  t.after(() => ctx.restore());
+
+  // Take three vans, leaving exactly one.
+  for (const index of [0, 1, 2]) {
+    const taken = await callHandler(holdsHandler, holdRequest([car(index)]), withKey(`pre-${index}-0000001`));
+    assert.equal(taken.statusCode, 201);
+  }
+
+  const request = holdRequest([car(3)]);
   // Fired together, before either has committed — the case a read-then-write
   // check would lose.
   const [first, second] = await Promise.all([
@@ -124,25 +175,25 @@ test('two requests racing for the same four vans: one wins, the other gets 409 a
   ]);
 
   const statuses = [first.statusCode, second.statusCode].sort();
-  assert.deepEqual(statuses, [201, 409], 'exactly one request may win the fleet');
+  assert.deepEqual(statuses, [201, 409], 'exactly one request may win the last van');
 
   const winner = first.statusCode === 201 ? first : second;
   const loser = first.statusCode === 201 ? second : first;
-  assert.equal(winner.body.assignments.length, 4);
-  assert.match(loser.body.error, /fleet is free|no longer available/);
+  assert.equal(winner.body.assignments.length, 1);
+  assert.match(loser.body.error, /no van is free|no longer available/i);
 
   const store = ctx.repository.__store();
-  // The loser rolled back completely: one hold, four assignments, four allocations.
-  assert.equal(store.holds.length, 1);
+  // Three pre-existing holds plus the winner. The loser rolled back completely.
+  assert.equal(store.holds.length, 4);
   assert.equal(store.assignments.length, 4);
   assert.equal(store.allocations.length, 4);
-  assert.equal(store.bookings.filter(booking => !booking.parentBookingId).length, 1);
+  assert.equal(store.bookings.filter(booking => !booking.parentBookingId).length, 4);
   assert.equal(store.bookings.filter(booking => booking.parentBookingId).length, 4);
-  // And it blocked no calendars.
+  // And it blocked no extra calendars.
   assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'block').length, 4);
 });
 
-test('a parent reservation with one child booking and one assignment per vehicle', async t => {
+test('a parent reservation with one child booking per vehicle, all on one van', async t => {
   const ctx = setupAgenda();
   t.after(() => ctx.restore());
 
@@ -157,19 +208,21 @@ test('a parent reservation with one child booking and one assignment per vehicle
   assert.equal(parents[0].vehicleCount, 2);
   children.forEach(child => assert.equal(child.parentBookingId, parents[0].id));
 
-  // Each child carries its own window; the parent spans the longest of them.
+  // Car 60, then hauler 90 + the 30-minute trailing buffer. The parent spans the
+  // whole chain: 60 + 120 = 180, not the longest single vehicle.
   const childWindows = children.map(child => (child.slotEndMs - child.slotStartMs) / 60000).sort((a, b) => a - b);
-  assert.deepEqual(childWindows, [90, 120]);
-  assert.equal((parents[0].slotEndMs - parents[0].slotStartMs) / 60000, 120);
+  assert.deepEqual(childWindows, [60, 120]);
+  assert.equal((parents[0].slotEndMs - parents[0].slotStartMs) / 60000, 180);
 
-  // One assignment per child, each naming its own van and calendar.
+  // One assignment per child, and every one of them on the SAME van and calendar.
   assert.equal(store.assignments.length, 2);
   store.assignments.forEach(assignment => {
     assert.ok(children.some(child => child.id === assignment.bookingId));
     assert.ok(CALENDARS.includes(assignment.calendarId));
     assert.equal(assignment.status, 'held');
   });
-  assert.equal(new Set(store.assignments.map(a => a.resourceKey)).size, 2);
+  assert.equal(new Set(store.assignments.map(a => a.resourceKey)).size, 1, 'one address, one van');
+  assert.equal(new Set(store.assignments.map(a => a.calendarId)).size, 1);
 });
 
 test('the rotation cursor persists across bookings and starts at the next van each time', async t => {
@@ -376,7 +429,7 @@ test('an Idempotency-Key replays the same hold, and a different body with the sa
   assert.match(missing.body.error, /Idempotency-Key/);
 });
 
-test('availability only offers a start time when every vehicle can have its own van', async t => {
+test('availability only offers a start time when one van is free for the WHOLE visit', async t => {
   const ctx = setupAgenda();
   t.after(() => ctx.restore());
 
@@ -396,14 +449,27 @@ test('availability only offers a start time when every vehicle can have its own 
   const stillOne = await callHandler(availabilityHandler, { ...range, vehicles: [{ packageId: 'premium-detail' }] });
   assert.ok(stillOne.body.dates.length, 'one vehicle still fits on the last free van');
 
+  // Two vehicles still need only ONE van — they just need it for longer (60 + 60 +
+  // 30 = 2h30 instead of 1h30), so the last free van still serves them.
   const two = await callHandler(availabilityHandler, {
     ...range,
     vehicles: [{ packageId: 'premium-detail' }, { packageId: 'premium-detail' }]
   });
-  assert.equal(two.body.dates.length, 0, 'two vehicles need two vans, and only one is free');
+  assert.ok(two.body.dates.length, 'two vehicles ride on one van, and one van is free');
+  assert.equal(two.body.visitDurationMinutes, 150);
+  // The longer the visit, the fewer start times fit before 18:00.
+  assert.ok(
+    two.body.dates[0].slots.length < stillOne.body.dates[0].slots.length,
+    'a 2h30 visit has fewer possible start times than a 1h30 one'
+  );
+
+  // Block the last van too, and nothing is offered at all.
+  ctx.ghl.calendarEvents[CALENDARS[3]] = [{ start: dayStart, end: dayEnd }];
+  const none = await callHandler(availabilityHandler, { ...range, vehicles: [{ packageId: 'premium-detail' }] });
+  assert.equal(none.body.dates.length, 0, 'the whole fleet is busy');
 });
 
-test('availability reports per-vehicle durations and a parallel visit length', async t => {
+test('availability reports per-vehicle services and the summed visit length', async t => {
   const ctx = setupAgenda();
   t.after(() => ctx.restore());
 
@@ -416,10 +482,14 @@ test('availability reports per-vehicle durations and a parallel visit length', a
   });
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body.perVehicleDurationMinutes, [90, 180]);
-  assert.equal(res.body.visitDurationMinutes, 180, 'the visit is the longest vehicle, not 270 minutes');
+  // Hands-on minutes per vehicle, buffer excluded: a car is 60, a boat is 120.
+  assert.deepEqual(res.body.perVehicleDurationMinutes, [60, 120]);
+  // One van does both, back to back, plus the boat's 60-minute buffer once.
+  assert.equal(res.body.visitDurationMinutes, 240, 'the visit is the sum plus one buffer');
   assert.equal(res.body.timezone, 'America/New_York');
   assert.equal(res.body.vehicleCount, 2);
+  // A marine cart is capped at two vehicles, and the contract says so.
+  assert.equal(res.body.maxVehicles, 2);
   // Priced server-side from the ids, since sizes were supplied:
   // premium-detail/sedan $185 + boat-basico/boat_16_20 $120.
   assert.equal(res.body.estimate.min, 305);
@@ -667,17 +737,23 @@ test('a released hold frees its vans for the next customer', async t => {
   t.after(() => ctx.restore());
 
   const config = require('../api/_lib/ghl.js').getConfig();
-  const first = await callHandler(holdsHandler, holdRequest([car(0), car(1), car(2), car(3)]), withKey('rel-a-0000001'));
-  assert.equal(first.statusCode, 201);
+  // Four separate addresses take the four vans — a single four-car booking would
+  // only take one.
+  const held = [];
+  for (const index of [0, 1, 2, 3]) {
+    const res = await callHandler(holdsHandler, holdRequest([car(index)]), withKey(`rel-${index}-0000001`));
+    assert.equal(res.statusCode, 201);
+    held.push(res.body.holdId);
+  }
 
   const blocked = await callHandler(holdsHandler, holdRequest([car()]), withKey('rel-b-0000001'));
   assert.equal(blocked.statusCode, 409, 'the fleet is fully held');
 
-  await agenda.releaseHold({ holdId: first.body.holdId, reason: 'abandoned', config });
+  await agenda.releaseHold({ holdId: held[0], reason: 'abandoned', config });
 
   const afterRelease = await callHandler(holdsHandler, holdRequest([car()]), withKey('rel-c-0000001'));
   assert.equal(afterRelease.statusCode, 201);
-  assert.equal(ctx.ghl.deleted.length, 4, 'the four block slots were removed from HighLevel');
+  assert.equal(ctx.ghl.deleted.length, 1, 'only the released hold\'s block slot was removed');
 });
 
 test('every paint tier is bookable, including the one that used to compute to zero minutes', async t => {

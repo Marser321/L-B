@@ -95,9 +95,13 @@ Automático
 Vale la pena tenerlas escritas porque varias no son obvias y están respaldadas por la
 base de datos, no sólo por código:
 
-- **Una camioneta por vehículo, en paralelo.** Cuatro vehículos son cuatro camionetas a la
-  misma hora, y la visita dura lo que el vehículo más lento — nunca la suma.
-- **Máximo 4 vehículos por reserva** (HTTP 422), aunque se altere el frontend.
+- **Una camioneta por DIRECCIÓN, en secuencia.** La cuadrilla viaja una vez y atiende los
+  vehículos del garaje uno tras otro, así que los servicios **se suman**: tres sedanes son
+  3h30, no 1h30. El buffer de traslado se cobra una sola vez, al final.
+- **La flota limita CLIENTES simultáneos, no vehículos por cliente.** Cuatro camionetas
+  son cuatro direcciones a la misma hora.
+- **Máximo 4 vehículos por reserva** (HTTP 422), o **2 si el carrito lleva náutica**, ya que
+  cada bote o jet ski son dos horas de servicio.
 - **Una camioneta no puede tener dos trabajos superpuestos**: constraint de exclusión en
   Postgres, no un `if`.
 - **Sólo un webhook de pago verificado confirma una reserva.**

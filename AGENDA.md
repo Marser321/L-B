@@ -9,16 +9,32 @@ a credit when the wash is delivered rather than paying per visit.
 
 ## The one idea
 
-**A visit with N vehicles is N vans working at the same time, not one van working
-N times.** Every design decision below follows from that:
+**A visit is ONE van at ONE address, working through the vehicles in the driveway
+one after another.** The crew drives to the customer once; it does not send a
+separate van per car. Every design decision below follows from that:
 
-- Durations are never added together. Three vehicles of 90, 120 and 180 minutes
-  are a **three-hour** visit, not a six-and-a-half-hour one.
-- A slot is offered only when **N distinct vans** are free, each for the length of
-  the vehicle it would take.
-- A booking is a **parent reservation plus one child per vehicle**, and each child
-  has its own van, its own window and its own calendar appointment.
-- Four vans means **at most four vehicles** in one visit. A fifth is HTTP **422**.
+- Durations **add up**. Three sedans are 60 + 60 + 60 of service plus one travel
+  buffer — a **3h30** visit, not a 1h30 one.
+- The travel buffer is charged **once, at the end**. There is no drive between two
+  cars parked in the same driveway. A mixed cart takes the largest buffer of the
+  categories in it.
+- A slot is offered only when **one van is free for the whole visit**, start to
+  finish. A van free for the first two cars but busy for the third is not usable:
+  the crew cannot hand the driveway to a different van halfway through.
+- A booking is a **parent reservation plus one child per vehicle**, and every child
+  is on the **same van**, in cart order, with back-to-back windows.
+- The fleet size caps how many **separate customers** can be served at the same
+  hour. Four vans means **four driveways at once**, not four vehicles.
+- One booking is capped at **four vehicles** (4×60 + 30 = 4h30), or **two** when the
+  cart holds marine work, since each boat or jet ski is two hours of service. Over
+  the cap is HTTP **422**.
+
+> This inverts the original model, which had N vehicles served by N vans at the same
+> time and a visit as long as its longest vehicle. That was wrong about the
+> operation: it quoted 1h30 for three cars that really take 3h30, blocked three
+> separate vans for one driveway, and oversold the day. Migration
+> `004_one_van_per_address.sql` drops the two constraints that used to *require*
+> different vans.
 
 ## Source of truth
 
@@ -36,8 +52,8 @@ yours" is worse than a clear "booking is temporarily unavailable".
 ## The flow
 
 ```
-POST /api/availability     → start times where all N vehicles can be served at once
-POST /api/bookings/holds   → 15-minute claim on N vans   (Idempotency-Key required)
+POST /api/availability     → start times where one van is free for the whole visit
+POST /api/bookings/holds   → 15-minute claim on ONE van  (Idempotency-Key required)
 POST /api/quote            → customer + CRM records attached; status pending_payment
 POST /api/payments/webhook → verified payment ⇒ confirmed          (the only door)
 POST /api/bookings/expire  → cron: releases holds older than 15 minutes
@@ -58,12 +74,17 @@ Everything that decides who gets a van happens inside **one transaction**:
 1. `pg_advisory_xact_lock` on the booking date.
 2. Read what is busy — our assignments plus the vans' calendars.
 3. `SELECT … FOR UPDATE` the rotation cursor.
-4. Pick free vans, longest vehicle first, starting at the cursor.
+4. Pick the first van, starting at the cursor, that is free for the WHOLE visit.
 5. Insert the hold, the parent, the children, the assignments and the allocations.
 6. Advance the cursor.
 
-Two requests racing for the last four vans serialize on that transaction: one
-wins, the other gets **409** with nothing half-created behind it.
+Two requests racing for the last van serialize on that transaction: one wins, the
+other gets **409** with nothing half-created behind it.
+
+Sequential windows on one van are legal precisely because the range is half-open:
+`08:00–09:00` and `09:00–10:00` are **adjacent, not overlapping**, so a chain of
+vehicles inserts cleanly while a genuine double-booking of the same van at the same
+instant is still refused by the database.
 
 Underneath the application logic, the database enforces the same rule
 structurally:
@@ -83,10 +104,10 @@ request.
 ## Rotation
 
 `resource_rotation` holds a persistent cursor. Each hold starts its search at the
-next van and, on success, moves the cursor one past the furthest van it consumed —
-so consecutive bookings spread across the fleet instead of hammering van 1. Only
-free vans are ever selected, and the cursor moves inside the same transaction that
-allocates them.
+next van and, on success, moves the cursor one past the van it took — so
+consecutive bookings spread across the fleet instead of hammering van 1. Only a van
+free for the entire visit is ever selected, and the cursor moves inside the same
+transaction that allocates it.
 
 ## Compensation
 
@@ -130,7 +151,7 @@ all its vehicles share one start time.
 | `booking_holds` | a 15-minute claim; `idempotency_key`, `request_fingerprint`, `expires_at` |
 | `hold_allocations` | one row per van in a hold, with the external block-slot id |
 | `bookings` | parent reservation (`parent_booking_id is null`) plus one child per vehicle |
-| `booking_assignments` | van + calendar + window + external appointment; carries the overlap constraint |
+| `booking_assignments` | van + calendar + window + external appointment; carries the overlap constraint. Several rows of one booking share a van, with adjacent windows |
 | `resource_rotation` | the persistent round-robin cursor |
 | `payment_events` | verified payment events; `unique (provider, external_event_id)` |
 | `membership_credit_ledger` | append-only credits; `unique (idempotency_key)`. Written by `MEMBERSHIPS.md`, not by this flow — paying a deposit buys one visit, not an allowance |
@@ -140,7 +161,7 @@ all its vehicles share one start time.
 
 ```bash
 npm install
-DATABASE_URL=postgres://… npm run migrate
+DATABASE_URL=postgres://… npm run migrate   # 004 drops the one-van-per-vehicle constraints
 node scripts/setup-ghl.mjs                 # verifies pipeline, fields, van calendars
 ```
 

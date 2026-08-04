@@ -150,11 +150,11 @@ function createMemoryRepository(options = {}) {
             row => row.parentBookingId === parent.id && row.vehicleIndex === assignment.vehicleIndex,
             'booking_assignments_vehicle_unique'
           );
-          assertUnique(
-            state.assignments,
-            row => row.parentBookingId === parent.id && row.resourceKey === assignment.resourceKey,
-            'booking_assignments_resource_unique'
-          );
+          // No resource-uniqueness check: every vehicle of one booking lands on the
+          // SAME van, because one van serves one address. Migration 004 drops the
+          // constraints that used to require different vans; what still protects the
+          // van is assertNoOverlap below, and sequential windows are adjacent rather
+          // than overlapping.
           assertUnique(
             state.allocations,
             row => row.holdId === hold.id && row.vehicleIndex === allocation.vehicleIndex,

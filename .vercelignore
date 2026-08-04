@@ -9,6 +9,7 @@ PHASE-B-DECISIONS.md
 AGENDA.md
 MEMBERSHIPS.md
 PANORAMA.md
+DISENO-SIN-BASE-DE-DATOS.md
 
 # ── Serverless function budget ──────────────────────────────────────────────
 # The Hobby plan deploys at most 12 Serverless Functions, and every file under

@@ -2,16 +2,20 @@
 
 // The transactional agenda.
 //
-// One rule explains the whole file: a visit with N vehicles is N vans working AT
-// THE SAME TIME, not one van working N times. So durations are never added up —
-// each vehicle gets its own van, its own window and its own calendar event, and
-// the visit is as long as its slowest vehicle.
+// One rule explains the whole file: a visit is ONE van at ONE address, working
+// through the vehicles in the driveway one after another. So the services ADD UP —
+// three cars is three services plus one travel buffer, on a single van, and the
+// vehicles get back-to-back windows on that van's calendar.
+//
+// The fleet size therefore caps how many separate CUSTOMERS can be served at the
+// same hour, not how many vehicles one customer may bring. Four vans means four
+// driveways at once.
 //
 // Everything that decides who gets a van happens inside one Postgres transaction:
-// read what's busy, read the rotation cursor, pick free vans, write the hold, move
-// the cursor. Two requests racing for the last four vans serialize on that
-// transaction, so exactly one of them wins and the other gets a 409 with nothing
-// half-created behind it.
+// read what's busy, read the rotation cursor, pick a free van, write the hold, move
+// the cursor. Two requests racing for the last van serialize on that transaction,
+// so exactly one of them wins and the other gets a 409 with nothing half-created
+// behind it.
 //
 // The external calendars are written AFTER that transaction commits, because a
 // network call inside a transaction holds locks for as long as HighLevel feels
@@ -57,10 +61,26 @@ function fingerprintRequest({ date, startTime, vehicles }) {
 
 // ── Windows ────────────────────────────────────────────────────────────────
 
-// Where each vehicle sits in time. They all START together — that is what makes
-// it one visit — and each one ENDS on its own duration.
+// Where each vehicle sits in time.
+//
+// ONE van goes to ONE address and works through the vehicles in the driveway one
+// after another, so the vehicles are laid out BACK TO BACK in cart order: vehicle
+// k starts exactly where vehicle k-1 finished. The visit lasts the sum of the
+// services plus one trailing buffer.
+//
+// This is the inverse of what this function used to do (all vehicles sharing one
+// start time, the visit ending with the longest one). That model quoted 1h30 for
+// three cars that really take 3h30, and blocked three separate vans for a single
+// driveway.
+//
+// The trailing buffer rides on the LAST vehicle's window rather than living in a
+// row of its own: the assignment rows on one van must not overlap (the
+// `no_overlapping_assignments` exclusion constraint), and a separate visit-wide row
+// would overlap every vehicle in it. Sequential `[)` ranges are adjacent, not
+// overlapping, so back-to-back vehicles on one van are legal by construction.
 function visitWindow(vehicles, date, startTime, timezone) {
-  const fullDay = catalog.bookingModeForPackages(vehicles.map(vehicle => vehicle.packageId)) === 'full_day';
+  const packageIds = vehicles.map(vehicle => vehicle.packageId);
+  const fullDay = catalog.bookingModeForPackages(packageIds) === 'full_day';
   const effectiveStart = fullDay ? time.BUSINESS_DAY.start : startTime;
 
   if (!time.START_TIME_PATTERN.test(effectiveStart || '')) throw new RequestError('startTime is invalid');
@@ -70,18 +90,33 @@ function visitWindow(vehicles, date, startTime, timezone) {
   const dayStart = time.minutesFromTime(time.BUSINESS_DAY.start);
   const dayEnd = time.minutesFromTime(time.BUSINESS_DAY.end);
   const fullDayMinutes = dayEnd - dayStart;
+  if (startMinutes < dayStart) throw new RequestError('The selected time does not fit in the working day');
 
   const startMs = time.zonedDateTimeToMs(date, effectiveStart, timezone);
-  const perVehicle = vehicles.map(vehicle => {
-    const durationMinutes = fullDay ? fullDayMinutes : vehicle.durationMinutes;
-    const endMinutes = startMinutes + durationMinutes;
-    if (startMinutes < dayStart || endMinutes > dayEnd) {
-      throw new RequestError('The selected time does not fit in the working day');
-    }
+  // Paint work holds the van for the whole day, so the cart collapses into one
+  // day-long block instead of a chain.
+  const trailingBuffer = fullDay ? 0 : catalog.visitBufferMinutes(packageIds);
+  const lastIndex = vehicles.length - 1;
+
+  let cursorMinutes = startMinutes;
+  const perVehicle = vehicles.map((vehicle, index) => {
+    const serviceMinutes = fullDay ? fullDayMinutes : catalog.vehicleServiceMinutes(vehicle.packageId);
+    const vehicleStartMinutes = cursorMinutes;
+    // The van stays blocked through the travel buffer after the last vehicle.
+    const blockMinutes = serviceMinutes + (index === lastIndex ? trailingBuffer : 0);
+    const endMinutes = vehicleStartMinutes + blockMinutes;
+    if (endMinutes > dayEnd) throw new RequestError('The selected time does not fit in the working day');
+    cursorMinutes = endMinutes;
     return {
       ...vehicle,
-      durationMinutes,
-      startMs,
+      serviceMinutes,
+      // What the van is blocked for, which is the service plus the trailing buffer
+      // on the last vehicle only.
+      durationMinutes: blockMinutes,
+      // Minutes after the visit's start time that this vehicle begins, so the crew
+      // sheet and the UI can say "car 2 at 9am" without recomputing the chain.
+      offsetMinutes: vehicleStartMinutes - startMinutes,
+      startMs: time.zonedDateTimeToMs(date, time.timeFromMinutes(vehicleStartMinutes), timezone),
       endMs: time.zonedDateTimeToMs(date, time.timeFromMinutes(endMinutes), timezone)
     };
   });
@@ -91,53 +126,53 @@ function visitWindow(vehicles, date, startTime, timezone) {
     bookingMode: fullDay ? 'full_day' : 'slot',
     startTime: effectiveStart,
     startMs,
-    // The visit ends when the LAST van finishes — the longest vehicle, never the sum.
-    endMs: Math.max(...perVehicle.map(vehicle => vehicle.endMs)),
+    // The visit ends when the van finishes the LAST vehicle and its buffer — the
+    // sum of the chain, never the longest single vehicle.
+    endMs: perVehicle[perVehicle.length - 1].endMs,
+    serviceMinutes: perVehicle.reduce((total, vehicle) => total + vehicle.serviceMinutes, 0),
+    bufferMinutes: trailingBuffer,
     perVehicle
   };
 }
 
 // ── Allocation ─────────────────────────────────────────────────────────────
 
-// Picks one free van per vehicle, starting at the rotation cursor.
+// Picks the ONE van that serves the whole visit, starting at the rotation cursor.
 //
-// Longest vehicle first: a van free for three hours is also free for one, so
-// placing the hard cases first can only help. Returns null when even one vehicle
-// cannot be placed — a partial allocation is never useful, since all N vehicles
-// arrive at the same address at the same time.
+// One address, one van: the crew drives to the customer once and works through
+// every vehicle in the driveway. So this looks for a single van free across the
+// entire visit — first vehicle's start to last vehicle's end, buffer included —
+// rather than one free van per vehicle.
+//
+// Returns null when no van is free for the whole span. A van free for the first two
+// cars but busy for the third is not a usable allocation: the crew cannot hand the
+// driveway over to a different van halfway through.
 function allocateResources({ resources, busyByResource, perVehicle, cursor }) {
   const count = resources.length;
-  if (!count) return null;
-  // Rotation order for this attempt: cursor first, wrapping around.
-  const rotated = Array.from({ length: count }, (unused, offset) => (cursor + offset) % count);
+  if (!count || !perVehicle.length) return null;
 
-  const byLongestFirst = [...perVehicle].sort((a, b) =>
-    (b.endMs - b.startMs) - (a.endMs - a.startMs) || a.vehicleIndex - b.vehicleIndex
-  );
+  const visitStartMs = perVehicle[0].startMs;
+  const visitEndMs = perVehicle[perVehicle.length - 1].endMs;
 
-  const taken = new Set();
-  const picks = [];
-  for (const vehicle of byLongestFirst) {
-    const offset = rotated.findIndex((resourceIndex, rotationOffset) => {
-      if (taken.has(rotationOffset)) return false;
-      const busy = busyByResource[resourceIndex] || [];
-      return time.isFreeAcross(busy, vehicle.startMs, vehicle.endMs);
-    });
-    if (offset === -1) return null;
-    taken.add(offset);
-    picks.push({ vehicle, rotationOffset: offset, resource: resources[rotated[offset]] });
-  }
-
-  // Next hold starts one past the furthest van this one consumed, so consecutive
+  // Rotation order for this attempt: cursor first, wrapping around, so consecutive
   // bookings spread across the fleet instead of hammering van 1.
-  const nextCursor = (cursor + Math.max(...picks.map(pick => pick.rotationOffset)) + 1) % count;
+  const rotationOffset = Array.from({ length: count }, (unused, offset) => offset).find(offset => {
+    const busy = busyByResource[(cursor + offset) % count] || [];
+    return time.isFreeAcross(busy, visitStartMs, visitEndMs);
+  });
+  if (rotationOffset === undefined) return null;
+
+  const resource = resources[(cursor + rotationOffset) % count];
 
   return {
-    nextCursor,
-    // Back to cart order, so vehicle 0 is always the first vehicle the customer added.
-    assignments: picks
-      .sort((a, b) => a.vehicle.vehicleIndex - b.vehicle.vehicleIndex)
-      .map(pick => ({ vehicle: pick.vehicle, resource: pick.resource }))
+    nextCursor: (cursor + rotationOffset + 1) % count,
+    resource,
+    // Every vehicle in the cart lands on the SAME van, in cart order, each with its
+    // own back-to-back window.
+    assignments: perVehicle
+      .slice()
+      .sort((a, b) => a.vehicleIndex - b.vehicleIndex)
+      .map(vehicle => ({ vehicle, resource }))
   };
 }
 
@@ -173,9 +208,11 @@ async function computeAvailability({ vehicles, from, to, language = 'en', now = 
   const packageIds = vehicles.map(vehicle => vehicle.packageId);
   const noticeMs = catalog.noticeMsForPackages(packageIds);
   const bookingMode = catalog.bookingModeForPackages(packageIds);
-  const longestVehicleMinutes = bookingMode === 'full_day'
+  // One van works the whole driveway, so the visit is the SUM of the services plus
+  // one trailing buffer — not the longest single vehicle.
+  const visitMinutes = bookingMode === 'full_day'
     ? time.minutesFromTime(time.BUSINESS_DAY.end) - time.minutesFromTime(time.BUSINESS_DAY.start)
-    : Math.max(...vehicles.map(vehicle => vehicle.durationMinutes));
+    : catalog.visitDurationMinutes(packageIds);
 
   const rangeFrom = time.zonedDateTimeToMs(from, '00:00', timezone);
   const rangeTo = time.zonedDateTimeToMs(time.addDays(to, 1), '00:00', timezone);
@@ -192,7 +229,7 @@ async function computeAvailability({ vehicles, from, to, language = 'en', now = 
   for (const date of time.datesBetween(from, to)) {
     if (time.isSunday(date)) continue;
     const slots = [];
-    for (const startTime of time.gridStartTimes(longestVehicleMinutes)) {
+    for (const startTime of time.gridStartTimes(visitMinutes)) {
       let window;
       try {
         window = visitWindow(vehicles, date, startTime, timezone);
@@ -230,10 +267,14 @@ async function computeAvailability({ vehicles, from, to, language = 'en', now = 
     // Additive contract fields. The browser uses these instead of recreating
     // the membership regex or its own capacity/duration rules.
     noticeHours: noticeMs / (60 * 60 * 1000),
-    // Per vehicle, so the UI can show "van 1: 1h30, van 2: 2h" instead of a total
-    // that would wrongly read as a five-hour visit.
-    perVehicleDurationMinutes: vehicles.map(vehicle => vehicle.durationMinutes),
-    visitDurationMinutes: longestVehicleMinutes,
+    // Hands-on minutes per vehicle, in cart order. One van works them back to back,
+    // so these ADD UP to the visit — the UI shows them as a running schedule
+    // ("car 1 at 8am, car 2 at 9am"), not as parallel vans.
+    perVehicleDurationMinutes: vehicles.map(vehicle => catalog.vehicleServiceMinutes(vehicle.packageId)),
+    // How long the customer's driveway is occupied: the sum above plus one travel
+    // buffer at the end.
+    visitDurationMinutes: visitMinutes,
+    maxVehicles: catalog.maxVehiclesForPackages(packageIds),
     deposit: catalog.depositForPackages(packageIds),
     ...(estimate ? { estimate: { min: estimate.min, max: estimate.max, label: estimate.label } } : {}),
     dates
@@ -326,10 +367,11 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, now = Da
   const timezone = time.bookingTimezone();
   const resources = activeConfig.resources;
 
-  if (vehicles.length > resources.length) {
-    // Should already have been caught as a 422 by selection.normalizeVehicles;
-    // this is the backstop for a fleet configured with fewer vans than the cap.
-    throw new SlotUnavailableError('More vehicles than the fleet can serve at once');
+  if (!resources.length) {
+    // The fleet size caps how many ADDRESSES can be served at once, never how many
+    // vehicles one customer may bring — a single van works through the whole
+    // driveway. So the only impossible case here is having no van configured at all.
+    throw new SlotUnavailableError('No vans are configured');
   }
 
   const window = visitWindow(vehicles, date, startTime, timezone);
@@ -366,7 +408,7 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, now = Da
     if (!allocation) {
       throw new SlotUnavailableError(
         vehicles.length > 1
-          ? `Only part of the fleet is free at that time — ${vehicles.length} vehicles need ${vehicles.length} vans`
+          ? 'No van is free for the whole visit at that time — try an earlier start or fewer vehicles'
           : 'The selected appointment is no longer available'
       );
     }
@@ -465,7 +507,22 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, now = Da
       // The exclusion constraint fired: another transaction took one of these vans
       // for an overlapping window. Same answer as finding it busy, just found later.
       if (repository.isOverlapViolation(error)) throw new SlotUnavailableError();
-      if (repository.isUniqueViolation(error)) throw new IdempotencyConflictError();
+      // Only the idempotency key may answer "this key was already used". Every other
+      // unique violation is a schema problem wearing that error's clothes, and saying
+      // "Idempotency-Key already used" sends whoever debugs it somewhere else
+      // entirely. This exact trap cost real time on 2026-08-04: production ran the
+      // one-van-per-address model while `booking_assignments_resource_unique` — the
+      // constraint migration 004 drops — was still in the database, so every
+      // multi-vehicle booking failed with a 409 about idempotency.
+      if (repository.isUniqueViolation(error)) {
+        if (!error.constraint || /idempotency/i.test(error.constraint)) throw new IdempotencyConflictError();
+        console.error('[agenda] unexpected unique violation', error.constraint);
+        throw new RequestError(
+          `Booking storage rejected this reservation (${error.constraint}) — the database schema is behind the code`,
+          500,
+          'SCHEMA_CONFLICT'
+        );
+      }
       throw error;
     }
     await tx.setRotationCursor(allocation.nextCursor);
