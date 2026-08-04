@@ -60,6 +60,7 @@ function createGhlStub(options = {}) {
     created: [],
     deleted: [],
     calendarEvents: options.calendarEvents || {},
+    invoices: [],
     appointmentFailsAt: options.appointmentFailsAt ?? null,
     deleteFails: options.deleteFails || false,
     contactId: options.contactId || 'contact-1',
@@ -90,12 +91,25 @@ function createGhlStub(options = {}) {
     if (method === 'GET' && path.startsWith('/calendars/events')) {
       const params = new URLSearchParams(path.split('?')[1] || '');
       const calendarId = params.get('calendarId');
-      const events = (state.calendarEvents[calendarId] || []).map((event, index) => ({
-        id: event.id || `manual-${calendarId}-${index}`,
-        startTime: new Date(event.start).toISOString(),
-        endTime: new Date(event.end).toISOString(),
-        appointmentStatus: event.status || 'confirmed'
-      }));
+      // HighLevel honours the requested window; so must the fake, or a test that
+      // asserts "yesterday is invisible" passes for the wrong reason.
+      const fromMs = Number(params.get('startTime'));
+      const toMs = Number(params.get('endTime'));
+      const events = (state.calendarEvents[calendarId] || [])
+        .filter(event => !Number.isFinite(fromMs) || !Number.isFinite(toMs) || (event.start < toMs && event.end > fromMs))
+        .map((event, index) => ({
+          id: event.id || `manual-${calendarId}-${index}`,
+          startTime: new Date(event.start).toISOString(),
+          endTime: new Date(event.end).toISOString(),
+          appointmentStatus: event.status || 'confirmed',
+          // Passed through because the crew panel reads them. Dropping them here made
+          // the fake narrower than the real API, which is how a screen that works in
+          // tests renders blank in a driveway.
+          ...(event.title ? { title: event.title } : {}),
+          ...(event.address ? { address: event.address } : {}),
+          ...(event.notes ? { notes: event.notes } : {}),
+          ...(event.contactId ? { contactId: event.contactId } : {})
+        }));
       return json({ events });
     }
 
@@ -153,9 +167,36 @@ function createGhlStub(options = {}) {
     if (method === 'PUT' && path.startsWith('/calendars/events/appointments/')) {
       const id = decodeURIComponent(path.split('/').pop());
       const existing = state.created.find(entry => entry.kind === 'appointment' && entry.id === id);
-      if (!existing) return json({ message: 'Appointment not found' }, 404);
-      existing.body = { ...existing.body, ...body };
-      return json({ id, ...existing.body });
+      if (existing) {
+        existing.body = { ...existing.body, ...body };
+        return json({ id, ...existing.body });
+      }
+      // Appointments seeded straight onto a calendar (the office booked them by hand,
+      // or a test is describing a day that already existed) are editable too.
+      for (const events of Object.values(state.calendarEvents)) {
+        const seeded = events.find(event => event.id === id);
+        if (seeded) {
+          if (body.appointmentStatus) seeded.status = body.appointmentStatus;
+          if (body.title) seeded.title = body.title;
+          return json({ id, ...body });
+        }
+      }
+      return json({ message: 'Appointment not found' }, 404);
+    }
+
+    // ── Invoices ─────────────────────────────────────────────────────────────
+    if (method === 'POST' && path === '/invoices/') {
+      const id = `inv-${state.invoices.length + 1}`;
+      state.invoices.push({ id, body, payments: [] });
+      return json({ _id: id, ...body });
+    }
+
+    if (method === 'POST' && /^\/invoices\/[^/]+\/record-payment$/.test(path)) {
+      const id = decodeURIComponent(path.split('/')[2]);
+      const invoice = state.invoices.find(entry => entry.id === id);
+      if (!invoice) return json({ message: 'Invoice not found' }, 404);
+      invoice.payments.push(body);
+      return json({ success: true, invoice: { _id: id, status: 'paid' } });
     }
 
     if (method === 'DELETE' && path.startsWith('/calendars/events/')) {

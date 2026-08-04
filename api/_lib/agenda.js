@@ -614,6 +614,7 @@ async function reserveExternalCalendars({ repository, config, hold, allocations,
       const assignment = assignments.find(entry => entry.vehicleIndex === allocation.vehicleIndex);
       // The running order the crew works through at this address, so one block on the
       // calendar still says what happens and when.
+      const estimateLabel = (hold.quote && hold.quote.estimate && hold.quote.estimate.label) || '';
       const runningOrder = ((hold.quote && hold.quote.vehicles) || [])
         .map(vehicle => {
           const at = new Date(hold.slotStartMs + (vehicle.offsetMinutes || 0) * 60000);
@@ -629,7 +630,12 @@ async function reserveExternalCalendars({ repository, config, hold, allocations,
         description: [
           `Hold ${hold.id}`,
           `expira ${new Date(hold.expiresAtMs).toISOString()}`,
-          runningOrder && `orden: ${runningOrder}`
+          runningOrder && `orden: ${runningOrder}`,
+          // What the crew has to collect on site. Written here rather than looked up
+          // later because the crew panel reads the CALENDAR, not the database — that
+          // is what lets it survive the database going away.
+          estimateLabel && `total: ${estimateLabel}`,
+          `deposito: $${(hold.depositCents / 100).toFixed(0)}`
         ].filter(Boolean).join(' · '),
         startTime: new Date(allocation.startsAtMs).toISOString(),
         endTime: new Date(allocation.endsAtMs).toISOString()

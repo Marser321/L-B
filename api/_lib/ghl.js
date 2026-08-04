@@ -172,6 +172,66 @@ async function ghlRequest(config, path, options = {}) {
   throw lastError;
 }
 
+// The raw events on one calendar between two instants, as the crew panel needs them:
+// title, address, notes and status, not just the busy interval. Kept separate from
+// busyIntervalsForCalendar because the agenda must never be tempted to make a
+// scheduling decision from a title.
+async function calendarEventsForCalendar(config, calendarId, startMs, endMs) {
+  const query = new URLSearchParams({
+    locationId: config.locationId,
+    calendarId,
+    startTime: String(startMs),
+    endTime: String(endMs)
+  });
+  const data = await ghlRequest(config, `/calendars/events?${query}`, { version: CALENDAR_API_VERSION });
+  return (data.events || []).filter(event => !event.deleted);
+}
+
+// A one-line invoice for money already in hand, created so the collection lands in
+// the CRM's reporting rather than in a note nobody can total up. Created as a draft
+// and paid immediately by the caller, so an unpaid invoice never reaches the customer.
+async function createCashInvoice(config, { contactId, title, amount, reference }) {
+  const result = await ghlRequest(config, '/invoices/', {
+    method: 'POST',
+    version: 'v3',
+    body: {
+      altId: config.locationId,
+      altType: 'location',
+      name: String(title).slice(0, 160),
+      currency: 'USD',
+      items: [{ name: String(title).slice(0, 160), currency: 'USD', amount, qty: 1 }],
+      contactDetails: { id: contactId },
+      issueDate: new Date().toISOString().slice(0, 10),
+      liveMode: true,
+      invoiceNumberPrefix: 'EF-',
+      // Ties the invoice back to the stop it was collected at.
+      termsNotes: `cita ${reference}`
+    }
+  });
+  const invoice = result.invoice || result;
+  if (!invoice || !invoice._id && !invoice.id) throw new HighLevelError(502);
+  return { id: invoice._id || invoice.id };
+}
+
+// Marks an invoice paid by a manual method. `cash` is one of HighLevel's own modes
+// (enum verified against their published schema: cash, card, cheque, bank_transfer,
+// other), so this is a real payment record, not a status hack.
+async function recordCashPayment(config, invoiceId, { amount, notes }) {
+  await ghlRequest(config, `/invoices/${encodeURIComponent(invoiceId)}/record-payment`, {
+    method: 'POST',
+    version: 'v3',
+    body: {
+      altId: config.locationId,
+      altType: 'location',
+      mode: 'cash',
+      card: {},
+      cheque: {},
+      notes: String(notes || '').slice(0, 300),
+      amount
+    }
+  });
+}
+
 // Everything already on one van's calendar between two instants, including
 // appointments the office booked BY HAND in HighLevel. Postgres is the source of
 // truth for what the website sold, but the calendar is the source of truth for
@@ -413,6 +473,9 @@ module.exports = {
   busyIntervalsByResource,
   upsertContact,
   splitName,
+  calendarEventsForCalendar,
+  createCashInvoice,
+  recordCashPayment,
   createHoldAppointment,
   isSlotTakenError,
   createCalendarEvent,

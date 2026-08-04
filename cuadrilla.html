@@ -1,0 +1,172 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>L&amp;B · Cuadrilla</title>
+
+<!--
+  The crew's screen. Static on purpose: it costs no serverless function, and the
+  Hobby plan has twelve.
+
+  Everything it knows comes from GET /api/crew?t=<token>. The token stays in the URL
+  and is never written to storage, so a shared phone does not leave a signed link
+  behind after the tab is closed.
+-->
+
+<style>
+  :root { color-scheme: light dark; --bg: #0b0d10; --card: #15181d; --line: #262b33; --text: #f2f4f7; --dim: #9aa4b2; --ok: #16a34a; --cash: #2563eb; --warn: #b45309; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f4f6f8; --card: #fff; --line: #dfe3e8; --text: #12151a; --dim: #5b6675; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, system-ui, sans-serif; padding: 16px; max-width: 620px; margin-inline: auto; }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  h1 { font-size: 19px; margin: 0; }
+  .van { color: var(--dim); font-size: 14px; }
+  .stop { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .when { font-weight: 700; font-size: 17px; }
+  .title { margin: 2px 0 6px; }
+  .meta { color: var(--dim); font-size: 14px; }
+  .money { margin-top: 8px; font-size: 15px; }
+  .balance { font-weight: 700; }
+  .row { display: flex; gap: 10px; margin-top: 12px; }
+  button { flex: 1; border: 0; border-radius: 10px; padding: 13px 10px; font-size: 15px; font-weight: 650; color: #fff; cursor: pointer; }
+  /* Big targets: this is used one-handed, outdoors, with wet hands. */
+  .attend { background: var(--ok); }
+  .cash { background: var(--cash); }
+  button[disabled] { opacity: .45; cursor: default; }
+  .done { color: var(--ok); font-weight: 700; margin-top: 10px; }
+  .msg { padding: 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); color: var(--dim); }
+  .err { border-color: var(--warn); color: var(--warn); }
+</style>
+
+<header>
+  <h1>Hoy</h1>
+  <span class="van" id="van"></span>
+</header>
+<div id="list"><div class="msg">Cargando…</div></div>
+
+<script>
+  const token = new URLSearchParams(location.search).get('t') || '';
+  const list = document.getElementById('list');
+  const money = value => `$${Number(value).toFixed(0)}`;
+
+  function message(text, isError) {
+    list.innerHTML = `<div class="msg${isError ? ' err' : ''}"></div>`;
+    list.firstChild.textContent = text;
+  }
+
+  function render(day) {
+    document.getElementById('van').textContent = `${day.van.replace('_', ' ')} · ${day.date}`;
+    if (!day.stops.length) return message('No hay servicios agendados para hoy.');
+
+    list.textContent = '';
+    for (const stop of day.stops) {
+      const card = document.createElement('div');
+      card.className = 'stop';
+
+      const when = document.createElement('div');
+      when.className = 'when';
+      when.textContent = `${stop.from} – ${stop.to}`;
+      card.append(when);
+
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = stop.title;
+      card.append(title);
+
+      if (stop.address) {
+        const address = document.createElement('div');
+        address.className = 'meta';
+        address.textContent = stop.address;
+        card.append(address);
+      }
+      if (stop.order) {
+        const order = document.createElement('div');
+        order.className = 'meta';
+        order.textContent = stop.order;
+        card.append(order);
+      }
+      if (stop.total != null) {
+        const amounts = document.createElement('div');
+        amounts.className = 'money';
+        const paid = stop.deposit != null ? ` · depósito ${money(stop.deposit)} pagado` : '';
+        amounts.innerHTML = `total ${money(stop.total)}${paid}`;
+        if (stop.balance != null) {
+          const balance = document.createElement('span');
+          balance.className = 'balance';
+          balance.textContent = ` · resta ${money(stop.balance)}`;
+          amounts.append(balance);
+        }
+        card.append(amounts);
+      }
+
+      if (stop.status === 'showed') {
+        const done = document.createElement('div');
+        done.className = 'done';
+        done.textContent = '✓ Atendida';
+        card.append(done);
+      } else {
+        const row = document.createElement('div');
+        row.className = 'row';
+
+        const attend = document.createElement('button');
+        attend.className = 'attend';
+        attend.textContent = 'Atendida';
+        attend.onclick = () => act(attend, { action: 'attended', appointmentId: stop.appointmentId });
+        row.append(attend);
+
+        const cash = document.createElement('button');
+        cash.className = 'cash';
+        cash.textContent = 'Cobrado en efectivo';
+        cash.onclick = () => {
+          // Pre-filled with what is owed, editable because a customer may pay part or
+          // add a tip and the record has to match what was actually taken.
+          const suggested = stop.balance != null ? String(stop.balance) : '';
+          const entered = prompt('¿Cuánto se cobró en efectivo?', suggested);
+          if (entered === null) return;
+          const amount = Number(entered);
+          if (!Number.isFinite(amount) || amount <= 0) return alert('Monto inválido.');
+          act(cash, { action: 'cash', appointmentId: stop.appointmentId, amount });
+        };
+        row.append(cash);
+
+        card.append(row);
+      }
+      list.append(card);
+    }
+  }
+
+  async function act(button, payload) {
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Guardando…';
+    try {
+      const response = await fetch('/api/crew', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ t: token, ...payload })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo guardar');
+      // Reload rather than patching the card: the calendar is the source of truth and
+      // the office may have changed something while the crew was driving.
+      await load();
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = original;
+      alert(error.message);
+    }
+  }
+
+  async function load() {
+    if (!token) return message('Falta el enlace de la cuadrilla.', true);
+    try {
+      const response = await fetch(`/api/crew?t=${encodeURIComponent(token)}`);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo cargar');
+      render(result);
+    } catch (error) {
+      message(error.message, true);
+    }
+  }
+
+  load();
+</script>

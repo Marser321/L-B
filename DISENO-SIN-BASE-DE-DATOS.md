@@ -265,7 +265,28 @@ luego: 14 − 5 (Stripe) + 2 (cuadrilla, miembro) = 11
 
 ---
 
-## 5. Panel de la cuadrilla
+## 5. Panel de la cuadrilla — **IMPLEMENTADO 4 ago 2026**
+
+`cuadrilla.html` (estático, no gasta función) + `api/crew.js` + `api/_lib/crew-link.js`.
+Los links se emiten con `node scripts/crew-links.mjs`, que es un script y no un endpoint
+a propósito: imprimir un link acuña una capacidad que puede marcar plata cobrada, así que
+vive en una terminal con el secreto a mano, no en la web.
+
+Lo que quedó acotado, y está cubierto por tests:
+
+| Límite | Cómo |
+|---|---|
+| Solo HOY | La ventana se calcula en la zona del negocio, no en la del teléfono |
+| Solo SU camioneta | El token nombra la camioneta y el calendario se resuelve del config; el request no puede nombrar un calendario |
+| Solo dos acciones | `attended` y `cash`. Cualquier otra string es 422 |
+| Nada destructivo | No hay cancelar, borrar ni reprogramar |
+| Sin datos del cliente | Ni teléfono, ni email, ni identificadores de CRM. Solo nombre y dirección |
+| Monto acotado | Entre 1 y 5000, para que un dígito de más no registre miles |
+
+La cita se verifica listando el día y buscando el id, **no** confiando en el id — si no,
+el token permitiría editar cualquier cita de la cuenta.
+
+
 
 Es la pieza que **cierra el circuito de los créditos derivados**: alguien tiene que
 marcar la cita como `showed`, y esa persona es quien hizo el lavado.
