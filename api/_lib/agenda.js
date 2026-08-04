@@ -318,24 +318,42 @@ async function describeHoldStatus(holdId, { now = Date.now(), config = null } = 
 
 // ── Holds ──────────────────────────────────────────────────────────────────
 
+// One van serves the whole address, so there is exactly ONE assignment row per
+// visit and the response says so once. The per-vehicle schedule is DERIVED from the
+// visit's start plus each vehicle's offset in the chain, which is stored on the
+// quote — the database does not need a row per vehicle to express "car 2 starts an
+// hour in", and writing one is what used to collide with
+// booking_assignments_resource_unique.
 function describeHold(hold, assignments) {
+  const van = assignments[0] || null;
+  const quoted = (hold.quote && hold.quote.vehicles) || [];
+  const startMs = hold.slotStartMs;
   return {
     holdId: hold.id,
     status: hold.status,
     timezone: hold.timezone,
     bookingMode: hold.bookingMode,
-    slotStart: new Date(hold.slotStartMs).toISOString(),
+    slotStart: new Date(startMs).toISOString(),
     slotEnd: new Date(hold.slotEndMs).toISOString(),
     expiresAt: new Date(hold.expiresAtMs).toISOString(),
     deposit: hold.depositCents / 100,
     vehicleCount: hold.vehicleCount,
-    assignments: assignments.map(assignment => ({
-      vehicleIndex: assignment.vehicleIndex,
-      resource: assignment.resourceKey,
-      startsAt: new Date(assignment.startsAtMs).toISOString(),
-      endsAt: new Date(assignment.endsAtMs).toISOString(),
-      durationMinutes: assignment.durationMinutes
-    }))
+    // The one van, named once.
+    resource: van ? van.resourceKey : null,
+    visitDurationMinutes: van ? van.durationMinutes : null,
+    // Kept as an array so existing clients keep working, but it is now the running
+    // order of one van's day at this address, not a list of parallel vans.
+    assignments: quoted.map(vehicle => {
+      const offsetMs = (vehicle.offsetMinutes || 0) * 60000;
+      const serviceMs = (vehicle.serviceMinutes || vehicle.durationMinutes || 0) * 60000;
+      return {
+        vehicleIndex: vehicle.vehicleIndex,
+        resource: van ? van.resourceKey : null,
+        startsAt: new Date(startMs + offsetMs).toISOString(),
+        endsAt: new Date(startMs + offsetMs + serviceMs).toISOString(),
+        durationMinutes: Math.round(serviceMs / 60000)
+      };
+    })
   };
 }
 
@@ -421,13 +439,17 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer
     const holdId = newId();
     const parentId = newId();
     const quote = {
-      vehicles: vehicles.map(vehicle => ({
+      vehicles: window.perVehicle.map(vehicle => ({
         vehicleIndex: vehicle.vehicleIndex,
         categoryId: vehicle.categoryId,
         packageId: vehicle.packageId,
         sizeId: vehicle.sizeId,
         addonIds: vehicle.addonIds,
         durationMinutes: vehicle.durationMinutes,
+        // Where this vehicle sits in the van's chain, so the running order can be
+        // rebuilt from the visit's start without a row per vehicle.
+        serviceMinutes: vehicle.serviceMinutes,
+        offsetMinutes: vehicle.offsetMinutes,
         isMembership: vehicle.isMembership,
         estimate: vehicle.estimate || null,
         descriptor: vehicle.descriptor || null
@@ -465,46 +487,52 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer
       quote
     };
 
-    const children = allocation.assignments.map(({ vehicle, resource }) => {
-      const childId = newId();
-      const assignmentId = newId();
-      return {
-        child: {
-          id: childId,
-          status: 'held',
-          vehicleIndex: vehicle.vehicleIndex,
-          vehicleLabel: vehicle.label,
-          packageId: vehicle.packageId,
-          slotStartMs: vehicle.startMs,
-          slotEndMs: vehicle.endMs,
-          timezone,
-          estimateMinCents: toCents(vehicle.estimate ? vehicle.estimate.min : 0),
-          estimateMaxCents: toCents(vehicle.estimate ? vehicle.estimate.max : 0),
-          quote: quote.vehicles[vehicle.vehicleIndex]
-        },
+    // ONE child booking per vehicle — they carry the per-vehicle price and label —
+    // but ONE assignment and ONE resource reservation for the WHOLE visit, riding on
+    // the first child. A van serving one address is busy for one contiguous block;
+    // that is what the assignment row means, and one row per vehicle both
+    // misdescribed it and collided with booking_assignments_resource_unique (the
+    // constraint migration 004 was written to drop — no longer needed).
+    const resource = allocation.resource;
+    const vehicleLabels = window.perVehicle.map(vehicle => vehicle.label).join(' + ');
+    const children = window.perVehicle.map((vehicle, index) => ({
+      child: {
+        id: newId(),
+        status: 'held',
+        vehicleIndex: vehicle.vehicleIndex,
+        vehicleLabel: vehicle.label,
+        packageId: vehicle.packageId,
+        slotStartMs: vehicle.startMs,
+        slotEndMs: vehicle.endMs,
+        timezone,
+        estimateMinCents: toCents(vehicle.estimate ? vehicle.estimate.min : 0),
+        estimateMaxCents: toCents(vehicle.estimate ? vehicle.estimate.max : 0),
+        quote: quote.vehicles[vehicle.vehicleIndex]
+      },
+      ...(index === 0 ? {
         assignment: {
-          id: assignmentId,
+          id: newId(),
           resourceKey: resource.key,
-          vehicleIndex: vehicle.vehicleIndex,
-          vehicleLabel: vehicle.label,
+          vehicleIndex: 0,
+          vehicleLabel: vehicleLabels.slice(0, 160),
           packageId: vehicle.packageId,
-          durationMinutes: Math.round((vehicle.endMs - vehicle.startMs) / 60000),
-          startsAtMs: vehicle.startMs,
-          endsAtMs: vehicle.endMs,
+          durationMinutes: Math.round((window.endMs - window.startMs) / 60000),
+          startsAtMs: window.startMs,
+          endsAtMs: window.endMs,
           calendarId: resource.calendarId,
           status: 'held'
         },
         allocation: {
           id: newId(),
           resourceKey: resource.key,
-          vehicleIndex: vehicle.vehicleIndex,
+          vehicleIndex: 0,
           calendarId: resource.calendarId,
-          startsAtMs: vehicle.startMs,
-          endsAtMs: vehicle.endMs,
+          startsAtMs: window.startMs,
+          endsAtMs: window.endMs,
           status: 'pending'
         }
-      };
-    });
+      } : {})
+    }));
 
     try {
       await tx.createHoldBundle({ hold, parent, children });
@@ -535,8 +563,14 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer
     return {
       replayed: false,
       hold: { ...hold, parentBookingId: parentId },
-      assignments: children.map(entry => ({ ...entry.assignment, bookingId: entry.child.id, parentBookingId: parentId })),
-      allocations: children.map(entry => ({ ...entry.allocation, holdId, assignmentId: entry.assignment.id }))
+      // Only the first child carries them — one van, one contiguous block — so filter
+      // rather than map: children 2..N have no assignment of their own.
+      assignments: children
+        .filter(entry => entry.assignment)
+        .map(entry => ({ ...entry.assignment, bookingId: entry.child.id, parentBookingId: parentId })),
+      allocations: children
+        .filter(entry => entry.allocation)
+        .map(entry => ({ ...entry.allocation, holdId, assignmentId: entry.assignment.id }))
     };
   });
 
@@ -578,12 +612,25 @@ async function reserveExternalCalendars({ repository, config, hold, allocations,
   try {
     for (const allocation of allocations) {
       const assignment = assignments.find(entry => entry.vehicleIndex === allocation.vehicleIndex);
+      // The running order the crew works through at this address, so one block on the
+      // calendar still says what happens and when.
+      const runningOrder = ((hold.quote && hold.quote.vehicles) || [])
+        .map(vehicle => {
+          const at = new Date(hold.slotStartMs + (vehicle.offsetMinutes || 0) * 60000);
+          const clock = at.toLocaleTimeString('en-US', { timeZone: hold.timezone, hour: 'numeric', minute: '2-digit' });
+          return `${clock} ${vehicle.packageId}`;
+        })
+        .join(' · ');
       const event = await ghl.createHoldAppointment(config, {
         calendarId: allocation.calendarId,
         contactId,
         address,
         title: `RESERVA (sin pagar) — ${assignment ? assignment.vehicleLabel : 'website booking'}`,
-        description: `Hold ${hold.id} · expira ${new Date(hold.expiresAtMs).toISOString()}`,
+        description: [
+          `Hold ${hold.id}`,
+          `expira ${new Date(hold.expiresAtMs).toISOString()}`,
+          runningOrder && `orden: ${runningOrder}`
+        ].filter(Boolean).join(' · '),
         startTime: new Date(allocation.startsAtMs).toISOString(),
         endTime: new Date(allocation.endsAtMs).toISOString()
       });

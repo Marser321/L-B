@@ -241,6 +241,10 @@ function transactionApi(client) {
             child.estimateMinCents, child.estimateMaxCents, JSON.stringify(child.quote)
           ]
         );
+        // Only the first child carries them: one van serving one address is busy for
+        // ONE contiguous block, so there is one assignment and one reservation per
+        // visit, not one per vehicle.
+        if (!assignment) continue;
         await client.query(
           `insert into booking_assignments (
              id, booking_id, parent_booking_id, resource_key, vehicle_index, vehicle_label,

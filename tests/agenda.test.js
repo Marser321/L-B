@@ -79,7 +79,7 @@ test('one to four vehicles all ride on ONE van, and a fifth is rejected with 422
       const vans = res.body.assignments.map(assignment => assignment.resource);
       assert.equal(new Set(vans).size, 1, `expected 1 van for ${count} vehicles, got ${vans.join(',')}`);
 
-      // Back to back on that one van's calendar, in cart order, with no gaps.
+      // Back to back in the reported running order, with no gaps.
       const windows = res.body.assignments
         .slice()
         .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
@@ -91,10 +91,16 @@ test('one to four vehicles all ride on ONE van, and a fifth is rejected with 422
         );
       }
 
-      // One calendar, one van, and the whole visit blocked on it.
+      // ONE appointment for the whole visit, on ONE van's calendar. The crew drives
+      // to the address once, so the calendar shows one block — not one per vehicle.
       const blocked = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
-      assert.equal(new Set(blocked.map(entry => entry.calendarId)).size, 1);
-      blocked.forEach(entry => assert.ok(CALENDARS.includes(entry.calendarId)));
+      assert.equal(blocked.length, 1, `expected 1 appointment for ${count} vehicles`);
+      assert.ok(CALENDARS.includes(blocked[0].calendarId));
+      // And ONE assignment row, satisfying booking_assignments_resource_unique — the
+      // constraint that is still in production and that migration 004 would have had
+      // to drop if a visit wrote one row per vehicle.
+      assert.equal(ctx.repository.__store().assignments.length, 1);
+      assert.equal(ctx.repository.__store().allocations.length, 1);
     } finally {
       ctx.restore();
     }
@@ -131,11 +137,23 @@ test('vehicles are washed one after another: the visit is the SUM of the service
   const end = Date.parse(res.body.slotEnd);
   assert.equal((end - start) / 60000, 60 + 120 + 60, 'the visit is the chain, not the longest vehicle');
 
-  // Blocks in cart order: the car's 60, then the boat's 120 + the 60-minute buffer.
+  // The reported running order is hands-on time per vehicle: 60 then 120. The buffer
+  // is not a vehicle, so it does not appear here — it is inside the visit window.
   const inOrder = res.body.assignments
     .slice()
     .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
-  assert.deepEqual(inOrder.map(assignment => assignment.durationMinutes), [60, 180]);
+  assert.deepEqual(inOrder.map(assignment => assignment.durationMinutes), [60, 120]);
+
+  // ONE appointment covering the whole chain, buffer included.
+  const created = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
+  assert.equal(created.length, 1);
+  assert.equal(
+    (Date.parse(created[0].body.endTime) - Date.parse(created[0].body.startTime)) / 60000,
+    240
+  );
+  // The running order is written into the appointment so one block still says what
+  // happens and when.
+  assert.match(created[0].body.description, /orden: .*premium-detail.*boat-basico/);
 
   // Nothing starts at the same time, and nothing leaves a gap.
   assert.equal(Date.parse(inOrder[0].startsAt), start);
@@ -228,15 +246,19 @@ test('a parent reservation with one child booking per vehicle, all on one van', 
   assert.deepEqual(childWindows, [60, 120]);
   assert.equal((parents[0].slotEndMs - parents[0].slotStartMs) / 60000, 180);
 
-  // One assignment per child, and every one of them on the SAME van and calendar.
-  assert.equal(store.assignments.length, 2);
-  store.assignments.forEach(assignment => {
-    assert.ok(children.some(child => child.id === assignment.bookingId));
-    assert.ok(CALENDARS.includes(assignment.calendarId));
-    assert.equal(assignment.status, 'held');
-  });
-  assert.equal(new Set(store.assignments.map(a => a.resourceKey)).size, 1, 'one address, one van');
-  assert.equal(new Set(store.assignments.map(a => a.calendarId)).size, 1);
+  // ONE assignment for the whole visit, not one per vehicle: a van at one address is
+  // busy for one contiguous block, and that is what the row means.
+  assert.equal(store.assignments.length, 1);
+  const [assignment] = store.assignments;
+  assert.ok(children.some(child => child.id === assignment.bookingId));
+  assert.ok(CALENDARS.includes(assignment.calendarId));
+  assert.equal(assignment.status, 'held');
+  // It spans the whole chain: 60 of car + 90 of hauler + a 30-minute buffer.
+  assert.equal(assignment.durationMinutes, 180);
+  assert.equal(assignment.startsAtMs, parents[0].slotStartMs);
+  assert.equal(assignment.endsAtMs, parents[0].slotEndMs);
+  // And it names every vehicle it covers, so the crew's calendar reads correctly.
+  assert.match(assignment.vehicleLabel, /Camry/);
 });
 
 test('the rotation cursor persists across bookings and starts at the next van each time', async t => {
@@ -284,7 +306,7 @@ test('a hold reserves the van in HighLevel so the office cannot book over it', a
   assert.equal(res.statusCode, 201);
 
   const held = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
-  assert.equal(held.length, 2);
+  assert.equal(held.length, 1, 'one appointment for the visit, not one per vehicle');
   held.forEach(entry => {
     assert.match(entry.body.title, /^RESERVA \(sin pagar\) — /);
     assert.equal(entry.body.locationId, 'loc-1');
@@ -295,8 +317,9 @@ test('a hold reserves the van in HighLevel so the office cannot book over it', a
     // THE decision that lets Postgres go: HighLevel validates the slot itself.
     assert.equal(entry.body.ignoreFreeSlotValidation, false);
   });
-  // One address, one van, one calendar.
+  // One address, one van, one calendar, and the title names both vehicles.
   assert.equal(new Set(held.map(entry => entry.calendarId)).size, 1);
+  assert.match(held[0].body.title, / \+ /, 'the single block names every vehicle it covers');
 
   // The appointment id is recorded on both the allocation and the assignment, which
   // is what lets expiry and compensation clean them up later.
@@ -322,8 +345,8 @@ test('block slots are never used: the vans reject them outright', async t => {
 });
 
 test('a failed calendar write compensates every appointment already created and frees the slot', async t => {
-  // Two vehicles reserve fine, the third fails.
-  const ctx = setupAgenda({ appointmentFailsAt: 2 });
+  // The visit's single appointment fails outright.
+  const ctx = setupAgenda({ appointmentFailsAt: 0 });
   t.after(() => ctx.restore());
 
   const res = await callHandler(
@@ -337,7 +360,10 @@ test('a failed calendar write compensates every appointment already created and 
 
   // Both blocks that did get created were deleted again — no van is left blocked
   // by a reservation that does not exist.
-  assert.deepEqual(ctx.ghl.deleted.sort(), ['appt-1', 'appt-2']);
+  // Nothing was created, so there is nothing to undo — and crucially nothing is left
+  // behind either.
+  assert.deepEqual(ctx.ghl.deleted, []);
+  assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'appointment').length, 0);
 
   const store = ctx.repository.__store();
   assert.equal(store.holds[0].status, 'failed');
@@ -373,7 +399,7 @@ test('a hold expires after 15 minutes: the van comes back and its appointments a
   assert.equal(store.holds[0].status, 'expired');
   store.assignments.forEach(assignment => assert.equal(assignment.status, 'released'));
   store.bookings.forEach(booking => assert.equal(booking.status, 'expired'));
-  assert.deepEqual(ctx.ghl.deleted.sort(), ['appt-1', 'appt-2']);
+  assert.deepEqual(ctx.ghl.deleted, ['appt-1'], 'the visit had one appointment');
 
   // The slot is free again for the next customer.
   const busy = await ctx.repository.busyAssignments({ fromMs: 0, toMs: Date.now() + 1e11 });
@@ -698,14 +724,14 @@ test('a booking is confirmed only by a verified payment, and confirming is idemp
   // nothing new is created and nothing is deleted. That is the point: there is no
   // moment where the van looks free between deleting a hold and writing a booking.
   const appointments = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
-  assert.equal(appointments.length, 2, 'the two hold appointments, and no more');
+  assert.equal(appointments.length, 1, 'the visit had one appointment, and no more');
   assert.deepEqual(ctx.ghl.deleted, [], 'confirming deletes nothing');
 
   // Each one was promoted to confirmed and relabelled away from "sin pagar".
   const updates = ctx.ghl.calls.filter(call =>
     call.method === 'PUT' && call.path.startsWith('/calendars/events/appointments/')
   );
-  assert.equal(updates.length, 2);
+  assert.equal(updates.length, 1);
   updates.forEach(update => {
     assert.equal(update.body.appointmentStatus, 'confirmed');
     assert.equal(/sin pagar/.test(update.body.title || ''), false);

@@ -206,18 +206,21 @@ Ese último es retención pura, y solo es posible porque los créditos son visib
 | `membership_*`, `crm_price_map` | **se van** si las membresías se cobran con facturas recurrentes de HighLevel en vez de Stripe |
 | `schema_migrations` | queda huérfana; se borra la base entera al final |
 
-La migración `004_one_van_per_address.sql` **sí hace falta mientras Postgres siga
-escribiendo `booking_assignments`**. Corrección de una afirmación anterior: cambiar el
-block-slot por una cita arregló el lado de HighLevel, pero las filas de asignación se
-siguen escribiendo una por vehículo sobre la misma camioneta, y
-`booking_assignments_resource_unique` las rechaza. Hoy en producción una reserva de
-**un** vehículo funciona y una de **dos o más** responde 500 `SCHEMA_CONFLICT`.
+**No hay migración 004 y no va a haberla.** Se escribió para eliminar
+`booking_assignments_resource_unique`, la restricción que exigía camionetas distintas
+por vehículo. Pero esa restricción se dispara solo si una visita escribe **una fila por
+vehículo**, y eso era una mala descripción de la realidad: una camioneta en una
+dirección está ocupada **un bloque contiguo**, no N bloques.
 
-Dos formas de cerrarlo, y son alternativas:
+Así que la visita escribe **una sola fila de asignación**, que abarca toda la cadena. La
+restricción queda satisfecha por construcción, sin tocar el esquema, y el repositorio en
+memoria la sigue enforzando — un fake más permisivo que producción es exactamente cómo
+una reserva pasa 174 tests y después falla con un cliente.
 
-1. Correr la 004 (dos `DROP CONSTRAINT`), y las reservas multi-vehículo funcionan ya.
-2. Dejar de escribir esas tablas, que es el objetivo final de este documento. Más
-   trabajo, pero la 004 deja de existir.
+El detalle por vehículo no necesita filas: se deriva del inicio de la visita más el
+`offsetMinutes` de cada vehículo, que se guarda en el quote. Y en HighLevel es **una
+cita** por visita, con el orden de trabajo en la descripción, en lugar de N citas para
+la misma casa.
 
 ---
 

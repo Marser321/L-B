@@ -145,16 +145,27 @@ function createMemoryRepository(options = {}) {
             row => row.parentBookingId === parent.id && row.vehicleIndex === child.vehicleIndex,
             'bookings_child_vehicle_idx'
           );
+          // Written first so a child with no assignment still lands.
+          state.bookings.push({ ...child, parentBookingId: parent.id, holdId: hold.id });
+          // Only the first child carries the assignment: one van at one address is
+          // busy for ONE contiguous block, so a visit has one assignment row, not one
+          // per vehicle.
+          if (!assignment) continue;
           assertUnique(
             state.assignments,
             row => row.parentBookingId === parent.id && row.vehicleIndex === assignment.vehicleIndex,
             'booking_assignments_vehicle_unique'
           );
-          // No resource-uniqueness check: every vehicle of one booking lands on the
-          // SAME van, because one van serves one address. Migration 004 drops the
-          // constraints that used to require different vans; what still protects the
-          // van is assertNoOverlap below, and sequential windows are adjacent rather
-          // than overlapping.
+          // This constraint is STILL IN THE PRODUCTION DATABASE and migration 004 is
+          // not being applied, so the fake must keep enforcing it — a fake that is
+          // more permissive than production is how a booking passes 174 tests and
+          // then fails for a customer. One assignment row per visit satisfies it by
+          // construction; one row per vehicle is what used to violate it.
+          assertUnique(
+            state.assignments,
+            row => row.parentBookingId === parent.id && row.resourceKey === assignment.resourceKey,
+            'booking_assignments_resource_unique'
+          );
           assertUnique(
             state.allocations,
             row => row.holdId === hold.id && row.vehicleIndex === allocation.vehicleIndex,
@@ -170,7 +181,6 @@ function createMemoryRepository(options = {}) {
           };
           assertNoOverlap(state.assignments, assignmentRow);
 
-          state.bookings.push({ ...child, parentBookingId: parent.id, holdId: hold.id });
           state.assignments.push(assignmentRow);
           state.allocations.push({
             ...allocation,

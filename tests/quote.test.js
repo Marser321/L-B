@@ -302,6 +302,8 @@ test('a booking holds the vans, records the CRM, and stays pending until payment
   assert.ok(res.body.holdId);
   assert.ok(res.body.expiresAt);
   assert.equal(res.body.holdMinutes, 15);
+  // Two vehicles, one van, worked in sequence: the crew breakdown is the running
+  // order at that address, all on the same van.
   assert.equal(res.body.crew.length, 2);
   assert.equal(new Set(res.body.crew.map(entry => entry.resource)).size, 1, 'one van per address');
 
@@ -309,7 +311,9 @@ test('a booking holds the vans, records the CRM, and stays pending until payment
   const store = ctx.repository.__store();
   assert.equal(store.holds.length, 1);
   assert.equal(store.holds[0].status, 'converted');
-  assert.equal(store.assignments.length, 2);
+  // One assignment for the visit; the per-vehicle detail lives on the child bookings.
+  assert.equal(store.assignments.length, 1);
+  assert.equal(store.bookings.filter(booking => booking.parentBookingId).length, 2);
   store.bookings.forEach(booking => {
     assert.equal(booking.status, 'pending_payment');
     assert.equal(booking.contactId, 'contact-1');
@@ -319,8 +323,11 @@ test('a booking holds the vans, records the CRM, and stays pending until payment
   // The CRM got a contact, an opportunity in the PENDING stage, and the one van
   // blocked for both vehicles.
   const blocks = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
-  assert.equal(blocks.length, 2, 'one block per vehicle, back to back');
-  assert.equal(new Set(blocks.map(block => block.calendarId)).size, 1, 'all on the same van calendar');
+  assert.equal(blocks.length, 1, 'ONE appointment for the visit — the crew arrives once');
+  assert.ok(CALENDARS.includes(blocks[0].calendarId));
+  // One assignment row, which is what keeps booking_assignments_resource_unique
+  // satisfied without migration 004.
+  assert.equal(ctx.repository.__store().assignments.length, 1);
   const opportunity = ctx.ghl.created.find(entry => entry.kind === 'opportunity');
   assert.equal(opportunity.body.pipelineStageId, 'stage-pending');
   // The van is blocked on its own calendar, not on a round-robin calendar.
@@ -339,7 +346,7 @@ test('the opportunity records the server price, the hold and the crew breakdown'
   assert.equal(values.get('field-estimate'), 'From $215');
   assert.equal(values.get('field-deposit'), '$30');
   assert.equal(values.get('field-duration'), '1h 30m');
-  assert.match(values.get('field-crewAssignments'), /#1 camioneta_\d 08:00–09:30/);
+  assert.match(values.get('field-crewAssignments'), /#1 camioneta_\d 08:00–09:00/);
   assert.ok(values.get('field-holdId'));
 });
 

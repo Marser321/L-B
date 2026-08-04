@@ -21,8 +21,10 @@ separate van per car. Every design decision below follows from that:
 - A slot is offered only when **one van is free for the whole visit**, start to
   finish. A van free for the first two cars but busy for the third is not usable:
   the crew cannot hand the driveway to a different van halfway through.
-- A booking is a **parent reservation plus one child per vehicle**, and every child
-  is on the **same van**, in cart order, with back-to-back windows.
+- A booking is a **parent reservation plus one child per vehicle**, but **one
+  assignment row and one calendar appointment for the whole visit** — a van at one
+  address is busy for one contiguous block. The per-vehicle running order is derived
+  from the visit's start plus each vehicle's offset, not stored as rows.
 - The fleet size caps how many **separate customers** can be served at the same
   hour. Four vans means **four driveways at once**, not four vehicles.
 - One booking is capped at **four vehicles** (4×60 + 30 = 4h30), or **two** when the
@@ -32,9 +34,11 @@ separate van per car. Every design decision below follows from that:
 > This inverts the original model, which had N vehicles served by N vans at the same
 > time and a visit as long as its longest vehicle. That was wrong about the
 > operation: it quoted 1h30 for three cars that really take 3h30, blocked three
-> separate vans for one driveway, and oversold the day. Migration
-> `004_one_van_per_address.sql` drops the two constraints that used to *require*
-> different vans.
+> separate vans for one driveway, and oversold the day.
+>
+> `booking_assignments_resource_unique` — which required different vans — is left in
+> place and still enforced. Writing ONE assignment row per visit satisfies it by
+> construction, so no migration was needed to invert the model.
 
 ## Source of truth
 
@@ -53,7 +57,7 @@ yours" is worse than a clear "booking is temporarily unavailable".
 
 ```
 POST /api/availability     → start times where one van is free for the whole visit
-POST /api/bookings/holds   → 15-minute claim on ONE van  (Idempotency-Key required)
+POST /api/bookings/holds   → 15-minute claim on ONE van, as a `new` appointment
 POST /api/quote            → customer + CRM records attached; status pending_payment
 POST /api/payments/webhook → verified payment ⇒ confirmed          (the only door)
 POST /api/bookings/expire  → cron: releases holds older than 15 minutes
@@ -151,7 +155,7 @@ all its vehicles share one start time.
 | `booking_holds` | a 15-minute claim; `idempotency_key`, `request_fingerprint`, `expires_at` |
 | `hold_allocations` | one row per van in a hold, with the external block-slot id |
 | `bookings` | parent reservation (`parent_booking_id is null`) plus one child per vehicle |
-| `booking_assignments` | van + calendar + window + external appointment; carries the overlap constraint. Several rows of one booking share a van, with adjacent windows |
+| `booking_assignments` | van + calendar + window + external appointment; carries the overlap constraint. **One row per visit**, spanning the whole chain |
 | `resource_rotation` | the persistent round-robin cursor |
 | `payment_events` | verified payment events; `unique (provider, external_event_id)` |
 | `membership_credit_ledger` | append-only credits; `unique (idempotency_key)`. Written by `MEMBERSHIPS.md`, not by this flow — paying a deposit buys one visit, not an allowance |
@@ -161,7 +165,7 @@ all its vehicles share one start time.
 
 ```bash
 npm install
-DATABASE_URL=postgres://… npm run migrate   # 004 drops the one-van-per-vehicle constraints
+DATABASE_URL=postgres://… npm run migrate
 node scripts/setup-ghl.mjs                 # verifies pipeline, fields, van calendars
 ```
 
