@@ -29,6 +29,10 @@
   label { display: block; font-size: 14px; color: var(--dim); margin: 14px 0 6px; }
   input[type=date] { width: 100%; padding: 13px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
   .msg { padding: 13px; border-radius: 11px; background: var(--card); border: 1px solid var(--line); color: var(--dim); }
+  .addons { display: grid; gap: 8px; margin-top: 10px; }
+  .addon { display: flex; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); }
+  .addon span:last-child { margin-left: auto; font-weight: 700; }
+  .pay-choice { display: flex; gap: 12px; color: var(--text); }
   .err { border-color: var(--warn); color: var(--warn); }
   .hide { display: none; }
 </style>
@@ -84,6 +88,24 @@
 
     // The only decision: when.
     const picker = el('div', 'card');
+    const selected = new Set(state.selectedAddonIds || []);
+    if ((state.addons || []).length) {
+      picker.append(el('label', '', 'Extras opcionales (se cobran aparte)'));
+      const extras = el('div', 'addons');
+      for (const addon of state.addons) {
+        const line = el('label', 'addon');
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.checked = selected.has(addon.id);
+        check.onchange = () => check.checked ? selected.add(addon.id) : selected.delete(addon.id);
+        line.append(check, el('span', '', addon.name), el('span', '', `$${addon.amount}`));
+        extras.append(line);
+      }
+      picker.append(extras);
+      const payment = el('div', 'pay-choice');
+      payment.innerHTML = '<label><input type="radio" name="addonPayment" value="online" checked> Pagar online</label><label><input type="radio" name="addonPayment" value="cash"> Efectivo a la cuadrilla</label>';
+      picker.append(payment);
+    }
     picker.append(el('label', '', `Elegí el día (mínimo ${state.noticeHours} horas de anticipación)`));
     const input = document.createElement('input');
     input.type = 'date';
@@ -105,7 +127,10 @@
       hint.textContent = '';
       for (const startTime of times) {
         const button = el('button', '', startTime);
-        button.onclick = () => book(input.value, startTime, button);
+        button.onclick = () => {
+          const method = (picker.querySelector('input[name="addonPayment"]:checked') || {}).value || 'cash';
+          book(input.value, startTime, button, [...selected], method);
+        };
         slots.append(button);
       }
     }
@@ -132,7 +157,7 @@
     return result;
   }
 
-  async function book(date, startTime, button) {
+  async function book(date, startTime, button, addonIds, addonPayment) {
     const original = button.textContent;
     button.disabled = true;
     button.textContent = '…';
@@ -140,7 +165,7 @@
       const response = await fetch('/api/member', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ t: token, date, startTime })
+        body: JSON.stringify({ t: token, date, startTime, addonIds, addonPayment })
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo agendar');
@@ -149,6 +174,7 @@
       state = await load();
       render();
       root.prepend(el('div', 'msg', `Listo. Te esperamos el ${day(result.startsAt)} a las ${clock(result.startsAt)}.`));
+      if (result.addonPaymentUrl) window.open(result.addonPaymentUrl, '_blank', 'noopener');
     } catch (error) {
       button.disabled = false;
       button.textContent = original;

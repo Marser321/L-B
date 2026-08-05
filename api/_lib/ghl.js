@@ -86,7 +86,8 @@ function getConfig() {
     depositPaymentsEnabled: process.env.GHL_DEPOSIT_PAYMENTS === 'on',
     // Stripe is connected in both test and live mode on the sub-account; default
     // to test mode so turning the flag on can never move real money by accident.
-    depositPaymentsLiveMode: process.env.GHL_DEPOSIT_LIVE_MODE === 'true'
+    depositPaymentsLiveMode: process.env.GHL_DEPOSIT_LIVE_MODE === 'true',
+    membershipPaymentsLiveMode: process.env.GHL_MEMBERSHIP_LIVE_MODE === 'true'
   };
 }
 
@@ -249,6 +250,47 @@ async function createCashInvoice(config, { contactId, title, amount, reference }
   return { id: invoice._id || invoice.id };
 }
 
+// An invoice the customer can PAY, as opposed to createCashInvoice's record of money
+// already taken. `action: 'send'` is what makes the link payable rather than a draft —
+// the deposit invoice had to learn that the hard way — and `sentTo` is what puts it in
+// front of the customer by email and SMS.
+//
+// Used by the member portal for add-ons and by the crew panel when someone at the door
+// wants to pay by card instead of cash.
+async function createPayableInvoice(config, { contactId, title, items, reference, liveMode = false }) {
+  const contact = await getContact(config, contactId);
+  const result = await ghlRequest(config, '/invoices/text2pay', {
+    method: 'POST',
+    version: 'v3',
+    body: {
+      altId: config.locationId,
+      altType: 'location',
+      name: String(title).slice(0, 160),
+      currency: 'USD',
+      items: items.map(item => ({ name: String(item.name).slice(0, 160), currency: 'USD', amount: item.amount, qty: 1 })),
+      contactDetails: {
+        id: contact.id,
+        name: contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
+        phoneNo: contact.phone || '',
+        email: contact.email || ''
+      },
+      issueDate: new Date().toISOString().slice(0, 10),
+      sentTo: {
+        email: contact.email ? [contact.email] : [],
+        phoneNo: contact.phone ? [contact.phone] : []
+      },
+      termsNotes: reference ? `cita ${reference}` : '',
+      liveMode: Boolean(liveMode),
+      action: 'send',
+      userId: config.assignedUserId
+    }
+  });
+  const invoice = result.invoice || result;
+  const id = invoice && (invoice._id || invoice.id);
+  if (!id) throw new HighLevelError(502);
+  return { id: String(id), url: String(result.invoiceUrl || invoice.invoiceUrl || '') };
+}
+
 // Marks an invoice paid by a manual method. `cash` is one of HighLevel's own modes
 // (enum verified against their published schema: cash, card, cheque, bank_transfer,
 // other), so this is a real payment record, not a status hack.
@@ -368,6 +410,13 @@ async function upsertContact(config, customer) {
     version: CALENDAR_API_VERSION,
     body
   });
+  const contact = result.contact || result;
+  if (!contact || !contact.id) throw new HighLevelError(502);
+  return contact;
+}
+
+async function getContact(config, contactId) {
+  const result = await ghlRequest(config, `/contacts/${encodeURIComponent(contactId)}`, { version: CALENDAR_API_VERSION });
   const contact = result.contact || result;
   if (!contact || !contact.id) throw new HighLevelError(502);
   return contact;
@@ -508,12 +557,14 @@ module.exports = {
   busyIntervalsForCalendar,
   busyIntervalsByResource,
   upsertContact,
+  getContact,
   splitName,
   getInvoice,
   opportunitiesForContact,
   updateOpportunityFields,
   calendarEventsForCalendar,
   createCashInvoice,
+  createPayableInvoice,
   recordCashPayment,
   createHoldAppointment,
   isSlotTakenError,

@@ -6,7 +6,7 @@
 // on the web where something could be tricked into serving it.
 //
 //   CREW_LINK_SECRET=… GHL_CALENDAR_CAMIONETA_1=… … node scripts/crew-links.mjs
-//   CREW_LINK_SECRET=… … node scripts/crew-links.mjs https://lybelitewash.com
+//   CREW_LINK_SECRET=… PUBLIC_APP_URL=https://l-b-five.vercel.app node scripts/crew-links.mjs
 
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 const ghl = require('../api/_lib/ghl.js');
 const crewLink = require('../api/_lib/crew-link.js');
 
-const baseUrl = process.argv[2] || 'https://lybelitewash.com';
+const baseUrl = process.argv[2] || process.env.PUBLIC_APP_URL || 'https://l-b-five.vercel.app';
 
 try {
   const links = crewLink.allLinks(ghl.resources(), baseUrl);

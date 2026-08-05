@@ -41,9 +41,18 @@ function hasContractTag(event, contractId) {
   return String(event.notes || event.description || '').includes(contractTag(contractId));
 }
 
-// Statuses that mean the wash was delivered. `showed` is what the crew panel sets;
+// Statuses that SPEND the cycle's credit. `showed` is what the crew panel sets;
 // HighLevel also allows `completed`, which the office may pick by hand.
-const DELIVERED = new Set(['showed', 'completed']);
+//
+// `noshow` is in here for a commercial reason rather than a technical one: the van
+// drove to the address and the slot is gone, so the credit is spent exactly as if the
+// wash had happened (DISENO-SIN-BASE-DE-DATOS.md §2, "cancelación tardía y no-show que
+// lo gastan igual"). A CANCELLED visit is deliberately absent — cancelling is free and
+// hands the credit back.
+const SPENDS_CREDIT = new Set(['showed', 'completed', 'noshow']);
+// Kept under its old name because it is exported and read elsewhere as "was this
+// delivered"; the set now answers the broader question the balance actually asks.
+const DELIVERED = SPENDS_CREDIT;
 // A visit still owed to the member: booked, not yet delivered.
 const OPEN = new Set(['new', 'confirmed']);
 
@@ -159,7 +168,7 @@ async function balanceFor(config, contract, now = Date.now()) {
   });
 
   const used = appointments.filter(entry =>
-    DELIVERED.has(entry.status) && entry.startMs >= cycle.startMs && entry.startMs <= cycle.endMs
+    SPENDS_CREDIT.has(entry.status) && entry.startMs >= cycle.startMs && entry.startMs <= cycle.endMs
   ).length;
 
   const openVisit = appointments
@@ -220,7 +229,40 @@ function candidateStartTimes(packageId) {
 // Status is `confirmed` immediately, not `new`: the cycle is already paid, so there is
 // nothing to wait for. That is the one way a membership visit differs from a website
 // booking.
-async function bookVisit(config, contract, { date, startTime, now = Date.now() }) {
+// What the appointment says about itself. Split out of bookVisit because the caller
+// has to be able to REWRITE it: if the online add-on invoice fails to go out, the
+// same add-ons become collectable on site and the crew's panel reads this text.
+//
+// The distinction that matters is `total`. api/crew.js derives the balance the crew is
+// told to collect from `total` minus `deposito`, so `total` must only ever hold money
+// that is still uncollected AT THE DOOR. Add-ons billed online are already invoiced,
+// and putting them here would have the crew collect them a second time in cash.
+function visitDescription(contract, { startTime, addons = [], addonTotal = 0, addonPayment = 'cash' }) {
+  const collectableOnSite = addonPayment === 'cash' ? addonTotal : 0;
+  return [
+    contractTag(contract.contractId),
+    `plan ${contract.packageId}`,
+    `orden: ${startTime} ${contract.packageId}`,
+    addons.length ? `extras: ${addons.map(addon => addon.name).join(', ')}` : 'extras: ninguno',
+    `extras_pago: ${addons.length ? addonPayment : 'ninguno'}`,
+    // Deliberately NOT called `extras_total`: the crew panel finds the collectable
+    // amount by looking for `total:`, and a key ending in that word would be picked up
+    // as the balance to charge.
+    `extras_monto: $${addonTotal}`,
+    `total: $${collectableOnSite}`,
+    'deposito: $0'
+  ].join(' · ');
+}
+
+// The add-on invoice never reached the customer, so the money has to be taken at the
+// door instead. Rewrites the appointment so the crew's panel shows the balance.
+async function markAddonsPayableOnSite(config, contract, appointmentId, { startTime, addons, addonTotal }) {
+  await ghl.updateCalendarEvent(config, appointmentId, {
+    description: visitDescription(contract, { startTime, addons, addonTotal, addonPayment: 'cash' })
+  });
+}
+
+async function bookVisit(config, contract, { date, startTime, now = Date.now(), addons = [], addonTotal = 0, addonPayment = 'cash' }) {
   const timezone = time.bookingTimezone();
   const serviceMinutes = catalog.vehicleServiceMinutes(contract.packageId);
   const visitMinutes = catalog.visitDurationMinutes([contract.packageId]);
@@ -241,13 +283,7 @@ async function bookVisit(config, contract, { date, startTime, now = Date.now() }
         contactId: contract.contactId,
         title: `MEMBRESIA — ${contract.vehicleLabel}`.slice(0, 160),
         // The tag is what makes the credit count possible; the rest is for the crew.
-        description: [
-          contractTag(contract.contractId),
-          `plan ${contract.packageId}`,
-          `orden: ${startTime} ${contract.packageId}`,
-          'total: $0',
-          'deposito: $0'
-        ].join(' · '),
+        description: visitDescription(contract, { startTime, addons, addonTotal, addonPayment }),
         startTime: new Date(startMs).toISOString(),
         endTime: new Date(endMs).toISOString()
       });
@@ -345,14 +381,18 @@ function addOneMonth(ms) {
 // value instead of pushing the cycle out a second month. A caller that passes nothing
 // falls back to now, which is NOT idempotent — hence the workflow is configured to send
 // the invoice date.
-async function grantCycle(config, fieldIds, contractId, { cycleStartMs = Date.now(), activeStageId = '' } = {}) {
+async function grantCycle(config, fieldIds, contractId, { cycleStartMs = Date.now(), activeStageId = '', portalUrl = '' } = {}) {
   const cycleEndsMs = addOneMonth(cycleStartMs);
-  await ghl.updateOpportunityFields(config, contractId, [
+  const reminderMs = cycleEndsMs - 3 * 24 * 60 * 60 * 1000;
+  const fields = [
     { id: fieldIds.status, value: 'active' },
     { id: fieldIds.cycleEnds, value: new Date(cycleEndsMs).toISOString() }
     // The card is moved to Active in the same call (see updateOpportunityFields), so the
     // office sees the payment land without doing anything.
-  ], { pipelineStageId: activeStageId });
+  ];
+  if (portalUrl && fieldIds.portalUrl) fields.push({ id: fieldIds.portalUrl, value: portalUrl });
+  if (fieldIds.reminderDate) fields.push({ id: fieldIds.reminderDate, value: new Date(reminderMs).toISOString() });
+  await ghl.updateOpportunityFields(config, contractId, fields, { pipelineStageId: activeStageId });
   return { status: 'active', cycleEndsAt: new Date(cycleEndsMs).toISOString() };
 }
 
@@ -379,6 +419,7 @@ module.exports = {
   markCanceled,
   CONTRACT_TAG,
   DELIVERED,
+  SPENDS_CREDIT,
   OPEN,
   contractTag,
   hasContractTag,
@@ -388,5 +429,7 @@ module.exports = {
   balanceFor,
   eligibility,
   candidateStartTimes,
+  visitDescription,
+  markAddonsPayableOnSite,
   bookVisit
 };

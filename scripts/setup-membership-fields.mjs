@@ -23,7 +23,11 @@ if (!token || !locationId) {
 }
 
 const WANTED = [
-  { name: 'Membership Cycle Ends', dataType: 'TEXT' }
+  { name: 'Membership Cycle Ends', dataType: 'TEXT' },
+  { name: 'Membership Credit Reminder Date', dataType: 'DATE' },
+  { name: 'Membership Portal URL', dataType: 'TEXT' },
+  { name: 'Membership Checkout ID', dataType: 'TEXT' },
+  { name: 'Membership Subscription ID', dataType: 'TEXT' }
 ];
 
 async function ghl(path, { method = 'GET', body } = {}) {

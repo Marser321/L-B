@@ -229,6 +229,11 @@ function createGhlStub(options = {}) {
       return json({ contact: { id: state.contactId } });
     }
 
+    if (method === 'GET' && /^\/contacts\/[^/?]+/.test(path)) {
+      const id = decodeURIComponent(path.split('/')[2].split('?')[0]);
+      return json({ contact: { id, name: 'Jane Driver', email: 'jane@example.test', phone: '+12395550100' } });
+    }
+
     if (method === 'GET' && path.startsWith('/opportunities/pipelines')) {
       if (state.membershipsPipeline !== false) {
         return json({

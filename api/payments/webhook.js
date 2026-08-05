@@ -65,13 +65,40 @@ function outcomeFor(eventType) {
 
 function validateRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new RequestError('Invalid request body');
-  const eventType = text(body.type || body.eventType, 'type', 1, 80);
+  const payment = body.payment && typeof body.payment === 'object' ? body.payment : {};
+  const invoice = body.invoice && typeof body.invoice === 'object' ? body.invoice : {};
+  const data = body.data && typeof body.data === 'object' ? body.data : {};
+  const eventType = text(body.type || body.eventType || payment.type || data.type, 'type', 1, 80);
   const outcome = outcomeFor(eventType);
   // Anything we don't act on is acknowledged, not rejected: a 4xx would make
   // HighLevel retry an event forever.
   if (!outcome) return { ignored: true, eventType };
 
-  const externalEventId = text(body.id || body.eventId || body.invoiceId, 'id', 1, 200);
+  const nestedInvoiceId = body.invoiceId || payment.invoiceId || invoice.id || invoice._id || data.invoiceId || '';
+  const externalEventId = text(body.id || body.eventId || payment.id || payment.transactionId || data.id || nestedInvoiceId, 'id', 1, 200);
+
+  // Booking identifiers always win. HighLevel invoice events naturally include an
+  // invoiceId as well, so testing invoiceId first would misclassify every paid
+  // deposit as a membership renewal.
+  const rawHoldId = body.holdId || payment.holdId || data.holdId || (body.meta && body.meta.holdId) || '';
+  const submissionId = body.submissionId || payment.submissionId || data.submissionId || (body.meta && body.meta.submissionId) || '';
+  if (body.kind === 'booking' || rawHoldId || submissionId) {
+    const holdId = rawHoldId ? text(rawHoldId, 'holdId', 8, 64) : '';
+    const amount = Number(body.amount != null ? body.amount : (body.amountPaid != null ? body.amountPaid : (payment.amount || payment.amountPaid || 0)));
+    return {
+      ignored: false,
+      kind: 'booking',
+      eventType,
+      outcome,
+      externalEventId,
+      holdId,
+      submissionId: submissionId ? text(submissionId, 'submissionId', 8, 100) : '',
+      invoiceId: nestedInvoiceId ? text(nestedInvoiceId, 'invoiceId', 2, 100) : '',
+      amountCents: Number.isFinite(amount) ? Math.round(amount * 100) : null,
+      currency: typeof body.currency === 'string' ? body.currency.slice(0, 8) : 'USD',
+      payload: body
+    };
+  }
 
   // A MEMBERSHIP invoice, not a booking deposit. Told apart by carrying a contractId
   // (the CRM opportunity) instead of a hold: a recurring invoice has no hold, and a
@@ -81,7 +108,7 @@ function validateRequest(body) {
   // contact, the plan and the date from the invoice itself, so the workflow — which is
   // contact-scoped and cannot know which of a customer's vehicles an invoice pays for —
   // only has to pass one field it definitely has.
-  const rawInvoiceId = body.invoiceId || (body.meta && body.meta.invoiceId) || '';
+  const rawInvoiceId = nestedInvoiceId || (body.meta && body.meta.invoiceId) || '';
   if (!rawContractId && rawInvoiceId) {
     return {
       ignored: false,
@@ -113,23 +140,7 @@ function validateRequest(body) {
   // A HighLevel workflow finds it easier to pass the submission id than the hold
   // id, so either identifies the reservation; the submission id is resolved back
   // to its hold below.
-  const rawHoldId = body.holdId || (body.meta && body.meta.holdId) || '';
-  const submissionId = body.submissionId || (body.meta && body.meta.submissionId) || '';
-  if (!rawHoldId && !submissionId) throw new RequestError('holdId or submissionId is required');
-  const holdId = rawHoldId ? text(rawHoldId, 'holdId', 8, 64) : '';
-  const amount = Number(body.amount != null ? body.amount : (body.amountPaid || 0));
-
-  return {
-    ignored: false,
-    eventType,
-    outcome,
-    externalEventId,
-    holdId,
-    submissionId: submissionId ? text(submissionId, 'submissionId', 8, 100) : '',
-    amountCents: Number.isFinite(amount) ? Math.round(amount * 100) : null,
-    currency: typeof body.currency === 'string' ? body.currency.slice(0, 8) : 'USD',
-    payload: body
-  };
+  throw new RequestError('holdId, submissionId, contractId or invoiceId is required');
 }
 
 // Applies a membership invoice event to its contract. Resolves the custom-field ids by
@@ -145,7 +156,9 @@ async function resolveMembershipFields(config) {
     plan: byName.get('Membership Plan') || '',
     vehicle: byName.get('Membership Vehicle') || '',
     status: byName.get('Membership Status') || '',
-    cycleEnds: byName.get('Membership Cycle Ends') || ''
+    cycleEnds: byName.get('Membership Cycle Ends') || '',
+    portalUrl: byName.get('Membership Portal URL') || '',
+    reminderDate: byName.get('Membership Credit Reminder Date') || ''
   };
   if (!fieldIds.status || !fieldIds.cycleEnds) {
     throw new RequestError('Membership fields are missing in the CRM', 503, 'MEMBERSHIP_FIELDS_MISSING');
@@ -206,7 +219,10 @@ async function applyMembershipEvent(event) {
   const stages = await membershipStages(config);
   const result = await membershipCrm.grantCycle(config, fieldIds, event.contractId, {
     cycleStartMs,
-    activeStageId: stages.activeStageId
+    activeStageId: stages.activeStageId,
+    portalUrl: fieldIds.portalUrl
+      ? `${require('../_lib/public-url.js').publicAppUrl()}/mi-membresia.html?t=${encodeURIComponent(require('../_lib/signed-link.js').sign('member', event.contractId))}`
+      : ''
   });
   console.log('[webhook-membership] cycle granted', event.contractId, result.cycleEndsAt, event.externalEventId);
   return { contractId: event.contractId, ...result };
@@ -232,7 +248,12 @@ async function handler(req, res) {
     let config = null;
     try { config = ghl.getConfig(); } catch (error) { console.error('[payments] CRM not configured; confirming rows only'); }
 
-    const holdId = event.holdId || await agenda.resolveHoldIdBySubmission(event.submissionId);
+    let holdId = event.holdId || (event.submissionId ? await agenda.resolveHoldIdBySubmission(event.submissionId) : '');
+    if (!holdId && event.invoiceId) {
+      const invoice = await ghl.getInvoice(config || ghl.getConfig(), event.invoiceId);
+      const match = String(invoice.name || invoice.title || '').match(/hold:([a-z0-9-]{8,64})/i);
+      holdId = match ? match[1] : '';
+    }
     if (!holdId) throw new RequestError('No reservation matches this payment', 404);
 
     const result = await agenda.confirmPayment({

@@ -2122,6 +2122,10 @@
       .map(resolved => ({ isMembership: resolved.pkg.isMembership === true }));
   }
 
+  function cartIsMembership() {
+    return state.cart.length === 1 && cartPackageMetadata()[0] && cartPackageMetadata()[0].isMembership;
+  }
+
   // Commit the wizard draft as a cart line and reset the draft.
   function commitDraftToCart() {
     const cat = state.selectedCategory;
@@ -2130,6 +2134,11 @@
     const sizes = validSizesForPackage(cat, pkg);
     const size = state.selectedSize || (sizes.length === 1 ? sizes[0] : null);
     if (!size) return false;
+    const draftIsMembership = pkg.isMembership === true;
+    const existingTypes = cartPackageMetadata().map(entry => entry.isMembership);
+    // A recurring agreement is its own checkout and owns exactly one vehicle.
+    // Refuse mixed carts in the browser as well as on the enrollment endpoint.
+    if ((draftIsMembership && state.cart.length > 0) || (!draftIsMembership && existingTypes.includes(true))) return false;
     const append = UI_RULES.appendCartLine(state.cart, {
       lineId: newLineId(),
       categoryId: cat.id,
@@ -2703,6 +2712,8 @@
     submitError: false,
     completed: false,
     confirmedBooking: null,
+    redemptionToken: '',
+    eligibilityKey: '',
     hold: null,
     catalogVersion: '',
     catalogRules: { membershipNoticeHours: 0, locationTimeZone: '', minimumDate: '' },
@@ -3715,7 +3726,37 @@
       </div>` : ''}
       <div class="summary-note">
         ${t('sum.disclaimer')}
-      </div>`;
+      </div>
+      <div id="membershipEligibility" class="summary-note"></div>`;
+    void refreshMembershipEligibility();
+  }
+
+  async function refreshMembershipEligibility() {
+    const box = document.getElementById('membershipEligibility');
+    if (!box || state.cart.length !== 1) return;
+    const line = state.cart[0];
+    const plate = String((line.vehicle || {}).plate || '').trim();
+    const s = state.schedule;
+    if (!plate || !s.email || !s.phone) return;
+    const key = [s.email.toLowerCase(), normalizedPhone(s.phone), plate.toLowerCase(), line.packageId].join('|');
+    if (state.eligibilityKey === key && state.redemptionToken) {
+      box.textContent = LANG === 'es' ? 'Crédito de membresía detectado: esta visita no requiere depósito.' : 'Membership credit detected: no deposit is required for this visit.';
+      return;
+    }
+    box.textContent = LANG === 'es' ? 'Verificando beneficios de membresía…' : 'Checking membership benefits…';
+    try {
+      const response = await fetch('/api/member', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'eligibility', email: s.email, phone: s.phone, plate, packageId: line.packageId })
+      });
+      const result = await response.json().catch(() => ({}));
+      state.eligibilityKey = key;
+      state.redemptionToken = response.ok && result.eligible && result.remaining > 0 ? result.redemptionToken : '';
+      box.textContent = state.redemptionToken
+        ? (LANG === 'es' ? `Crédito de membresía disponible (${result.remaining}). Esta visita no requiere depósito.` : `Membership credit available (${result.remaining}). No deposit is required.`)
+        : '';
+      saveState();
+    } catch (_) { box.textContent = ''; }
   }
 
   // ──────────────────────────────────────────────
@@ -3779,7 +3820,7 @@
       // The fourth line can still be committed. Once four are in the cart,
       // editing/removing remains available but adding another is disabled.
       const limit = UI_RULES.cartLimitState(state.cart.length, CART_MAX_ITEMS);
-      addBtn.disabled = !limit.canAdd;
+      addBtn.disabled = !limit.canAdd || cartIsMembership();
       const hint = document.getElementById('addLineHint');
       if (hint) hint.hidden = !limit.atLimit;
     }
@@ -3844,7 +3885,7 @@
 
     // Leaving step 3 commits the draft as a cart line; step 4 works on the cart.
     if (state.currentStep === 3 && !commitDraftToCart()) return;
-    if (state.currentStep === 4 && !(await acquireTemporaryHold())) return;
+    if (state.currentStep === 4 && !cartIsMembership() && !(await acquireTemporaryHold())) return;
     goToStep(state.currentStep + 1);
   });
 
@@ -4020,10 +4061,19 @@
     updateStepUI();
 
     try {
-      const response = await fetch('/api/quote', {
+      const membership = cartIsMembership();
+      const redemption = membership && state.redemptionToken;
+      const payload = quotePayload();
+      const response = await fetch(redemption || membership ? '/api/member' : '/api/quote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(quotePayload())
+        body: JSON.stringify(redemption ? {
+          redemptionToken: state.redemptionToken,
+          date: payload.schedule.date,
+          startTime: payload.schedule.timeWindow,
+          addonIds: payload.items[0].addonIds || [],
+          addonPayment: 'online'
+        } : membership ? { ...payload, action: 'enroll' } : payload)
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) {
@@ -4031,6 +4081,27 @@
         requestError.status = response.status;
         requestError.code = result.code || '';
         throw requestError;
+      }
+
+      if (redemption) {
+        state.confirmedBooking = result;
+        state.completed = true;
+        state.hold = null;
+        setSubmissionStatus(LANG === 'es' ? 'Visita confirmada con tu crédito de membresía.' : 'Visit confirmed with your membership credit.', 'success');
+        if (result.addonPaymentUrl) window.location.assign(result.addonPaymentUrl);
+        saveState();
+        return;
+      }
+      if (membership) {
+        state.confirmedBooking = result;
+        state.completed = true;
+        state.hold = null;
+        setSubmissionStatus(result.checkoutUrl
+          ? (LANG === 'es' ? 'Membresía preparada. Abriendo el pago seguro…' : 'Membership ready. Opening secure payment…')
+          : (LANG === 'es' ? 'Membresía preparada. Revisa tu email para completar el primer pago.' : 'Membership ready. Check your email to complete the first payment.'), 'success');
+        saveState();
+        if (result.checkoutUrl) window.location.assign(result.checkoutUrl);
+        return;
       }
 
       state.confirmedBooking = result;
