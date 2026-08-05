@@ -18,9 +18,16 @@
 //   · TODAY only. Yesterday cannot be edited, tomorrow cannot be previewed.
 //   · THAT van only. The token names one van and the calendar is looked up from it,
 //     never from the request.
-//   · Two actions, both additive. Nothing can be deleted, cancelled or rescheduled.
+//   · A closed list of actions. Nothing is ever DELETED: `cancel` and `no_show` move
+//     the appointment's status, so the record and its history survive either way.
+//   · Nothing is rescheduled. Moving a visit is a conversation, not a button.
 //   · No customer contact details in the response beyond the name and the address
 //     the crew has to drive to. No phone, no email, no payment identifiers.
+//
+// The panel started with two actions and grew to five for one reason: every outcome it
+// cannot record is an outcome the office has to open HighLevel for. A crew that can
+// mark a wash delivered but not a customer who never opened the gate has just moved the
+// work, not removed it.
 
 const { RequestError, HighLevelError } = require('./_lib/errors.js');
 const { sendJson, readBody, assertMethod } = require('./_lib/http.js');
@@ -31,7 +38,23 @@ const crewLink = require('./_lib/crew-link.js');
 
 // What the crew may do. Anything else is a 422, so a new capability has to be added
 // here on purpose rather than by passing a different string.
-const ACTIONS = Object.freeze(['attended', 'cash']);
+//
+//   attended     the wash happened          → spends a membership credit
+//   no_show      nobody was there           → spends the credit too: the van drove out
+//                                             and the slot is gone
+//   cancel       called off in time         → free, and the credit goes back
+//   cash         money taken at the door    → invoice created and recorded paid
+//   payment_link the customer wants to pay by card → payable invoice, sent to them
+const ACTIONS = Object.freeze(['attended', 'no_show', 'cancel', 'cash', 'payment_link']);
+
+// The HighLevel appointment status each status-only action sets. Keeping them in one
+// table is what makes it impossible to add an action that quietly writes a status the
+// credit formula does not know about.
+const STATUS_ACTIONS = Object.freeze({
+  attended: 'showed',
+  no_show: 'noshow',
+  cancel: 'cancelled'
+});
 
 const CASH_MAX = 5000;
 
@@ -80,8 +103,12 @@ function todayBounds() {
 // screen, because a crew standing in a driveway needs the list more than the number.
 function moneyFromDescription(description) {
   const source = String(description || '');
-  const total = source.match(/total:\s*(?:from|desde)?\s*\$?([\d,]+)/i);
-  const deposit = source.match(/deposito:\s*\$?([\d,]+)/i);
+  // Anchored to a field boundary, not just the word: the description is a `·`-separated
+  // list of `key: value` pairs, and an unanchored `total:` also matches the tail of any
+  // other key that happens to end in it. Getting that wrong here means telling the crew
+  // to collect a number that is not the balance.
+  const total = source.match(/(?:^|[\s·])total:\s*(?:from|desde)?\s*\$?([\d,]+)/i);
+  const deposit = source.match(/(?:^|[\s·])deposito:\s*\$?([\d,]+)/i);
   const toNumber = match => (match ? Number(match[1].replace(/,/g, '')) : null);
   const totalAmount = toNumber(total);
   const depositAmount = toNumber(deposit);
@@ -151,10 +178,32 @@ async function assertTodaysStop(config, resource, appointmentId) {
   return stop;
 }
 
-// Marking a wash delivered. This is what consumes a membership credit downstream.
-async function markAttended(config, resource, stop) {
-  await ghl.updateCalendarEvent(config, stop.appointmentId, { status: 'showed' });
-  return { ok: true, appointmentId: stop.appointmentId, status: 'showed' };
+// Recording how the stop ended. `showed` and `noshow` both consume a membership credit
+// downstream (see SPENDS_CREDIT in membership-crm.js); `cancelled` hands it back and
+// also releases the contract's "one open visit" so the member can book again.
+async function markStatus(config, resource, stop, action) {
+  const status = STATUS_ACTIONS[action];
+  await ghl.updateCalendarEvent(config, stop.appointmentId, { status });
+  return { ok: true, appointmentId: stop.appointmentId, status };
+}
+
+// The customer would rather pay by card than in cash. Sends them a real payable
+// invoice for what they declare they are paying, and hands the crew back the URL so it
+// can be shown on the phone if the SMS is slow.
+//
+// It does NOT mark anything paid: unlike cash, the money is not in anybody's hand yet.
+// The invoice is paid through HighLevel's own checkout, which is what makes it show up
+// in the CRM's reporting without the crew touching a status.
+async function sendPaymentLink(config, resource, stop, { amount }) {
+  const invoice = await ghl.createPayableInvoice(config, {
+    contactId: stop.contactId,
+    title: `Pago — ${stop.title}`.slice(0, 160),
+    items: [{ name: `Servicio — ${stop.title}`.slice(0, 160), amount }],
+    reference: stop.appointmentId,
+    // Real money at the door, so never the sandbox.
+    liveMode: true
+  });
+  return { ok: true, appointmentId: stop.appointmentId, invoiceId: invoice.id, amount, method: 'link', paymentUrl: invoice.url };
 }
 
 // Cash taken at the door, recorded as a paid invoice so it lands in the CRM's own
@@ -207,21 +256,28 @@ async function handler(req, res) {
 
     const stop = await assertTodaysStop(config, resource, appointmentId);
 
-    if (action === 'attended') {
-      console.log('[crew]', resource.key, 'attended', appointmentId);
-      return sendJson(res, 200, await markAttended(config, resource, stop));
+    if (STATUS_ACTIONS[action]) {
+      console.log('[crew]', resource.key, action, appointmentId);
+      return sendJson(res, 200, await markStatus(config, resource, stop, action));
     }
 
-    // Cash. The amount is the crew's declaration of what they actually took, which is
-    // not always the expected balance — a customer may pay part, or add a tip. It is
+    // Money. The amount is the crew's declaration of what is actually being paid, which
+    // is not always the expected balance — a customer may pay part, or add a tip. It is
     // validated as money and capped so a slipped digit cannot record thousands.
     const amount = Number(body && body.amount);
     if (!Number.isFinite(amount) || amount <= 0 || amount > CASH_MAX) {
       throw new RequestError(`amount must be between 1 and ${CASH_MAX}`, 422, 'CREW_AMOUNT_INVALID');
     }
+    const rounded = Math.round(amount * 100) / 100;
+
+    if (action === 'payment_link') {
+      console.log('[crew]', resource.key, 'payment_link', appointmentId, Math.round(amount));
+      return sendJson(res, 200, await sendPaymentLink(config, resource, stop, { amount: rounded }));
+    }
+
     const takenBy = optionalText(body && body.takenBy, 'takenBy', 60);
     console.log('[crew]', resource.key, 'cash', appointmentId, Math.round(amount));
-    return sendJson(res, 200, await recordCash(config, resource, stop, { amount: Math.round(amount * 100) / 100, takenBy }));
+    return sendJson(res, 200, await recordCash(config, resource, stop, { amount: rounded, takenBy }));
   } catch (error) {
     const statusCode = statusCodeFor(error, 502);
     if (statusCode >= 500) console.error('[crew-action]', error.name || 'Error', statusCode);
@@ -230,4 +286,4 @@ async function handler(req, res) {
 }
 
 module.exports = handler;
-module.exports._test = { moneyFromDescription, orderFromDescription, presentStop, ACTIONS, CASH_MAX };
+module.exports._test = { moneyFromDescription, orderFromDescription, presentStop, ACTIONS, STATUS_ACTIONS, CASH_MAX };

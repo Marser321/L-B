@@ -13,7 +13,7 @@
 -->
 
 <style>
-  :root { color-scheme: light dark; --bg: #0b0d10; --card: #15181d; --line: #262b33; --text: #f2f4f7; --dim: #9aa4b2; --ok: #16a34a; --cash: #2563eb; --warn: #b45309; }
+  :root { color-scheme: light dark; --bg: #0b0d10; --card: #15181d; --line: #262b33; --text: #f2f4f7; --dim: #9aa4b2; --ok: #16a34a; --cash: #2563eb; --link: #7c3aed; --warn: #b45309; }
   @media (prefers-color-scheme: light) { :root { --bg: #f4f6f8; --card: #fff; --line: #dfe3e8; --text: #12151a; --dim: #5b6675; } }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, system-ui, sans-serif; padding: 16px; max-width: 620px; margin-inline: auto; }
@@ -26,13 +26,19 @@
   .meta { color: var(--dim); font-size: 14px; }
   .money { margin-top: 8px; font-size: 15px; }
   .balance { font-weight: 700; }
-  .row { display: flex; gap: 10px; margin-top: 12px; }
+  .row { display: flex; gap: 10px; margin-top: 10px; }
   button { flex: 1; border: 0; border-radius: 10px; padding: 13px 10px; font-size: 15px; font-weight: 650; color: #fff; cursor: pointer; }
   /* Big targets: this is used one-handed, outdoors, with wet hands. */
   .attend { background: var(--ok); }
   .cash { background: var(--cash); }
+  .link { background: var(--link); }
+  .noshow { background: var(--warn); }
+  /* Cancelling is the one action nobody should hit by accident, so it does not get a
+     full-width coloured button next to the ones the crew presses all day. */
+  .cancel { background: transparent; color: var(--dim); border: 1px solid var(--line); font-weight: 500; font-size: 14px; padding: 10px; }
   button[disabled] { opacity: .45; cursor: default; }
   .done { color: var(--ok); font-weight: 700; margin-top: 10px; }
+  .missed { color: var(--warn); font-weight: 700; margin-top: 10px; }
   .msg { padding: 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); color: var(--dim); }
   .err { border-color: var(--warn); color: var(--warn); }
 </style>
@@ -51,6 +57,33 @@
   function message(text, isError) {
     list.innerHTML = `<div class="msg${isError ? ' err' : ''}"></div>`;
     list.firstChild.textContent = text;
+  }
+
+  // textContent everywhere, never innerHTML: the title and address come from the CRM
+  // and a customer could have typed anything into them.
+  function el(className, text) {
+    const node = document.createElement('div');
+    node.className = className;
+    node.textContent = text;
+    return node;
+  }
+
+  function button(className, label, onClick) {
+    const node = document.createElement('button');
+    node.className = className;
+    node.textContent = label;
+    node.onclick = () => onClick(node);
+    return node;
+  }
+
+  // Both money actions ask the same question; only what happens to the answer differs.
+  function charge(node, stop, action, question) {
+    const suggested = stop.balance != null ? String(stop.balance) : '';
+    const entered = prompt(question, suggested);
+    if (entered === null) return;
+    const amount = Number(entered);
+    if (!Number.isFinite(amount) || amount <= 0) return alert('Monto inválido.');
+    act(node, { action, appointmentId: stop.appointmentId, amount });
   }
 
   function render(day) {
@@ -98,37 +131,44 @@
         card.append(amounts);
       }
 
-      if (stop.status === 'showed') {
-        const done = document.createElement('div');
-        done.className = 'done';
-        done.textContent = '✓ Atendida';
-        card.append(done);
+      // A stop that already has an outcome shows it instead of the buttons: the crew
+      // reloads this list all day and must not be able to mark the same job twice.
+      if (stop.status === 'showed' || stop.status === 'completed') {
+        card.append(el('done', '✓ Atendida'));
+      } else if (stop.status === 'noshow') {
+        card.append(el('missed', '✗ No estaba el cliente'));
       } else {
-        const row = document.createElement('div');
-        row.className = 'row';
+        // Row 1 — how the stop ended. These are the two that consume a membership
+        // credit, so they sit together and nothing else looks like them.
+        const outcome = document.createElement('div');
+        outcome.className = 'row';
+        outcome.append(
+          button('attend', 'Atendida', b => act(b, { action: 'attended', appointmentId: stop.appointmentId })),
+          button('noshow', 'No estaba', b => {
+            if (!confirm('¿Marcar que el cliente no estaba? Se cobra igual.')) return;
+            act(b, { action: 'no_show', appointmentId: stop.appointmentId });
+          })
+        );
+        card.append(outcome);
 
-        const attend = document.createElement('button');
-        attend.className = 'attend';
-        attend.textContent = 'Atendida';
-        attend.onclick = () => act(attend, { action: 'attended', appointmentId: stop.appointmentId });
-        row.append(attend);
+        // Row 2 — how they paid. Both ask for the amount, pre-filled with what is owed
+        // and editable, because a customer may pay part or add a tip and the record has
+        // to match what actually changed hands.
+        const payment = document.createElement('div');
+        payment.className = 'row';
+        payment.append(
+          button('cash', 'Cobré efectivo', b => charge(b, stop, 'cash', '¿Cuánto se cobró en efectivo?')),
+          button('link', 'Link de pago', b => charge(b, stop, 'payment_link', '¿Por cuánto mando el link de pago?'))
+        );
+        card.append(payment);
 
-        const cash = document.createElement('button');
-        cash.className = 'cash';
-        cash.textContent = 'Cobrado en efectivo';
-        cash.onclick = () => {
-          // Pre-filled with what is owed, editable because a customer may pay part or
-          // add a tip and the record has to match what was actually taken.
-          const suggested = stop.balance != null ? String(stop.balance) : '';
-          const entered = prompt('¿Cuánto se cobró en efectivo?', suggested);
-          if (entered === null) return;
-          const amount = Number(entered);
-          if (!Number.isFinite(amount) || amount <= 0) return alert('Monto inválido.');
-          act(cash, { action: 'cash', appointmentId: stop.appointmentId, amount });
-        };
-        row.append(cash);
-
-        card.append(row);
+        const cancelRow = document.createElement('div');
+        cancelRow.className = 'row';
+        cancelRow.append(button('cancel', 'Cancelar la cita', b => {
+          if (!confirm('¿Cancelar esta cita? No se cobra y el crédito vuelve al cliente.')) return;
+          act(b, { action: 'cancel', appointmentId: stop.appointmentId });
+        }));
+        card.append(cancelRow);
       }
       list.append(card);
     }
@@ -146,6 +186,10 @@
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo guardar');
+      // The link was already sent by email and SMS; opening it here is so the crew can
+      // hold the phone out and let the customer pay on the spot.
+      if (result.paymentUrl) window.open(result.paymentUrl, '_blank', 'noopener');
+      else if (result.method === 'link') alert('Link enviado al cliente por SMS y email.');
       // Reload rather than patching the card: the calendar is the source of truth and
       // the office may have changed something while the crew was driving.
       await load();

@@ -142,6 +142,82 @@ test('marking attended sets showed, which is what spends a membership credit', a
   assert.equal(update.body.appointmentStatus, 'showed');
 });
 
+test('no-show and cancel are recorded as statuses, never as deletions', async t => {
+  const ctx = setup();
+  t.after(() => ctx.restore());
+
+  const token = crewLink.sign('camioneta_1');
+  const missed = stopOn(ctx, CALENDARS[0], { startHour: 9, endHour: 10 });
+  const called = stopOn(ctx, CALENDARS[0], { startHour: 11, endHour: 12 });
+
+  const noShow = await callHandler(crewHandler, { t: token, action: 'no_show', appointmentId: missed });
+  assert.equal(noShow.statusCode, 200);
+  assert.equal(noShow.body.status, 'noshow');
+
+  const cancelled = await callHandler(crewHandler, { t: token, action: 'cancel', appointmentId: called });
+  assert.equal(cancelled.statusCode, 200);
+  assert.equal(cancelled.body.status, 'cancelled');
+
+  // The record survives both: the panel may never destroy history, and a DELETE here
+  // would also take the appointment the credit formula counts.
+  assert.equal(ctx.ghl.calls.filter(call => call.method === 'DELETE').length, 0);
+  // Neither of them moved money.
+  assert.equal(ctx.ghl.calls.filter(call => String(call.path).startsWith('/invoices')).length, 0);
+});
+
+test('a no-show spends the credit and a cancellation gives it back', () => {
+  const membershipCrm = require('../api/_lib/membership-crm.js');
+  // The van drove to the address and the slot is gone, so the cycle pays for it.
+  assert.equal(membershipCrm.SPENDS_CREDIT.has('noshow'), true);
+  assert.equal(membershipCrm.SPENDS_CREDIT.has('showed'), true);
+  // Cancelling is free, and it must also stop counting as the contract's open visit —
+  // otherwise a cancelled member could never book again.
+  assert.equal(membershipCrm.SPENDS_CREDIT.has('cancelled'), false);
+  assert.equal(membershipCrm.OPEN.has('cancelled'), false);
+});
+
+test('a payment link is sent for the amount asked, and marks nothing paid', async t => {
+  const ctx = setup();
+  t.after(() => ctx.restore());
+
+  const appointmentId = stopOn(ctx, CALENDARS[0]);
+  const res = await callHandler(crewHandler, {
+    t: crewLink.sign('camioneta_1'), action: 'payment_link', appointmentId, amount: 100
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.method, 'link');
+  assert.equal(res.body.amount, 100);
+  assert.match(res.body.paymentUrl, /^https:\/\//);
+
+  const sent = ctx.ghl.calls.find(call => call.method === 'POST' && call.path === '/invoices/text2pay');
+  // `action: send` is what makes the link payable instead of a draft.
+  assert.equal(sent.body.action, 'send');
+  assert.equal(sent.body.items[0].amount, 100);
+
+  // Unlike cash, nobody has the money yet, so nothing may be recorded as paid.
+  assert.equal(ctx.ghl.calls.filter(call => /record-payment$/.test(String(call.path))).length, 0);
+  // And the stop's status is untouched: paying is not the same as being served.
+  assert.equal(ctx.ghl.calls.filter(call => call.method === 'PUT').length, 0);
+});
+
+test('every money action is capped, whichever way it collects', async t => {
+  const ctx = setup();
+  t.after(() => ctx.restore());
+
+  const token = crewLink.sign('camioneta_1');
+  const appointmentId = stopOn(ctx, CALENDARS[0]);
+
+  for (const action of ['cash', 'payment_link']) {
+    for (const amount of [0, -5, CASH_MAX + 1, 'mucho']) {
+      const res = await callHandler(crewHandler, { t: token, action, appointmentId, amount });
+      assert.equal(res.statusCode, 422, `${action} ${amount}`);
+      assert.equal(res.body.code, 'CREW_AMOUNT_INVALID', `${action} ${amount}`);
+    }
+  }
+  assert.equal(ctx.ghl.calls.filter(call => String(call.path).startsWith('/invoices')).length, 0);
+});
+
 test('a crew cannot touch another van, another day, or an invented stop', async t => {
   const ctx = setup();
   t.after(() => ctx.restore());
@@ -221,18 +297,25 @@ test('a slipped digit cannot record thousands, and a bad amount records nothing'
   assert.equal(ctx.ghl.calls.filter(call => call.path === '/invoices/').length, 0);
 });
 
-test('only the two known actions are accepted', async t => {
+test('only the five known actions are accepted', async t => {
   const ctx = setup();
   t.after(() => ctx.restore());
 
   const appointmentId = stopOn(ctx, CALENDARS[0]);
   const token = crewLink.sign('camioneta_1');
 
-  for (const action of ['cancel', 'delete', 'reschedule', 'refund']) {
+  // `cancel` moved into the allowlist on purpose — an outcome the crew cannot record
+  // is an outcome the office has to open the CRM for. Destroying and moving a booking
+  // did not: deleting loses the history the credit formula reads, and rescheduling is
+  // a conversation with the customer, not a button in a driveway.
+  for (const action of ['delete', 'reschedule', 'refund', 'complete', 'showed']) {
     const res = await callHandler(crewHandler, { t: token, action, appointmentId });
     assert.equal(res.statusCode, 422, action);
     assert.equal(res.body.code, 'CREW_ACTION_INVALID', action);
   }
+  // A blank action never even reaches the allowlist; it fails input validation first.
+  const blank = await callHandler(crewHandler, { t: token, action: '', appointmentId });
+  assert.equal(blank.statusCode, 400);
   assert.equal(ctx.ghl.calls.filter(call => call.method === 'PUT' || call.method === 'DELETE').length, 0);
 });
 
