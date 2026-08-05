@@ -82,7 +82,7 @@ Cliente en la web
 Oficina
   ├─ /api/payments/links ...... link de pago a medida            (OFFICE_API_TOKEN)
   ├─ /api/memberships/visits .. completar / cancelar / no-show   (OFFICE_API_TOKEN)
-  ├─ /api/internal/membership-provision ... catálogo en el CRM   (MEMBERSHIP_PROVISION_SECRET)
+  ├─ POST /api/internal/dependencies .... catálogo en el CRM   (MEMBERSHIP_PROVISION_SECRET)
   ├─ /api/internal/dependencies ........... diagnóstico          (OFFICE_API_TOKEN)
   └─ HighLevel a mano ......... link desde el picker de productos
 
@@ -183,9 +183,137 @@ Variables nuevas o recién documentadas: `MEMBERSHIP_PROVISION_SECRET`, `DATABAS
 
 Después del `--apply`, archivar a mano los dos productos de depósito viejos en HighLevel.
 
+## 7 bis. Auditoría del 5 de agosto de 2026
+
+Revisión independiente de la tanda de alta de membresías, add-ons y canje. Se arreglaron
+tres cosas y se cerró el panel de la cuadrilla:
+
+| # | Qué estaba mal | Estado |
+|---|---|---|
+| 1 | `enrollMembership` creaba una **segunda factura recurrente** en cada reintento: la oportunidad era idempotente pero el schedule no, y `requestId` en `ghlRequest` es solo para logging | ✅ Arreglado — `Membership Subscription ID` + marcador `pending:`, falla cerrado |
+| 2 | La cuadrilla veía **"resta $40" en add-ons ya pagados online** y los cobraba de nuevo en efectivo | ✅ Arreglado — `total: $0` cuando se facturan online; el importe queda en `extras_monto` |
+| 3 | El canje reventaba con 422 opaco si la agenda corría en modo `full_day` | ✅ Arreglado — el servidor resuelve el primer horario libre y lo devuelve en `startsAt` |
+| 4 | `moneyFromDescription` matcheaba `total:` sin límite de campo, así que cualquier clave terminada en esa palabra se leía como el saldo a cobrar | ✅ Arreglado — anclado al separador de campos |
+| 5 | El panel de la cuadrilla no sabía registrar un no-show, una cancelación ni un cobro con tarjeta | ✅ Arreglado — cinco acciones; `noshow` ahora gasta el crédito, `cancelled` lo devuelve |
+| 6 | El test del token de canje alteraba **el último carácter base64url**, que puede llevar bits de relleno: varios caracteres decodifican a los mismos bytes, así que el token quedaba intacto y el test fallaba ~1 de cada 4 corridas | ✅ Arreglado — ahora corrompe bytes concretos (IV, tag y texto cifrado); 5 corridas seguidas en verde |
+
+### Sondeo del CRM real — 5 de agosto de 2026
+
+Hecho contra la subcuenta (`L & B Elite Wash & Detail`), solo lectura. Lo que se confirmó:
+
+| Pregunta | Resultado |
+|---|---|
+| ¿El alta web ya cobró a alguien? | **No.** Hay 4 facturas recurrentes, las 4 en **Draft**, con `Last Issued On: -`, todas contra el contacto `L&B CRM Billing Test`. Son restos del endpoint de sondeo borrado (`crm-recurring-test-…`) |
+| ¿Existe el pipeline `Memberships`? | **Sí**, con las 5 etapas exactas: Pending Payment → Active → Past Due → Cancel at Period End → Canceled. **0 oportunidades** en todas |
+| ¿Están los campos personalizados? | **Sí**, los 6 de membresía. Y además existe `Membership Subscription ID`, huérfano de Stripe |
+| ¿HighLevel altera el `name` del schedule? | **No.** El código viejo mandaba `L&B Membership <ref>` sin raya y el CRM lo muestra sin raya. El nombre se guarda literal, así que buscar por nombre exacto es fiable |
+
+Dos correcciones que salieron de ahí:
+
+1. **Los GET de `/invoices/schedule` iban con la versión equivocada.** El endpoint de
+   sondeo borrado en `b2a7e21` llevaba escrito en su fuente que *"la API de creación
+   está fijada a 2023-02-21, pero el endpoint de lectura se sirve bajo v3"* — y usaba v3.
+   Era el único código de todo esto que llegó a correr contra la cuenta real. Las tres
+   lecturas ahora usan `INVOICE_READ_VERSION = 'v3'`; solo el POST de creación conserva
+   la versión fechada. Sin esto, `findScheduleByReference` nunca habría adoptado un
+   schedule huérfano y todo reintento habría terminado en 409.
+2. **Se reutiliza `Membership Subscription ID` en vez de crear un campo nuevo.** Ya
+   existe, significa exactamente eso, y el pipeline no tiene ni una oportunidad con un
+   valor viejo. **Eso elimina el paso de aprovisionamiento previo al deploy.**
+
+### Sondeo de ESCRITURA en modo test — 5 de agosto de 2026
+
+`scripts/probe-ghl-write.mjs`, con `liveMode:false` contra el contacto `L&B CRM Billing
+Test`. El alta **no funcionaba**: tenía **cuatro** errores de contrato encadenados, y cada
+uno solo aparecía al ejecutar el anterior. Ninguno lo habría atrapado un test con dobles.
+
+| # | Qué estaba mal | Cómo se supo |
+|---|---|---|
+| 1 | `resolveItem` ponía `name: entry.label`, y **una entry de membresía no tiene `label`** (tiene `productLabel` y `priceLabel`). `JSON.stringify` descarta las claves `undefined`, así que la línea viajaba **sin nombre** | 422 literal: `items.0.name should not be empty` |
+| 2 | El `_id` del schedule viene en la **raíz** de la respuesta. El código hacía `draft.schedule ?? draft`, y esta API **sí** tiene una clave `schedule` — pero contiene el rrule, no el objeto. Resultado: `MEMBERSHIP_SCHEDULE_FAILED` **mientras el schedule sí se había creado**, dejando una suscripción huérfana por intento | La respuesta real: `{_id, status, liveMode, …, schedule, items}` |
+| 3 | La activación se llamaba con `body: {}` | 422 nombrando `altId, altType, liveMode` |
+| 4 | Las lecturas iban con `?locationId=`; los endpoints de facturas se scopean por `altId`/`altType` | 422 en el GET |
+
+Los cuatro están arreglados y fijados en tests (`tests/membership-enrollment.test.js`).
+Tras el arreglo del nombre, **la creación pasa sin tocar fechas** — el `startDate` de hoy
+y el `dayOfMonth` calculado eran correctos; se descartó por bisección contra el payload
+del probe viejo.
+
+La factura creada se inspeccionó en el CRM y sale bien: línea *"Membresía 2x — Cars &
+SUVs · Sedan"*, $150, mensual el día 5, sin fin, título `MEMBERSHIP INVOICE`, prefijo
+`MEM-` y botón *Pay $150.00*.
+
+**`PUT /opportunities/{id}` FUSIONA los campos personalizados** — verificado escribiendo
+solo `Membership Status` sobre una oportunidad con `Membership Plan` y `Membership
+Checkout ID` cargados: los tres quedaron. La suposición de todo el código es correcta y
+deja de ser deuda.
+
+Faltaba un quinto error, que apareció al arreglar los cuatro:
+
+| # | Qué estaba mal | Cómo se supo |
+|---|---|---|
+| 5 | La activación se llamaba sin `autoPayment` | Con `body: {}` → 422 `altId, altType, liveMode`; con esos tres → **500 `Cannot read properties of undefined (reading 'enable')`**; con `autoPayment: { enable: false }` → 200 |
+
+**Resultado final, ejecutando `createAndSchedule()` — el código que se despliega:**
+
+```
+scheduleId: 6a734c150f55fb1c331f2784
+importe mensual: $150 · liveMode: false
+estado: draft → scheduled → active
+⇒ ✅ EL ALTA DE MEMBRESÍA FUNCIONA. La suscripción queda activa.
+```
+
+`findScheduleByReference` reencuentra el schedule recién creado, así que el camino de
+recuperación que evita el doble cobro también quedó probado de punta a punta.
+
+**No hay link de pago en la respuesta, y está bien.** La respuesta de activación trae
+`sentTo`: HighLevel **manda** la factura por email/SMS. O sea que "revisá tu email" es el
+camino real, no un fallback degradado — conviene que el copy del frontend lo diga así.
+
+`autoPayment: { enable: false }` significa que cada ciclo el miembro recibe una factura y
+la paga, en vez de que se le cobre una tarjeta guardada automáticamente. **Es una decisión
+de negocio para Brenda**, no una limitación: el cobro automático necesita un medio de pago
+guardado que no existe hasta que se paga la primera factura.
+
+### Dos cosas más que salieron del sondeo
+
+- **Cancelar una suscripción SÍ se puede por API**: `POST /invoices/schedule/{id}/cancel`
+  responde 201. Eso abre los casos 5 y 7 de §5 (cambiar de plan, pausar), que figuraban
+  como "no existe".
+- **Un schedule activado no se puede borrar** — 400 `Invoice schedule is already
+  associated with invoice`. El estado alcanzable es `cancelled`, que es el que importa.
+  Solo un `draft` se borra del todo. El `DELETE` quiere `altId`/`altType` en la **query**.
+
+Lo que **queda abierto**:
+
+- **En el CRM quedaron 3 schedules de sondeo en estado `cancelled`** (modo test, contacto
+  de prueba, no cobran a nadie) con sus 3 facturas en `draft`. No se pueden borrar por la
+  razón de arriba.
+- **`New Recurring Invoice`, $450/mes, está en `liveMode: true`** — es de la tanda vieja,
+  no de este sondeo. Está en Draft, así que no cobra; pero si alguien lo activara sin
+  mirar, intentaría un cobro **real**. Conviene borrarlo (es draft, se puede).
+- `createCashInvoice` crea la factura sin `action: send` y después le registra el pago.
+  Que HighLevel acepte un pago sobre un borrador no está probado en vivo.
+- La detección de membresía en el cotizador exige matrícula, y el campo es **opcional**.
+- ~~`PUT /opportunities/{id}` fusiona o reemplaza~~ → **verificado: fusiona.** Ver el
+  sondeo de escritura más abajo.
+- `dependencies.js` (POST) descarta el `mapping`, así que `crm_price_map` sigue vacío.
+- `api/memberships/visits.js` (Postgres + Stripe) sigue desplegado.
+
 ## 8. Estado de las pruebas
 
-163 pruebas, 152 corren en cualquier máquina y 11 se saltean sin `DATABASE_URL`
+196 pruebas, 186 corren en cualquier máquina y 10 se saltean sin `DATABASE_URL`
 (las de Postgres real). `npm test`.
 
-Nada de lo descrito aquí está desplegado.
+Nada de lo descrito en §7 bis está desplegado. **Ya no hace falta aprovisionar nada en
+el CRM antes**: el sondeo confirmó que el pipeline, las etapas y los siete campos
+existen. Si alguna vez se monta otra subcuenta, `node scripts/setup-membership-fields.mjs`
+los crea.
+
+El sondeo de solo lectura vive en `scripts/probe-ghl-recurring.mjs` y se corre con las
+credenciales en `.env.probe` (las de Vercel no sirven: están marcadas *Sensitive* y la
+CLI las devuelve vacías):
+
+```bash
+node --env-file=.env.probe scripts/probe-ghl-recurring.mjs
+```

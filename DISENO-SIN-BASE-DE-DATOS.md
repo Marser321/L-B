@@ -204,6 +204,7 @@ con HighLevel las tiene que satisfacer:
 
 | Regla | Qué debe pasar |
 |---|---|
+| **Un contrato, una suscripción** | La oportunidad guarda su `Membership Subscription ID` (el campo que dejó Stripe, reutilizado). Antes de pedirle una factura recurrente a HighLevel se escribe un marcador `pending:`; si un reintento lo encuentra, **busca el schedule huérfano y lo adopta, y si no lo encuentra se niega a crear otro** (409 `MEMBERSHIP_SCHEDULE_IN_DOUBT`). Fallar cerrado: una membresía que la oficina termina a mano cuesta muchísimo menos que un doble cobro mensual |
 | Activación | La primera factura pagada pone el contrato en `activa`, fija el ciclo y concede la cantidad del plan |
 | **Renovación sin acumular** | Un ciclo pagado **reinicia** el balance a la cantidad del plan; no suma. 2 + 2 nunca es 4 |
 | Impago | La factura fallida pasa el contrato a `vencida`: bloquea reservas nuevas y **no toca** la visita ya agendada del ciclo pagado |
@@ -292,10 +293,10 @@ Lo que quedó acotado, y está cubierto por tests:
 |---|---|
 | Solo HOY | La ventana se calcula en la zona del negocio, no en la del teléfono |
 | Solo SU camioneta | El token nombra la camioneta y el calendario se resuelve del config; el request no puede nombrar un calendario |
-| Solo dos acciones | `attended` y `cash`. Cualquier otra string es 422 |
-| Nada destructivo | No hay cancelar, borrar ni reprogramar |
+| Solo cinco acciones | `attended`, `no_show`, `cancel`, `cash`, `payment_link`. Cualquier otra string es 422 |
+| Nada destructivo | Cancelar mueve el **estado** de la cita, no la borra. No hay `DELETE` ni reprogramar |
 | Sin datos del cliente | Ni teléfono, ni email, ni identificadores de CRM. Solo nombre y dirección |
-| Monto acotado | Entre 1 y 5000, para que un dígito de más no registre miles |
+| Monto acotado | Entre 1 y 5000, para que un dígito de más no registre miles — vale para efectivo y para link |
 
 La cita se verifica listando el día y buscando el id, **no** confiando en el id — si no,
 el token permitiría editar cualquier cita de la cuenta.
@@ -319,13 +320,27 @@ La pantalla lista **solo el día de hoy y solo esa camioneta**, leído de su cal
   Civic — Basic Wash          $55
   Total $110 · depósito $30 pagado · resta $80
 
-  [ Atendida ]   [ Cobrado en efectivo ]
+  [ Atendida ]        [ No estaba ]
+  [ Cobré efectivo ]  [ Link de pago ]
+  [ Cancelar la cita ]
 ```
 
 | Botón | Qué hace en HighLevel |
 |---|---|
 | `Atendida` | `PUT` sobre la cita → `appointmentStatus: showed`. En una visita de membresía, **esto es lo que consume el crédito** |
-| `Cobrado en efectivo` | `POST /invoices/{id}/record-payment` con `mode: "cash"` — verificado, el enum acepta `cash` |
+| `No estaba` | `appointmentStatus: noshow`. **También consume el crédito**: la camioneta viajó y el turno se perdió |
+| `Cancelar la cita` | `appointmentStatus: cancelled`. Gratis: devuelve el crédito y libera la "única visita abierta" del contrato |
+| `Cobré efectivo` | `POST /invoices/` + `/invoices/{id}/record-payment` con `mode: "cash"` |
+| `Link de pago` | `POST /invoices/text2pay` con `action: send`. **No marca nada pagado**: la plata todavía no está |
+
+El panel arrancó con dos botones y creció a cinco por una sola razón: **cada desenlace que
+no puede registrar es un desenlace por el que la oficina tiene que abrir HighLevel.** Una
+cuadrilla que puede marcar un lavado entregado pero no un cliente que nunca abrió el
+portón movió el trabajo, no lo eliminó.
+
+Lo que sigue afuera a propósito: **borrar** (perdería el historial que la fórmula de
+créditos lee) y **reprogramar** (mover una visita es una conversación con el cliente, no
+un botón en una entrada de garaje).
 
 Reglas de alcance, porque un link que marca cobros es una capacidad real:
 
@@ -364,7 +379,15 @@ Dos formas de pagar la diferencia, y las dos ya existen:
 
 1. **Ahora**, con el link de pago de la factura.
 2. **Al técnico**, en efectivo — y lo registra la cuadrilla desde su panel con el botón
-   `Cobrado en efectivo`.
+   `Cobré efectivo`. Si el cliente prefiere tarjeta, `Link de pago` le manda la factura
+   por SMS y email y la abre en el teléfono de la cuadrilla para que pague ahí mismo.
+
+Importante para que la cuadrilla no cobre dos veces: cuando los add-ons se facturan
+**online**, la cita se escribe con `total: $0`. El saldo que ve el panel sale de ese
+campo, así que un add-on ya facturado **no** aparece como algo a cobrar en la puerta. El
+importe queda igual en el registro, bajo `extras_monto`. Y si la factura online no llega
+a salir, el servidor **reescribe la cita a cobro en efectivo** — la visita nunca se cae,
+porque el lavado base ya está pago por el ciclo.
 
 La segunda opción es la que hace que el panel de la cuadrilla y los add-ons de membresía
 se apoyen mutuamente en lugar de ser dos features separadas.
