@@ -77,6 +77,24 @@ function validateRequest(body) {
   // (the CRM opportunity) instead of a hold: a recurring invoice has no hold, and a
   // deposit has no contract. The workflow that calls this sends one or the other.
   const rawContractId = body.contractId || (body.meta && body.meta.contractId) || '';
+  // A membership invoice identified only by its INVOICE id. The endpoint resolves the
+  // contact, the plan and the date from the invoice itself, so the workflow — which is
+  // contact-scoped and cannot know which of a customer's vehicles an invoice pays for —
+  // only has to pass one field it definitely has.
+  const rawInvoiceId = body.invoiceId || (body.meta && body.meta.invoiceId) || '';
+  if (!rawContractId && rawInvoiceId) {
+    return {
+      ignored: false,
+      kind: 'membership',
+      eventType,
+      outcome,
+      externalEventId,
+      contractId: '',
+      invoiceId: text(rawInvoiceId, 'invoiceId', 8, 64),
+      cycleStartsAt: '',
+      payload: body
+    };
+  }
   if (rawContractId) {
     return {
       ignored: false,
@@ -117,21 +135,64 @@ function validateRequest(body) {
 // Applies a membership invoice event to its contract. Resolves the custom-field ids by
 // name, the same way the member page does, so the two can never disagree about which
 // field holds what.
-async function applyMembershipEvent(event) {
-  const membershipCrm = require('../_lib/membership-crm.js');
-  const config = ghl.getConfig();
-
+// The membership custom-field ids, resolved by name because they differ per sub-account.
+async function resolveMembershipFields(config) {
   const data = await ghl.ghlRequest(config, `/locations/${encodeURIComponent(config.locationId)}/customFields?model=opportunity`, {
     version: '2021-07-28'
   });
   const byName = new Map((data.customFields || []).map(field => [String(field.name || '').trim(), field.id]));
   const fieldIds = {
+    plan: byName.get('Membership Plan') || '',
+    vehicle: byName.get('Membership Vehicle') || '',
     status: byName.get('Membership Status') || '',
     cycleEnds: byName.get('Membership Cycle Ends') || ''
   };
   if (!fieldIds.status || !fieldIds.cycleEnds) {
     throw new RequestError('Membership fields are missing in the CRM', 503, 'MEMBERSHIP_FIELDS_MISSING');
   }
+  return { fieldIds };
+}
+
+// The Memberships pipeline: its id, its stage names, and the Active stage to move a paid
+// card to. All resolved by name so a renamed id cannot break it silently.
+async function membershipStages(config) {
+  const data = await ghl.ghlRequest(config, `/opportunities/pipelines?locationId=${encodeURIComponent(config.locationId)}`, {
+    version: '2021-07-28'
+  });
+  const pipeline = (data.pipelines || []).find(entry => String(entry.name || '').trim() === 'Memberships');
+  const stages = (pipeline && pipeline.stages) || [];
+  const active = stages.find(stage => String(stage.name || '').trim() === 'Active');
+  return {
+    pipelineId: pipeline ? pipeline.id : '',
+    names: Object.fromEntries(stages.map(stage => [stage.id, stage.name])),
+    activeStageId: active ? active.id : ''
+  };
+}
+
+async function applyMembershipEvent(event) {
+  const membershipCrm = require('../_lib/membership-crm.js');
+  const config = ghl.getConfig();
+
+  // When only an invoice id was sent, the invoice is the source of everything: which
+  // contract it pays for, and what date the cycle starts. Fetched rather than trusted,
+  // so a workflow cannot pass a contract that is not the one that was actually paid.
+  let contractId = event.contractId;
+  let cycleStartsAt = event.cycleStartsAt;
+  if (!contractId) {
+    const invoice = await ghl.getInvoice(config, event.invoiceId);
+    const resolved = await resolveMembershipFields(config);
+    const stages = await membershipStages(config);
+    const contract = await membershipCrm.findContractForInvoice(
+      config, resolved.fieldIds, stages.names, invoice, { pipelineId: stages.pipelineId }
+    );
+    contractId = contract.contractId;
+    // The invoice's own date, which is what makes granting idempotent.
+    cycleStartsAt = invoice.issueDate || '';
+    console.log('[webhook-membership] resolved', event.invoiceId, '→', contractId);
+  }
+  event = { ...event, contractId, cycleStartsAt };
+
+  const { fieldIds } = await resolveMembershipFields(config);
 
   if (event.outcome === 'failed') {
     const result = await membershipCrm.markPastDue(config, fieldIds, event.contractId);
@@ -142,16 +203,10 @@ async function applyMembershipEvent(event) {
   const parsed = event.cycleStartsAt ? Date.parse(event.cycleStartsAt) : NaN;
   const cycleStartMs = Number.isFinite(parsed) ? parsed : Date.now();
   // The Active stage id, so a paid invoice moves the card as well as writing the date.
-  // Resolved by name; if the pipeline is missing the fields still get written.
-  const pipelines = await ghl.ghlRequest(config, `/opportunities/pipelines?locationId=${encodeURIComponent(config.locationId)}`, {
-    version: '2021-07-28'
-  });
-  const memberships = (pipelines.pipelines || []).find(entry => String(entry.name || '').trim() === 'Memberships');
-  const activeStage = ((memberships && memberships.stages) || []).find(stage => String(stage.name || '').trim() === 'Active');
-
+  const stages = await membershipStages(config);
   const result = await membershipCrm.grantCycle(config, fieldIds, event.contractId, {
     cycleStartMs,
-    activeStageId: activeStage ? activeStage.id : ''
+    activeStageId: stages.activeStageId
   });
   console.log('[webhook-membership] cycle granted', event.contractId, result.cycleEndsAt, event.externalEventId);
   return { contractId: event.contractId, ...result };
@@ -200,7 +255,10 @@ async function handler(req, res) {
     const statusCode = error instanceof RequestError || error instanceof HighLevelError ? error.statusCode : 502;
     const publicMessage = error instanceof RequestError ? error.message : 'Payment processing failed';
     if (statusCode >= 500) console.error('[payments]', error.name || 'Error', statusCode);
-    return sendJson(res, statusCode, { ok: false, error: publicMessage });
+    // The code matters here: a workflow that gets MEMBERSHIP_AMBIGUOUS needs to be told
+    // apart from one that hit an outage, because the first will never succeed on retry
+    // and the second will.
+    return sendJson(res, statusCode, { ok: false, error: publicMessage, ...(error.code ? { code: error.code } : {}) });
   }
 }
 

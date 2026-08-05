@@ -9,7 +9,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { setupAgenda, callHandler, nextWeekday, CALENDARS } = require('./support/harness.js');
+const { setupAgenda, callHandler, businessDate, CALENDARS } = require('./support/harness.js');
 
 const crewHandler = require('../api/crew.js');
 const crewLink = require('../api/_lib/crew-link.js');
@@ -23,8 +23,8 @@ function setup(options = {}) {
 
 // An appointment on a van's calendar, shaped the way the agenda writes them.
 function stopOn(ctx, calendarId, { startHour = 9, endHour = 10, status = 'confirmed', title = 'RESERVA — 2024 Toyota Camry', dayOffset = 0, notes } = {}) {
-  const day = new Date(Date.now() + dayOffset * 24 * 60 * 60 * 1000);
-  const iso = day.toISOString().slice(0, 10);
+  // In the BUSINESS timezone, not UTC: "today" for the endpoint is Naples' today.
+  const iso = businessDate(dayOffset);
   const events = ctx.ghl.calendarEvents[calendarId] || (ctx.ghl.calendarEvents[calendarId] = []);
   events.push({
     id: `appt-${calendarId}-${events.length + 1}`,

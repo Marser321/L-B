@@ -270,6 +270,56 @@ async function bookVisit(config, contract, { date, startTime, now = Date.now() }
   throw new RequestError('No hay camioneta disponible en ese horario', 409, 'SLOT_UNAVAILABLE');
 }
 
+// ── Finding the contract an invoice belongs to ─────────────────────────────
+
+// The name a membership product carries on an invoice line, per plan+size, so a line
+// can be matched back to a contract without relying on ids the CRM may have renamed.
+function planMatchesInvoice(contract, invoice) {
+  const lines = (invoice.invoiceItems || invoice.items || [])
+    .map(item => String(item.name || '').toLowerCase())
+    .join(' | ');
+  if (!lines) return false;
+  const label = String((membershipCatalog.MEMBERSHIP_PACKAGES[contract.packageId] || {}).label || '').toLowerCase();
+  return Boolean(label) && lines.includes(label);
+}
+
+// Which contract a paid invoice pays for.
+//
+// The workflow only knows the invoice, so the contact, the plan and the date all come
+// from the invoice itself. One customer can hold several contracts — a car and a truck —
+// which is exactly why the workflow could not carry a contract id: it is contact-scoped
+// and would have had to guess.
+//
+// Ambiguity is REFUSED, never guessed. Granting a cycle to the wrong vehicle would give
+// one member two months and leave the other unpaid, and nothing downstream would ever
+// contradict it. A 409 puts it in front of the office instead.
+async function findContractForInvoice(config, fieldIds, stages, invoice, { pipelineId = '' } = {}) {
+  const contactId = (invoice.contactDetails && invoice.contactDetails.id) || invoice.contactId || '';
+  if (!contactId) throw new RequestError('That invoice has no contact', 422, 'MEMBERSHIP_INVOICE_NO_CONTACT');
+
+  const opportunities = await ghl.opportunitiesForContact(config, { contactId, pipelineId });
+  const contracts = opportunities
+    .map(opportunity => {
+      try { return readContract(opportunity, fieldIds, stages); } catch { return null; }
+    })
+    .filter(Boolean);
+
+  if (!contracts.length) {
+    throw new RequestError('No membership contract for that invoice', 404, 'MEMBERSHIP_NOT_FOUND');
+  }
+  if (contracts.length === 1) return contracts[0];
+
+  // Several contracts on one contact: the invoice's own product lines say which.
+  const matching = contracts.filter(contract => planMatchesInvoice(contract, invoice));
+  if (matching.length === 1) return matching[0];
+
+  throw new RequestError(
+    `That invoice matches ${matching.length || contracts.length} membership contracts; set the cycle by hand`,
+    409,
+    'MEMBERSHIP_AMBIGUOUS'
+  );
+}
+
 // ── Granting a cycle ───────────────────────────────────────────────────────
 
 // One month on from a cycle start, clamped to the end of a shorter month so the 31st
@@ -319,6 +369,8 @@ async function markCanceled(config, fieldIds, contractId) {
 }
 
 module.exports = {
+  planMatchesInvoice,
+  findContractForInvoice,
   STAGE_STATUS,
   stageStatus,
   addOneMonth,

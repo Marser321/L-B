@@ -9,7 +9,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { setupAgenda, callHandler, CALENDARS } = require('./support/harness.js');
+const { setupAgenda, callHandler, businessDate, businessWeekday, CALENDARS } = require('./support/harness.js');
 
 const memberHandler = require('../api/member.js');
 const membershipCrm = require('../api/_lib/membership-crm.js');
@@ -32,7 +32,7 @@ function token(contractId = CONTRACT) {
 
 // A wash on a van's calendar, tagged with the contract the way bookVisit writes it.
 function washOn(ctx, calendarId, { dayOffset, status = 'showed', contractId = CONTRACT, hour = 9, tagged = true } = {}) {
-  const iso = new Date(Date.now() + dayOffset * DAY).toISOString().slice(0, 10);
+  const iso = businessDate(dayOffset);
   const events = ctx.ghl.calendarEvents[calendarId] || (ctx.ghl.calendarEvents[calendarId] = []);
   events.push({
     id: `appt-${calendarId}-${events.length + 1}`,
@@ -54,9 +54,7 @@ async function status(ctx, { date, contractId } = {}) {
 
 // A weekday at least 48 hours out, inside the cycle.
 function bookableDate(offsetDays = 5) {
-  const target = new Date(Date.now() + offsetDays * DAY);
-  while (target.getUTCDay() === 0) target.setUTCDate(target.getUTCDate() + 1);
-  return target.toISOString().slice(0, 10);
+  return businessWeekday(offsetDays);
 }
 
 // ── What the page shows ────────────────────────────────────────────────────
@@ -209,10 +207,8 @@ test('the 48-hour rule and the end of the cycle are enforced on the server', asy
   const ctx = setup();
   t.after(() => ctx.restore());
 
-  const tomorrow = new Date(Date.now() + DAY);
-  while (tomorrow.getUTCDay() === 0) tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
   const tooSoon = await callHandler(memberHandler, {
-    t: token(), date: tomorrow.toISOString().slice(0, 10), startTime: '09:00'
+    t: token(), date: businessWeekday(1), startTime: '09:00'
   });
   assert.equal(tooSoon.statusCode, 409);
   assert.equal(tooSoon.body.code, 'MEMBERSHIP_TOO_SOON');
@@ -400,4 +396,94 @@ test('a past_due contract cannot book, and the member is told why', async t => {
   assert.equal(attempt.statusCode, 409);
   assert.equal(attempt.body.code, 'MEMBERSHIP_PAST_DUE');
   assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'appointment').length, 0);
+});
+
+// ── Resolving the contract from the invoice ────────────────────────────────
+
+// A membership contract as the CRM returns it from a search.
+function contractRow(id, { plan = 'membresia-2x', vehicle = '2024 Toyota Camry' } = {}) {
+  return {
+    id,
+    contact: { id: 'contact-1' },
+    pipelineStageId: 'stage-mem-active',
+    customFields: [
+      { id: 'field-mem-plan', fieldValue: plan },
+      { id: 'field-mem-vehicle', fieldValue: vehicle },
+      { id: 'field-mem-cycle', fieldValue: new Date(Date.now() + 20 * DAY).toISOString() }
+    ]
+  };
+}
+
+test('an invoice id alone is enough: the endpoint finds the contract', async t => {
+  const ctx = setup({
+    env: { PAYMENT_WEBHOOK_SECRET: WEBHOOK_SECRET },
+    contactContracts: [contractRow('opp-membership-solo')]
+  });
+  t.after(() => ctx.restore());
+
+  const webhookHandler = require('../api/payments/webhook.js');
+  const res = await callHandler(webhookHandler, {
+    type: 'InvoicePaid', id: 'evt-1', invoiceId: 'inv-solo-1'
+  }, WEBHOOK_AUTH);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.contractId, 'opp-membership-solo');
+  // The cycle came from the INVOICE's own issueDate (2026-08-04), not from now, which is
+  // what keeps a redelivery from granting a second month.
+  assert.equal(res.body.cycleEndsAt.slice(0, 10), '2026-09-04');
+});
+
+test('two vehicles on one contact: the invoice line says which contract was paid', async t => {
+  const ctx = setup({
+    env: { PAYMENT_WEBHOOK_SECRET: WEBHOOK_SECRET },
+    contactContracts: [
+      contractRow('opp-membership-car', { plan: 'membresia-2x', vehicle: 'Camry' }),
+      contractRow('opp-membership-truck', { plan: 'semi-truck-2x', vehicle: 'Freightliner' })
+    ]
+  });
+  t.after(() => ctx.restore());
+
+  const webhookHandler = require('../api/payments/webhook.js');
+  // The seeded invoice line reads "Membresía 2x — Cars & SUVs · Sedan", which matches the
+  // car contract's plan label and not the truck's.
+  const res = await callHandler(webhookHandler, {
+    type: 'InvoicePaid', id: 'evt-2', invoiceId: 'inv-two-1'
+  }, WEBHOOK_AUTH);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.contractId, 'opp-membership-car', 'the car, not the truck');
+});
+
+test('an invoice that matches two identical contracts is REFUSED, never guessed', async t => {
+  const ctx = setup({
+    env: { PAYMENT_WEBHOOK_SECRET: WEBHOOK_SECRET },
+    // Two cars on the same plan: nothing on the invoice can tell them apart.
+    contactContracts: [
+      contractRow('opp-membership-car-a', { vehicle: 'Camry' }),
+      contractRow('opp-membership-car-b', { vehicle: 'Corolla' })
+    ]
+  });
+  t.after(() => ctx.restore());
+
+  const webhookHandler = require('../api/payments/webhook.js');
+  const res = await callHandler(webhookHandler, {
+    type: 'InvoicePaid', id: 'evt-3', invoiceId: 'inv-ambiguous'
+  }, WEBHOOK_AUTH);
+
+  // Granting the wrong vehicle would give one member two months and leave the other
+  // unpaid, and nothing downstream would ever contradict it. A 409 puts it in front of
+  // the office instead.
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.code, 'MEMBERSHIP_AMBIGUOUS');
+  assert.equal(ctx.ghl.calls.some(call => call.method === 'PUT' && call.path.startsWith('/opportunities/')), false);
+});
+
+test('an invoice with no membership contract behind it is a clean 404', async t => {
+  const ctx = setup({ env: { PAYMENT_WEBHOOK_SECRET: WEBHOOK_SECRET }, contactContracts: [] });
+  t.after(() => ctx.restore());
+
+  const webhookHandler = require('../api/payments/webhook.js');
+  const res = await callHandler(webhookHandler, { type: 'InvoicePaid', id: 'evt-4', invoiceId: 'inv-none' }, WEBHOOK_AUTH);
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body.code, 'MEMBERSHIP_NOT_FOUND');
 });

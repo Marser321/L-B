@@ -172,6 +172,29 @@ async function ghlRequest(config, path, options = {}) {
   throw lastError;
 }
 
+// One invoice, by id. The membership webhook reads it rather than trusting the caller:
+// the contact, the products and the issue date all come from the invoice itself, so a
+// workflow only has to pass an id and cannot get any of them wrong.
+async function getInvoice(config, invoiceId) {
+  const data = await ghlRequest(config, `/invoices/${encodeURIComponent(invoiceId)}?altId=${encodeURIComponent(config.locationId)}&altType=location`, {
+    version: 'v3'
+  });
+  return data.invoice || data;
+}
+
+// Opportunities for one contact in one pipeline.
+async function opportunitiesForContact(config, { contactId, pipelineId }) {
+  const query = new URLSearchParams({
+    location_id: config.locationId,
+    contact_id: contactId,
+    status: 'all',
+    limit: '100',
+    ...(pipelineId ? { pipeline_id: pipelineId } : {})
+  });
+  const data = await ghlRequest(config, `/opportunities/search?${query}`, { version: '2021-07-28' });
+  return data.opportunities || [];
+}
+
 // Writes custom fields onto one opportunity, leaving everything else alone. Used to
 // record a paid membership cycle — the only thing that ever writes a contract's state.
 async function updateOpportunityFields(config, opportunityId, fields, { pipelineStageId = '' } = {}) {
@@ -486,6 +509,8 @@ module.exports = {
   busyIntervalsByResource,
   upsertContact,
   splitName,
+  getInvoice,
+  opportunitiesForContact,
   updateOpportunityFields,
   calendarEventsForCalendar,
   createCashInvoice,

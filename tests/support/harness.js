@@ -70,6 +70,8 @@ function createGhlStub(options = {}) {
     // Per-id contract overrides for the member tests: an object replaces the default,
     // null makes the id a 404.
     contracts: options.contracts || {},
+    contactContracts: options.contactContracts || null,
+    invoicesById: options.invoicesById || {},
     invoiceUrl: options.invoiceUrl || 'https://pay.example/invoice-1',
     failures: options.failures || {}
   };
@@ -188,6 +190,20 @@ function createGhlStub(options = {}) {
     }
 
     // ── Invoices ─────────────────────────────────────────────────────────────
+    if (method === 'GET' && /^\/invoices\/[^/]+/.test(path) && !/record-payment/.test(path)) {
+      const id = decodeURIComponent(path.split('/')[2].split('?')[0]);
+      const seeded = (state.invoicesById || {})[id];
+      if (seeded === null) return json({ message: 'Not found' }, 404);
+      return json({
+        _id: id,
+        status: 'paid',
+        issueDate: '2026-08-04',
+        contactDetails: { id: state.contactId },
+        invoiceItems: [{ name: 'Membresía 2x — Cars & SUVs · Sedan', amount: 150, qty: 1 }],
+        ...(seeded || {})
+      });
+    }
+
     if (method === 'POST' && path === '/invoices/') {
       const id = `inv-${state.invoices.length + 1}`;
       state.invoices.push({ id, body, payments: [] });
@@ -299,6 +315,9 @@ function createGhlStub(options = {}) {
     }
 
     if (method === 'GET' && path.startsWith('/opportunities/search')) {
+      // The member/webhook path searches a contact's membership contracts. A test seeds
+      // them explicitly; everything else keeps the old single-opportunity behaviour.
+      if (state.contactContracts) return json({ opportunities: state.contactContracts });
       return json({ opportunities: state.opportunities });
     }
 
@@ -350,6 +369,24 @@ function setupAgenda(options = {}) {
 // contract directly with `activateContract`. That is how these tests should always
 // have worked: what they exercise is the membership RULES — notice, credits, late
 // cancels, no-shows — and none of those depend on who moved the money.
+// A date offset from today IN THE BUSINESS TIMEZONE, which is the only "today" the code
+// knows. Building it from UTC instead makes every test that seeds "today" fail between
+// 8pm and midnight in Naples, when UTC has already rolled over — a suite that breaks four
+// hours a day is worse than no suite.
+function businessDate(offsetDays = 0) {
+  const time = require('../../api/_lib/time.js');
+  const zone = time.bookingTimezone();
+  return time.addDays(time.todayInZone(Date.now(), zone), offsetDays);
+}
+
+// The same, skipping Sundays forward — the crew does not work then.
+function businessWeekday(offsetDays = 0) {
+  let date = businessDate(offsetDays);
+  const time = require('../../api/_lib/time.js');
+  while (time.isSunday(date)) date = time.addDays(date, 1);
+  return date;
+}
+
 function setupMemberships(options = {}) {
   const ctx = setupAgenda({
     ...options,
@@ -485,6 +522,8 @@ module.exports = {
   createGhlStub,
   setupAgenda,
   setupMemberships,
+  businessDate,
+  businessWeekday,
   mockRequest,
   mockResponse,
   callHandler,
