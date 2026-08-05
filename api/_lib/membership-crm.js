@@ -381,6 +381,18 @@ function addOneMonth(ms) {
 // value instead of pushing the cycle out a second month. A caller that passes nothing
 // falls back to now, which is NOT idempotent — hence the workflow is configured to send
 // the invoice date.
+// The recurring schedule id on a contract, or '' if there is none to act on.
+//
+// Deliberately skips the `pending:` marker the enrolment writes before it asks HighLevel
+// for anything: that marker names an ATTEMPT, not a schedule, so treating it as an id
+// would send a request at something that may never have been created.
+async function readScheduleId(config, fieldIds, contractId) {
+  if (!fieldIds.scheduleId) return '';
+  const data = await ghl.ghlRequest(config, `/opportunities/${encodeURIComponent(contractId)}`, { version: '2021-07-28' });
+  const value = fieldValue(data.opportunity || data, fieldIds.scheduleId).trim();
+  return value.startsWith('pending:') ? '' : value;
+}
+
 async function grantCycle(config, fieldIds, contractId, { cycleStartMs = Date.now(), activeStageId = '', portalUrl = '' } = {}) {
   const cycleEndsMs = addOneMonth(cycleStartMs);
   const reminderMs = cycleEndsMs - 3 * 24 * 60 * 60 * 1000;
@@ -429,6 +441,7 @@ module.exports = {
   balanceFor,
   eligibility,
   candidateStartTimes,
+  readScheduleId,
   visitDescription,
   markAddonsPayableOnSite,
   bookVisit

@@ -279,6 +279,69 @@ test('the schedule is found again by the same name it was created with', async (
   }), '');
 });
 
+// ── Turning the membership into a real recurring charge ────────────────────
+
+test('auto-payment is only attempted once a saved card exists, and never breaks the cycle', async () => {
+  const config = { locationId: 'loc-1' };
+
+  // No schedule on the contract yet: nothing to turn on.
+  assert.deepEqual(
+    await recurring.enableAutoPayment({ config, request: async () => ({}), scheduleId: '' }),
+    { enabled: false, reason: 'no-schedule' }
+  );
+
+  // A member who has not paid yet has no Stripe customer or payment method. HighLevel's
+  // only autoPayment.type is `saved_card`, so there is simply nothing to enable — and
+  // that is the NORMAL state at enrolment, not an error.
+  assert.deepEqual(
+    await recurring.enableAutoPayment({ config, request: async () => ({ data: [] }), scheduleId: 'sched-1' }),
+    { enabled: false, reason: 'no-saved-card' }
+  );
+
+  // Once the first invoice is paid, the ids can be mined from what it left behind.
+  const withCard = async (config_, path) => (path.startsWith('/invoices/')
+    ? { _id: 'inv-1', payment: { customerId: 'cus_live', paymentMethodId: 'pm_live' } }
+    : { data: [] });
+  let sent = null;
+  const request = async (config_, path, options) => {
+    if (options && options.method === 'POST') { sent = { path, body: options.body }; return { ok: true }; }
+    return withCard(config_, path);
+  };
+  assert.deepEqual(
+    await recurring.enableAutoPayment({ config, request, scheduleId: 'sched-1', invoiceId: 'inv-1' }),
+    { enabled: true }
+  );
+  assert.match(sent.path, /\/invoices\/schedule\/sched-1\/auto-payment$/);
+  assert.deepEqual(sent.body.autoPayment, {
+    enable: true, type: 'saved_card', customerId: 'cus_live', paymentMethodId: 'pm_live'
+  });
+
+  // A rejection is swallowed: the member already paid for this cycle and must get it.
+  const rejecting = async (config_, path, options) => {
+    if (options && options.method === 'POST') { const error = new Error('nope'); error.statusCode = 500; throw error; }
+    return withCard(config_, path);
+  };
+  const result = await recurring.enableAutoPayment({ config, request: rejecting, scheduleId: 'sched-1', invoiceId: 'inv-1' });
+  assert.equal(result.enabled, false);
+  assert.match(result.reason, /^rejected-/);
+});
+
+test('a pending attempt marker is never mistaken for a schedule id', async () => {
+  const membershipCrm = require('../api/_lib/membership-crm.js');
+  const fieldIds = { scheduleId: 'field-schedule' };
+  const contractWith = value => async () => ({ opportunity: { id: 'opp-1', customFields: [{ id: 'field-schedule', fieldValue: value }] } });
+
+  const original = ghl.ghlRequest;
+  try {
+    ghl.ghlRequest = contractWith('sched-real');
+    assert.equal(await membershipCrm.readScheduleId({}, fieldIds, 'opp-1'), 'sched-real');
+    // The marker names an ATTEMPT. Acting on it would aim a request at something that
+    // may never have been created.
+    ghl.ghlRequest = contractWith('pending:sub-1');
+    assert.equal(await membershipCrm.readScheduleId({}, fieldIds, 'opp-1'), '');
+  } finally { ghl.ghlRequest = original; }
+});
+
 // ── What the crew is told to collect ───────────────────────────────────────
 
 test('add-ons billed online are never shown to the crew as an outstanding balance', () => {

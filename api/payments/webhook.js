@@ -26,6 +26,7 @@ const { sendJson, readBody, assertMethod } = require('../_lib/http.js');
 const { text } = require('../_lib/validate.js');
 const ghl = require('../_lib/ghl.js');
 const agenda = require('../_lib/agenda.js');
+const recurring = require('../_lib/crm-recurring-memberships.js');
 
 const PAID_EVENT_TYPES = new Set(['InvoicePaid', 'invoice.paid', 'OrderPaid', 'payment.succeeded']);
 const FAILED_EVENT_TYPES = new Set(['InvoiceFailed', 'invoice.failed', 'payment.failed', 'InvoiceVoid', 'invoice.voided']);
@@ -158,6 +159,8 @@ async function resolveMembershipFields(config) {
     status: byName.get('Membership Status') || '',
     cycleEnds: byName.get('Membership Cycle Ends') || '',
     portalUrl: byName.get('Membership Portal URL') || '',
+    // Needed to turn on auto-payment once the first invoice has been paid.
+    scheduleId: byName.get('Membership Subscription ID') || '',
     reminderDate: byName.get('Membership Credit Reminder Date') || ''
   };
   if (!fieldIds.status || !fieldIds.cycleEnds) {
@@ -191,8 +194,11 @@ async function applyMembershipEvent(event) {
   // so a workflow cannot pass a contract that is not the one that was actually paid.
   let contractId = event.contractId;
   let cycleStartsAt = event.cycleStartsAt;
+  // Kept in the function's scope: enabling auto-payment below needs the contact this
+  // invoice was billed to.
+  let invoice = null;
   if (!contractId) {
-    const invoice = await ghl.getInvoice(config, event.invoiceId);
+    invoice = await ghl.getInvoice(config, event.invoiceId);
     const resolved = await resolveMembershipFields(config);
     const stages = await membershipStages(config);
     const contract = await membershipCrm.findContractForInvoice(
@@ -225,6 +231,29 @@ async function applyMembershipEvent(event) {
       : ''
   });
   console.log('[webhook-membership] cycle granted', event.contractId, result.cycleEndsAt, event.externalEventId);
+
+  // Turn the membership into an actual recurring CHARGE from the next cycle on.
+  //
+  // It cannot be done at enrolment: HighLevel's only `autoPayment.type` is `saved_card`,
+  // and that needs the Stripe customer and payment method the member creates by paying
+  // the first invoice. So the moment that payment lands — here — is the earliest point
+  // where auto-charging is possible at all.
+  //
+  // Strictly best effort. If it does not take, HighLevel keeps emailing the invoice every
+  // cycle and the money still arrives; nothing about the cycle the member just paid for
+  // may depend on this succeeding.
+  try {
+    const scheduleId = await membershipCrm.readScheduleId(config, fieldIds, event.contractId);
+    const outcome = await recurring.enableAutoPayment({
+      config, request: ghl.ghlRequest, scheduleId,
+      contactId: (invoice && (invoice.contactDetails || {}).id) || '',
+      invoiceId: event.invoiceId || ''
+    });
+    console.log('[webhook-membership] autopay', event.contractId, outcome.enabled ? 'on' : `off:${outcome.reason}`);
+  } catch (error) {
+    console.error('[webhook-membership] autopay failed', event.contractId, error.name || 'Error');
+  }
+
   return { contractId: event.contractId, ...result };
 }
 

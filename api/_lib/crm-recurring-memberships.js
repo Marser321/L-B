@@ -224,7 +224,86 @@ async function createAndSchedule({ config, request, contact, packageId, sizeId, 
   return { scheduleId, url, monthlyAmount: item.amount, liveMode: Boolean(config.membershipPaymentsLiveMode) };
 }
 
+// ── Turning a membership into a real recurring CHARGE ──────────────────────
+//
+// A schedule is activated with `autoPayment.enable = false`, and that is not a choice:
+// HighLevel's enum for `autoPayment.type` is `saved_card`, and enabling it requires a
+// `customerId` and a `paymentMethodId` that DO NOT EXIST until the member has paid once.
+// Verified 5 ago 2026 — every other value of `type` is rejected as an invalid enum, and
+// `saved_card` without those two ids is a 422.
+//
+// So the first cycle is an emailed invoice the member pays by hand, and from the second
+// cycle on it can be charged automatically. That upgrade is what this does, on the
+// payment webhook, once a card actually exists.
+//
+// There is no endpoint that lists a contact's saved payment methods, so the ids are
+// mined from what the payment left behind. The shape of a paid transaction could not be
+// confirmed — the sub-account has never taken a payment — so this reads defensively and
+// treats "not found" as normal rather than as an error.
+
+function firstString(source, keys) {
+  for (const key of keys) {
+    const value = source && source[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+// Looks for the customer/payment-method pair a completed payment leaves behind, first on
+// the invoice itself and then on the location's transactions.
+async function findSavedCard({ config, request, contactId, invoiceId }) {
+  const probes = [];
+  if (invoiceId) {
+    probes.push(() => request(config, `/invoices/${encodeURIComponent(invoiceId)}?${scheduleQuery(config)}`, { version: INVOICE_READ_VERSION }));
+  }
+  probes.push(() => request(
+    config,
+    `/payments/transactions?${new URLSearchParams({ altId: config.locationId, altType: 'location', contactId: contactId || '', limit: '20' })}`,
+    { version: INVOICE_READ_VERSION }
+  ));
+
+  for (const probe of probes) {
+    let data;
+    try { data = await probe(); } catch (error) { continue; }
+    const rows = Array.isArray(data && data.data) ? data.data : [data];
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue;
+      // The ids may sit on the row or one level down, depending on the endpoint.
+      for (const candidate of [row, row.payment, row.paymentMethod, row.customer, row.meta]) {
+        if (!candidate || typeof candidate !== 'object') continue;
+        const paymentMethodId = firstString(candidate, ['paymentMethodId', 'paymentMethod_id', 'sourceId', 'cardId']);
+        const customerId = firstString(candidate, ['customerId', 'customer_id', 'stripeCustomerId']);
+        if (paymentMethodId && customerId) return { customerId, paymentMethodId };
+      }
+    }
+  }
+  return null;
+}
+
+// Best effort by design: a membership whose auto-charge could not be turned on still
+// bills correctly, because HighLevel keeps emailing the invoice every cycle. Failing
+// here must never disturb granting the cycle the member already paid for.
+async function enableAutoPayment({ config, request, scheduleId, contactId, invoiceId }) {
+  if (!scheduleId) return { enabled: false, reason: 'no-schedule' };
+  const card = await findSavedCard({ config, request, contactId, invoiceId });
+  if (!card) return { enabled: false, reason: 'no-saved-card' };
+  try {
+    await request(config, `/invoices/schedule/${encodeURIComponent(scheduleId)}/auto-payment`, {
+      method: 'POST', version: INVOICE_VERSION,
+      body: {
+        altId: config.locationId, altType: 'location',
+        id: scheduleId,
+        autoPayment: { enable: true, type: 'saved_card', customerId: card.customerId, paymentMethodId: card.paymentMethodId }
+      }
+    });
+    return { enabled: true };
+  } catch (error) {
+    return { enabled: false, reason: `rejected-${error.statusCode || 'error'}` };
+  }
+}
+
 module.exports = {
-  INVOICE_VERSION, dateInTimeZone, resolveItem, scheduleName, schedulePayload,
-  payableUrl, scheduleIdFrom, findScheduleByReference, scheduleUrl, createAndSchedule
+  INVOICE_VERSION, INVOICE_READ_VERSION, dateInTimeZone, resolveItem, scheduleName,
+  schedulePayload, payableUrl, scheduleIdFrom, findScheduleByReference, scheduleUrl,
+  createAndSchedule, findSavedCard, enableAutoPayment
 };

@@ -270,10 +270,32 @@ recuperación que evita el doble cobro también quedó probado de punta a punta.
 `sentTo`: HighLevel **manda** la factura por email/SMS. O sea que "revisá tu email" es el
 camino real, no un fallback degradado — conviene que el copy del frontend lo diga así.
 
-`autoPayment: { enable: false }` significa que cada ciclo el miembro recibe una factura y
-la paga, en vez de que se le cobre una tarjeta guardada automáticamente. **Es una decisión
-de negocio para Brenda**, no una limitación: el cobro automático necesita un medio de pago
-guardado que no existe hasta que se paga la primera factura.
+### El cobro recurrente automático
+
+`autoPayment.enable` en el alta va en `false`, y **no es una elección**: el único valor
+que acepta `autoPayment.type` es `saved_card`, y eso exige un `customerId` y un
+`paymentMethodId` **de Stripe** que no existen hasta que el miembro pagó una vez. Probado:
+cualquier otro `type` es enum inválido, y `saved_card` sin esos ids es 422. Con ids
+inventados el error viene **de Stripe** (`No such PaymentMethod`), que es la prueba de que
+el mecanismo es real y solo le faltan datos.
+
+De ahí el diseño:
+
+```
+alta          → schedule activo, autoPayment OFF → HighLevel manda la 1ª factura por email
+1er pago      → el miembro entra la tarjeta; Stripe crea customer + payment method
+webhook       → POST /invoices/schedule/{id}/auto-payment  → autoPayment ON
+2º ciclo en adelante → se cobra solo
+```
+
+El paso del webhook está implementado en `api/payments/webhook.js` y es **best effort a
+propósito**: si no consigue los ids, HighLevel sigue mandando la factura cada ciclo y la
+plata igual entra. Nada del ciclo que el miembro ya pagó depende de que eso funcione.
+
+El endpoint `POST /invoices/schedule/{id}/auto-payment` está verificado sobre un schedule
+**activo** (sobre un borrador responde 400). De dónde salen exactamente los ids del pago
+es lo único que queda sin confirmar, porque la subcuenta **nunca tomó un pago**: hay 0
+transacciones. El código los busca en la factura y en `/payments/transactions`.
 
 ### Dos cosas más que salieron del sondeo
 
@@ -284,14 +306,37 @@ guardado que no existe hasta que se paga la primera factura.
   associated with invoice`. El estado alcanzable es `cancelled`, que es el que importa.
   Solo un `draft` se borra del todo. El `DELETE` quiere `altId`/`altType` en la **query**.
 
+## 9. Pasar los pagos de test a LIVE
+
+Dos interruptores, separados a propósito para que encender las membresías no pueda tocar
+los depósitos de $30/$50 que ya vienen funcionando:
+
+| Variable | Qué pone en modo real |
+|---|---|
+| `GHL_DEPOSIT_LIVE_MODE=true` | los depósitos de reserva |
+| `GHL_MEMBERSHIP_LIVE_MODE=true` | las suscripciones de membresía |
+
+**Antes de tocarlos, correr el preflight**, que comprueba que la estructura del CRM esté
+completa, que los 33 precios se resuelvan y que no haya ningún schedule en `liveMode`
+suelto:
+
+```bash
+node --env-file=.env.probe scripts/payments-go-live.mjs
+```
+
+Con todo en verde imprime los comandos exactos de Vercel. Dos advertencias que da y vale
+repetir: **Stripe tiene que estar conectado en modo LIVE** en la subcuenta (en test la
+conexión puede estar y aun así no cobrar nada real), y **el primer ciclo siempre es una
+factura manual** — el cobro automático se enciende recién con la primera tarjeta guardada.
+
+Estado al 5 de agosto de 2026: **5 comprobaciones, 0 fallan**. Los dos interruptores están
+en `test`.
+
 Lo que **queda abierto**:
 
 - **En el CRM quedaron 3 schedules de sondeo en estado `cancelled`** (modo test, contacto
   de prueba, no cobran a nadie) con sus 3 facturas en `draft`. No se pueden borrar por la
   razón de arriba.
-- **`New Recurring Invoice`, $450/mes, está en `liveMode: true`** — es de la tanda vieja,
-  no de este sondeo. Está en Draft, así que no cobra; pero si alguien lo activara sin
-  mirar, intentaría un cobro **real**. Conviene borrarlo (es draft, se puede).
 - `createCashInvoice` crea la factura sin `action: send` y después le registra el pago.
   Que HighLevel acepte un pago sobre un borrador no está probado en vivo.
 - La detección de membresía en el cotizador exige matrícula, y el campo es **opcional**.
@@ -302,7 +347,7 @@ Lo que **queda abierto**:
 
 ## 8. Estado de las pruebas
 
-196 pruebas, 186 corren en cualquier máquina y 10 se saltean sin `DATABASE_URL`
+198 pruebas, 188 corren en cualquier máquina y 10 se saltean sin `DATABASE_URL`
 (las de Postgres real). `npm test`.
 
 Nada de lo descrito en §7 bis está desplegado. **Ya no hace falta aprovisionar nada en
