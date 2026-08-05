@@ -75,10 +75,19 @@ async function dependencyStatus() {
       }
     },
     timezone,
-    // No payment-provider key of our own: recurring billing runs on HighLevel's
-    // invoices, so what matters is whether deposit collection is switched on.
+    // No payment-provider key of our own: billing runs on HighLevel's invoices, so what
+    // matters is which of Stripe's two modes they are issued against. The sub-account has
+    // BOTH live and test enabled (verified 5 ago 2026), so these booleans are the only
+    // thing deciding whether money is real.
+    //
+    // Reported here because it is the only way to read them from PRODUCTION: they are
+    // marked Sensitive in Vercel, so `vercel env pull` returns them empty, and a local
+    // script can only ever report its own environment.
     payments: {
       depositsEnabled: String(process.env.GHL_DEPOSIT_PAYMENTS || '').trim() === 'on',
+      depositLiveMode: String(process.env.GHL_DEPOSIT_LIVE_MODE || '').trim() === 'true',
+      membershipLiveMode: String(process.env.GHL_MEMBERSHIP_LIVE_MODE || '').trim() === 'true',
+      // Kept under the old name so an existing caller does not break.
       liveMode: String(process.env.GHL_DEPOSIT_LIVE_MODE || '').trim() === 'true'
     },
     cron: { configured: hasEnv('CRON_SECRET') }

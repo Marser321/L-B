@@ -99,11 +99,21 @@ async function main() {
   check('PUBLIC_APP_URL es https', /^https:\/\//.test(publicUrl || 'https://l-b-five.vercel.app'),
     publicUrl || 'sin definir (usa el default https://l-b-five.vercel.app)');
 
-  const deposits = process.env.GHL_DEPOSIT_LIVE_MODE === 'true';
-  const memberships = process.env.GHL_MEMBERSHIP_LIVE_MODE === 'true';
-  console.log(`\n── Estado de los interruptores (en ESTE proceso) ──`);
-  console.log(`   depósitos de reserva : ${deposits ? 'LIVE 💵' : 'test'}`);
-  console.log(`   membresías           : ${memberships ? 'LIVE 💵' : 'test'}`);
+  // Deliberately NOT reported as if it were production. These variables are Sensitive in
+  // Vercel, so nothing local can read what production actually has — and printing this
+  // machine's values under a heading like "estado de los interruptores" is exactly how
+  // somebody concludes the deposits are in test when they are live, or the reverse.
+  console.log(`
+── Los interruptores: leelos de PRODUCCIÓN, no de acá ──
+
+   Este script corre en tu máquina y sólo ve tu .env.probe, así que no puede
+   decirte en qué modo está el sitio desplegado. Preguntáselo al propio sitio:
+
+   curl -s -H "Authorization: Bearer \\$OFFICE_API_TOKEN" \\
+     https://l-b-five.vercel.app/api/internal/dependencies | jq .dependencies.payments
+
+   Devuelve depositsEnabled, depositLiveMode y membershipLiveMode tal como los
+   ve producción.`);
 
   const failed = checks.filter(c => !c.ok).length;
   console.log(`\n${checks.length} comprobaciones · ${failed} fallan`);
@@ -123,14 +133,15 @@ async function main() {
 
 Para los depósitos de reserva, lo mismo con GHL_DEPOSIT_LIVE_MODE.
 
-Antes de apretar, dos cosas que conviene tener en cuenta:
+Stripe ya está listo: la subcuenta tiene los DOS modos habilitados, live y test,
+y es el proveedor Default (verificado el 5 ago 2026 en Payments → Integrations →
+Stripe → Manage). Por eso estos flags son lo ÚNICO que decide si la plata es
+real: cada factura se emite contra uno u otro modo según su liveMode.
 
-  · Stripe tiene que estar conectado en modo LIVE en la subcuenta. En test la
-    conexión puede estar y aun así no cobrar nada real.
-  · El primer ciclo SIEMPRE es una factura que el miembro paga a mano por email.
-    El cobro automático se enciende recién con esa primera tarjeta guardada
-    (api/payments/webhook.js), porque HighLevel exige un saved_card que hasta
-    ese momento no existe.
+Lo que no cambia al pasar a live: el primer ciclo SIEMPRE es una factura que el
+miembro paga a mano por email. El cobro automático se enciende recién con esa
+primera tarjeta guardada (api/payments/webhook.js), porque HighLevel exige un
+saved_card que hasta ese momento no existe.
 `);
 }
 

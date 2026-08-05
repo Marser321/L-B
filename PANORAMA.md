@@ -324,13 +324,31 @@ suelto:
 node --env-file=.env.probe scripts/payments-go-live.mjs
 ```
 
-Con todo en verde imprime los comandos exactos de Vercel. Dos advertencias que da y vale
-repetir: **Stripe tiene que estar conectado en modo LIVE** en la subcuenta (en test la
-conexión puede estar y aun así no cobrar nada real), y **el primer ciclo siempre es una
-factura manual** — el cobro automático se enciende recién con la primera tarjeta guardada.
+Con todo en verde imprime los comandos exactos de Vercel.
 
-Estado al 5 de agosto de 2026: **5 comprobaciones, 0 fallan**. Los dos interruptores están
-en `test`.
+**Stripe ya no es un pendiente:** la subcuenta tiene los **dos modos habilitados, live y
+test**, y es el proveedor Default (Payments → Integrations → Stripe → Manage, verificado el
+5 ago 2026). Por eso estos dos flags son lo **único** que decide si la plata es real — cada
+factura se emite contra uno u otro modo según su `liveMode`.
+
+Lo que no cambia al pasar a live: **el primer ciclo siempre es una factura manual**; el
+cobro automático se enciende recién con la primera tarjeta guardada.
+
+Estado al 5 de agosto de 2026: **5 comprobaciones, 0 fallan**.
+
+### En qué modo está producción
+
+No se puede leer localmente: los flags están marcados *Sensitive* en Vercel, así que
+`vercel env pull` los devuelve vacíos y cualquier script local sólo puede reportar su
+propio entorno. Hay que preguntárselo al sitio desplegado:
+
+```bash
+curl -s -H "Authorization: Bearer $OFFICE_API_TOKEN" \
+  https://l-b-five.vercel.app/api/internal/dependencies | jq .dependencies.payments
+```
+
+Devuelve `depositsEnabled`, `depositLiveMode` y `membershipLiveMode` tal como los ve
+producción.
 
 Lo que **queda abierto**:
 
