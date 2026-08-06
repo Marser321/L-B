@@ -80,19 +80,29 @@ function flag(name, expected) {
   return String(process.env[name] || '').trim() === expected;
 }
 
+// Credentials are TRIMMED, for the same reason the boolean flags are (see `flag`):
+// `echo value | vercel env add` stores a trailing newline, Vercel marks the variable
+// Sensitive so it can never be read back to check, and `Bearer pit-…\n` is a 401 on
+// every single HighLevel call. The whole site then reports "Calendar temporarily
+// unavailable" while the dashboard shows the token perfectly well set — which is
+// exactly the shape of the outage on 2026-08-06.
+function envValue(name) {
+  return String(process.env[name] || '').trim();
+}
+
 function getConfig() {
-  const token = process.env.GHL_PRIVATE_TOKEN;
-  const locationId = process.env.GHL_LOCATION_ID;
-  const assignedUserId = process.env.GHL_ASSIGNED_USER_ID;
+  const token = envValue('GHL_PRIVATE_TOKEN');
+  const locationId = envValue('GHL_LOCATION_ID');
+  const assignedUserId = envValue('GHL_ASSIGNED_USER_ID');
   if (!token || !locationId || !assignedUserId) throw new RequestError('CRM is not configured', 503, 'GHL_CRM_NOT_CONFIGURED');
   return {
     token,
     locationId,
     assignedUserId,
     resources: resources(),
-    pipelineId: process.env.GHL_PIPELINE_ID || '',
-    pipelineStageId: process.env.GHL_PIPELINE_STAGE_ID || '',
-    confirmedPipelineStageId: process.env.GHL_CONFIRMED_PIPELINE_STAGE_ID || '',
+    pipelineId: envValue('GHL_PIPELINE_ID'),
+    pipelineStageId: envValue('GHL_PIPELINE_STAGE_ID'),
+    confirmedPipelineStageId: envValue('GHL_CONFIRMED_PIPELINE_STAGE_ID'),
     // Online deposit collection. Off unless explicitly turned on.
     depositPaymentsEnabled: flag('GHL_DEPOSIT_PAYMENTS', 'on'),
     // Stripe is connected in both test AND live mode on the sub-account (verified
@@ -109,8 +119,8 @@ function getConfig() {
 // draft from being prepared (and, conversely, a payment-only deployment never
 // needs to know a calendar id).
 function getPaymentsConfig() {
-  const token = process.env.GHL_PRIVATE_TOKEN;
-  const locationId = process.env.GHL_LOCATION_ID;
+  const token = envValue('GHL_PRIVATE_TOKEN');
+  const locationId = envValue('GHL_LOCATION_ID');
   if (!token || !locationId) throw new RequestError('CRM is not configured', 503, 'GHL_CRM_NOT_CONFIGURED');
   return {
     token,

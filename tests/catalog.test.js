@@ -99,3 +99,29 @@ test('the public catalog tells the browser which packages take the whole day', a
   assert.ok(paint.packages.every(pkg => pkg.fullDay === true));
   assert.ok(cars.packages.every(pkg => pkg.fullDay === false));
 });
+
+test('credentials set through tooling survive a trailing newline', () => {
+  // `echo value | vercel env add` stores the newline, Vercel marks the variable
+  // Sensitive so it can never be read back to check, and `Bearer pit-…\n` is a 401
+  // on every HighLevel call — surfacing as "Calendar temporarily unavailable" while
+  // the dashboard shows the token perfectly well set. Production spent 2026-08-06
+  // in exactly that state.
+  const ghl = require('../api/_lib/ghl.js');
+  const saved = { ...process.env };
+  try {
+    process.env.GHL_PRIVATE_TOKEN = 'pit-token-value\n';
+    process.env.GHL_LOCATION_ID = ' loc-1 ';
+    process.env.GHL_ASSIGNED_USER_ID = 'user-1\n';
+    for (const [index, name] of ['GHL_CALENDAR_CAMIONETA_1', 'GHL_CALENDAR_CAMIONETA_2', 'GHL_CALENDAR_CAMIONETA_3', 'GHL_CALENDAR_CAMIONETA_4'].entries()) {
+      process.env[name] = `cal-${index}`;
+    }
+    const config = ghl.getConfig();
+    assert.equal(config.token, 'pit-token-value');
+    assert.equal(config.locationId, 'loc-1');
+    assert.equal(config.assignedUserId, 'user-1');
+    assert.equal(ghl.getPaymentsConfig().token, 'pit-token-value');
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  }
+});
