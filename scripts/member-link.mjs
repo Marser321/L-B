@@ -22,7 +22,7 @@ if (!contractId) {
 
 try {
   const token = signedLink.sign('member', contractId);
-  console.log(`${baseUrl}/mi-membresia.html?t=${encodeURIComponent(token)}`);
+  console.log(`${baseUrl}/m/${encodeURIComponent(token)}`);
   console.log('\nSend this to that member only. Rotating MEMBER_LINK_SECRET invalidates every member link at once.');
 } catch (error) {
   console.error(error.message);

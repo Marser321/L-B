@@ -321,7 +321,7 @@ async function enrollMembership(body) {
   const meta = await enrollmentMetadata(config);
   const contact = await ghl.upsertContact(config, input.customer);
   const contract = await createEnrollment(config, meta, contact, input);
-  const portalUrl = `${publicAppUrl()}/mi-membresia.html?t=${encodeURIComponent(signedLink.sign('member', contract.id))}`;
+  const portalUrl = `${publicAppUrl()}/m/${encodeURIComponent(signedLink.sign('member', contract.id))}`;
   await ghl.updateOpportunityFields(config, contract.id, [{ id: meta.fields.portalUrl, value: portalUrl }]);
   const billing = await ensureRecurringSchedule(config, meta, contract, contact, input);
   return {

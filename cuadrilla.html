@@ -50,7 +50,11 @@
 <div id="list"><div class="msg">Cargando…</div></div>
 
 <script>
-  const token = new URLSearchParams(location.search).get('t') || '';
+  // The short standing link is /c/<token>, rewritten to this page by vercel.json —
+  // a rewrite, so the address bar keeps the short path and there is no query string
+  // to read. ?t= is still accepted for links already handed out.
+  const token = new URLSearchParams(location.search).get('t')
+    || decodeURIComponent((location.pathname.match(/^\/c\/([^/]+)/) || [])[1] || '');
   const list = document.getElementById('list');
   const money = value => `$${Number(value).toFixed(0)}`;
 

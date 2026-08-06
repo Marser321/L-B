@@ -60,6 +60,34 @@ test('a link opens exactly one van, and nothing without a secret', t => {
   assert.throws(() => crewLink.verify('../../etc/passwd.x'), /Invalid link/);
 });
 
+test('the standing link is short enough to tell four of them apart', t => {
+  const ctx = setup();
+  t.after(() => ctx.restore());
+
+  const links = crewLink.allLinks(
+    [{ key: 'camioneta_1' }, { key: 'camioneta_2' }, { key: 'camioneta_3' }, { key: 'camioneta_4' }],
+    'https://cuadrilla.lybelitewash.com/'
+  );
+
+  assert.equal(links.length, 4);
+  for (const link of links) {
+    // /c/<van>.<signature> — the van's name stays IN the link, which is the part
+    // that makes four of these distinguishable when they are pasted into four
+    // funnels. Only the signature was shortened.
+    assert.match(link.url, /^https:\/\/cuadrilla\.lybelitewash\.com\/c\/camioneta_[1-4]\.[A-Za-z0-9_-]{16}$/, link.url);
+    assert.ok(link.url.length <= 70, `${link.url.length} chars: ${link.url}`);
+    // Still a real capability: the short form verifies, and only for its own van.
+    const token = link.url.split('/c/')[1];
+    assert.equal(crewLink.verify(token), link.resourceKey);
+  }
+
+  // Shortening the digest must not have made it forgeable by truncation: a token
+  // carrying a PREFIX of the right signature is rejected like any other wrong one.
+  const good = crewLink.sign('camioneta_1');
+  assert.throws(() => crewLink.verify(good.slice(0, good.length - 1)), /Invalid link/);
+  assert.throws(() => crewLink.verify(`${good}A`), /Invalid link/);
+});
+
 test('a weak or missing secret refuses to sign rather than defaulting', t => {
   const ctx = setup({ env: { CREW_LINK_SECRET: 'short' } });
   t.after(() => ctx.restore());

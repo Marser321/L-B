@@ -40,7 +40,9 @@
 <div id="root"><div class="msg">Cargando…</div></div>
 
 <script>
-  const token = new URLSearchParams(location.search).get('t') || '';
+  // Short standing link: /m/<token>, rewritten here by vercel.json. See cuadrilla.html.
+  const token = new URLSearchParams(location.search).get('t')
+    || decodeURIComponent((location.pathname.match(/^\/m\/([^/]+)/) || [])[1] || '');
   const root = document.getElementById('root');
 
   // Why a member cannot book right now, in words rather than a code.

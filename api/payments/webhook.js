@@ -227,7 +227,7 @@ async function applyMembershipEvent(event) {
     cycleStartMs,
     activeStageId: stages.activeStageId,
     portalUrl: fieldIds.portalUrl
-      ? `${require('../_lib/public-url.js').publicAppUrl()}/mi-membresia.html?t=${encodeURIComponent(require('../_lib/signed-link.js').sign('member', event.contractId))}`
+      ? `${require('../_lib/public-url.js').publicAppUrl()}/m/${encodeURIComponent(require('../_lib/signed-link.js').sign('member', event.contractId))}`
       : ''
   });
   console.log('[webhook-membership] cycle granted', event.contractId, result.cycleEndsAt, event.externalEventId);

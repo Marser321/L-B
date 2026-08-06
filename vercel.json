@@ -1,9 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
   "crons": [
     {
       "path": "/api/bookings/expire",
       "schedule": "0 0 * * *"
     }
+  ],
+  "rewrites": [
+    { "source": "/c/:token", "destination": "/cuadrilla.html?t=:token" },
+    { "source": "/m/:token", "destination": "/mi-membresia.html?t=:token" }
   ]
 }

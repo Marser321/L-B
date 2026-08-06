@@ -54,11 +54,25 @@ function payloadFor(purpose, subject) {
   return `${purpose}:v1:${subject}:${generation}`;
 }
 
+// How much of the HMAC ends up in the link.
+//
+// A full SHA-256 is 43 base64url characters, which made a crew link long enough that
+// the owner could not tell one from another at a glance. 16 characters is 96 bits:
+// forging one means guessing a 96-bit value against an endpoint that answers only
+// yes or no, one request at a time, over the network. There is no offline attack to
+// speed that up — the secret never leaves the server — so the margin is enormous and
+// the link fits on a screen.
+//
+// Changing this number invalidates every existing link of every purpose, exactly as
+// rotating a secret does. Reissue the crew links and any member link in circulation.
+const DIGEST_CHARS = 16;
+
 // base64url so the token survives a URL, a QR code and a WhatsApp message intact.
 function sign(purpose, subject) {
   const digest = crypto.createHmac('sha256', secretFor(purpose))
     .update(payloadFor(purpose, subject))
-    .digest('base64url');
+    .digest('base64url')
+    .slice(0, DIGEST_CHARS);
   return `${subject}.${digest}`;
 }
 
@@ -85,4 +99,4 @@ function verify(purpose, token) {
   return subject;
 }
 
-module.exports = { sign, verify, PURPOSES };
+module.exports = { sign, verify, PURPOSES, DIGEST_CHARS };

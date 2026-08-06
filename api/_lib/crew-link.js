@@ -23,7 +23,10 @@ function verify(token) {
 function allLinks(resources, baseUrl = 'https://lybelitewash.com') {
   return resources.map(resource => ({
     resourceKey: resource.key,
-    url: `${baseUrl.replace(/\/$/, '')}/cuadrilla.html?t=${encodeURIComponent(sign(resource.key))}`
+    // /c/<token>, not /cuadrilla.html?t=<token>: this URL is embedded in one funnel
+    // per van, and four of them have to be told apart at a glance when they are
+    // pasted into the CRM. vercel.json rewrites the short path onto the page.
+    url: `${baseUrl.replace(/\/$/, '')}/c/${encodeURIComponent(sign(resource.key))}`
   }));
 }
 
