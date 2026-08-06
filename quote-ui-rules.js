@@ -58,6 +58,30 @@
     });
   }
 
+  // Whether a package may join the cart as it stands, and why not when it may not.
+  //
+  // Two services own a whole checkout on their own, for different reasons:
+  //
+  //   membership  a recurring agreement, its own contract and its own payment
+  //   fullDay     paint protection, which holds the van from 8am to 6pm
+  //
+  // Both were only enforced server-side. The membership case at least failed
+  // loudly; the full-day one did not — the cart accepted paint next to a car, and
+  // the customer then saw every date in the calendar come back empty, with nothing
+  // saying why. The rule belongs here, before the line is added.
+  //
+  // `packages` is the cart's resolved metadata, same shape as hasMembership takes.
+  function cartCombination({ packages, candidate }) {
+    const lines = Array.isArray(packages) ? packages : [];
+    const pkg = candidate || {};
+    if (!lines.length) return { canAdd: true, reasonKey: '' };
+    if (pkg.isMembership === true) return { canAdd: false, reasonKey: 'cart.membershipAlone' };
+    if (lines.some(line => line && line.isMembership === true)) return { canAdd: false, reasonKey: 'cart.membershipAlone' };
+    if (pkg.fullDay === true) return { canAdd: false, reasonKey: 'cart.fullDayAlone' };
+    if (lines.some(line => line && line.fullDay === true)) return { canAdd: false, reasonKey: 'cart.fullDayAlone' };
+    return { canAdd: true, reasonKey: '' };
+  }
+
   function cartLimitState(cartCount, maxVehicles) {
     const count = Number(cartCount);
     const max = Number(maxVehicles);
@@ -84,11 +108,19 @@
   //
   // Returns cards in display order: the category's own packages first, then one
   // `tierGroup` doorway per hosted category.
-  function serviceCards({ category, categories, packageType = 'onetime' }) {
+  //
+  // `cartHasLines` hides everything that cannot join a cart that already has a
+  // vehicle in it — today that is the full-day paint tiers and their doorway. A
+  // customer who never sees the card never builds the one cart the server has to
+  // refuse, which is how the "no availability on any date" dead end is closed at
+  // the only place it reads as a normal product rule rather than an error.
+  function serviceCards({ category, categories, packageType = 'onetime', cartHasLines = false }) {
     if (!category) return [];
     const all = Array.isArray(categories) ? categories : [];
+    const bookableNow = pkg => !cartHasLines || pkg.fullDay !== true;
     const own = (category.packages || [])
       .filter(pkg => (pkg.isMembership ? 'membership' : 'onetime') === packageType)
+      .filter(bookableNow)
       .map(pkg => ({ kind: 'package', id: pkg.id, package: pkg }));
 
     // Memberships are never sold through a doorway: the toggle already separates
@@ -97,12 +129,15 @@
 
     const doorways = all
       .filter(entry => entry.displayIn === category.id && entry.tierGroup)
+      // A doorway whose every tier is unbookable right now would open onto an
+      // empty screen.
+      .filter(entry => (entry.packages || []).filter(pkg => !pkg.isMembership).some(bookableNow))
       .map(entry => ({
         kind: 'tierGroup',
         id: entry.tierGroup.id,
         categoryId: entry.id,
         tierGroup: entry.tierGroup,
-        tierCount: (entry.packages || []).filter(pkg => !pkg.isMembership).length
+        tierCount: (entry.packages || []).filter(pkg => !pkg.isMembership).filter(bookableNow).length
       }));
 
     return own.concat(doorways);
@@ -119,6 +154,7 @@
     authorizedDates,
     scheduleUiState,
     selectedSlotIsAuthorized,
+    cartCombination,
     cartLimitState,
     appendCartLine,
     serviceCards,

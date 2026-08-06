@@ -58,7 +58,17 @@ class SlotUnavailableError extends RequestError {
 // four vans means four vehicles, full stop.
 class TooManyVehiclesError extends RequestError {
   constructor(maxVehicles) {
-    super(`A single booking can include at most ${maxVehicles} vehicles`, 422, 'MAX_VEHICLES_EXCEEDED');
+    // A cap of one is never a fleet limit — it is a full-day service, which
+    // occupies the van from 8am to 6pm and therefore cannot share a visit. Saying
+    // "at most 1 vehicles" there sends the customer looking for a scheduling
+    // problem that does not exist.
+    super(
+      maxVehicles === 1
+        ? 'Paint protection reserves the whole day, so it is booked on its own'
+        : `A single booking can include at most ${maxVehicles} vehicles`,
+      422,
+      maxVehicles === 1 ? 'FULL_DAY_BOOKED_ALONE' : 'MAX_VEHICLES_EXCEEDED'
+    );
     this.name = 'TooManyVehiclesError';
     this.maxVehicles = maxVehicles;
   }

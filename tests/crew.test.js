@@ -322,9 +322,13 @@ test('only the five known actions are accepted', async t => {
 // ── Parsing what the booking wrote ─────────────────────────────────────────
 
 test('the money and running order survive the description round-trip', () => {
-  const description = 'Hold abc · expira 2026-09-01T00:00:00.000Z · orden: 9:00 AM basico-exterior · 10:00 AM vip · total: From $1,250 · deposito: $50';
+  const description = 'Hold abc · expira 2026-09-01T00:00:00.000Z · orden: 9:00 AM basico-exterior, 10:00 AM vip · total: From $1,250 · deposito: $50';
   assert.deepEqual(moneyFromDescription(description), { total: 1250, deposit: 50, balance: 1200 });
-  assert.equal(orderFromDescription(description), '9:00 AM basico-exterior');
+  // BOTH vehicles. The order is comma-separated because '·' separates the
+  // description's own fields: written with '·' inside the value, as it was until
+  // 2026-08-06, this parse stopped at the first vehicle and a crew arriving at a
+  // two-car driveway was told about one car.
+  assert.equal(orderFromDescription(description), '9:00 AM basico-exterior, 10:00 AM vip');
 
   // Nothing written, nothing invented.
   assert.deepEqual(moneyFromDescription(''), { total: null, deposit: null, balance: null });

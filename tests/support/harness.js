@@ -190,6 +190,17 @@ function createGhlStub(options = {}) {
     }
 
     // ── Invoices ─────────────────────────────────────────────────────────────
+    // Listing, which upstream searches the NAME as a fuzzy contains. Modelled that
+    // way on purpose: it is what makes an exact-match caller (ghl.findInvoiceByName)
+    // meaningful rather than a formality.
+    if (method === 'GET' && path.startsWith('/invoices/?')) {
+      const search = new URLSearchParams(path.slice(path.indexOf('?') + 1)).get('search') || '';
+      const invoices = state.created
+        .filter(entry => entry.kind === 'invoice' && String(entry.body.name || '').includes(search))
+        .map((entry, index) => ({ _id: `inv-${index + 1}`, name: entry.body.name, invoiceUrl: state.invoiceUrl }));
+      return json({ invoices, total: invoices.length });
+    }
+
     if (method === 'GET' && /^\/invoices\/[^/]+/.test(path) && !/record-payment/.test(path)) {
       const id = decodeURIComponent(path.split('/')[2].split('?')[0]);
       const seeded = (state.invoicesById || {})[id];

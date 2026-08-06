@@ -281,6 +281,9 @@
         packages: [
           {
             id: 'paint-enhancement',
+            // Holds the van 8am-6pm, so it cannot share a visit. The API sends this
+            // flag too; it is repeated here so the offline fallback catalog agrees.
+            fullDay: true,
             name: 'Package 1 – Paint Enhancement',
             description: 'Mejora de brillo de un paso y eliminación de defectos leves con sellador protector.',
             includes: [
@@ -301,6 +304,9 @@
           },
           {
             id: 'paint-correction',
+            // Holds the van 8am-6pm, so it cannot share a visit. The API sends this
+            // flag too; it is repeated here so the offline fallback catalog agrees.
+            fullDay: true,
             name: 'Package 2 – Paint Correction',
             description: 'Corrección de pintura de dos pasos (compound + polish) para eliminar entre 70-85% de rayones.',
             includes: [
@@ -318,6 +324,9 @@
           },
           {
             id: 'ceramic-protection',
+            // Holds the van 8am-6pm, so it cannot share a visit. The API sends this
+            // flag too; it is repeated here so the offline fallback catalog agrees.
+            fullDay: true,
             name: 'Package 3 – Elite Ceramic Protection',
             description: 'Protección cerámica marina/vial de alta resistencia para un acabado de espejo duradero.',
             includes: [
@@ -1738,6 +1747,14 @@
     'cart.remove': { en: 'Remove', es: 'Quitar' },
     'cart.count': { en: '{n} services in this visit', es: '{n} servicios en esta visita' },
     'cart.max': { en: 'Maximum reached: one reservation can include 4 vehicles. You can still edit or remove a vehicle.', es: 'Límite alcanzado: una reserva puede incluir 4 vehículos. Aún puedes editar o quitar un vehículo.' },
+    'cart.fullDayAlone': {
+      en: 'Paint protection takes the crew the whole day (8am–6pm), so it is booked on its own. Book the other vehicle as a separate visit.',
+      es: 'La protección de pintura ocupa a la cuadrilla el día completo (8am–6pm), así que se agenda sola. Reserva el otro vehículo en una visita aparte.'
+    },
+    'cart.membershipAlone': {
+      en: 'A membership is its own agreement and covers one vehicle, so it is booked on its own.',
+      es: 'La membresía es un acuerdo aparte y cubre un solo vehículo, así que se agenda sola.'
+    },
     'btn.addAnother': { en: 'Add another vehicle', es: 'Agregar otro vehículo' },
     'form.vehicleN': { en: 'Vehicle {n}', es: 'Vehículo {n}' },
     'wa.serviceN': { en: 'Service {n}', es: 'Servicio {n}' },
@@ -2119,11 +2136,29 @@
     return state.cart
       .map(resolveLine)
       .filter(Boolean)
-      .map(resolved => ({ isMembership: resolved.pkg.isMembership === true }));
+      .map(resolved => ({
+        isMembership: resolved.pkg.isMembership === true,
+        fullDay: resolved.pkg.fullDay === true
+      }));
   }
 
   function cartIsMembership() {
     return state.cart.length === 1 && cartPackageMetadata()[0] && cartPackageMetadata()[0].isMembership;
+  }
+
+  // Paint protection takes the van's whole day, so its cart is closed: nothing else
+  // can be added to it.
+  function cartIsFullDay() {
+    return cartPackageMetadata().some(entry => entry.fullDay);
+  }
+
+  // Says why a service cannot join this cart. Silence was the old behaviour and it
+  // reads as a broken button: the customer presses Next and nothing moves.
+  function showCartRefusal(reasonKey) {
+    const box = document.getElementById('cartRefusal');
+    if (!box) return;
+    box.textContent = reasonKey ? t(reasonKey) : '';
+    box.hidden = !reasonKey;
   }
 
   // Commit the wizard draft as a cart line and reset the draft.
@@ -2134,11 +2169,17 @@
     const sizes = validSizesForPackage(cat, pkg);
     const size = state.selectedSize || (sizes.length === 1 ? sizes[0] : null);
     if (!size) return false;
-    const draftIsMembership = pkg.isMembership === true;
-    const existingTypes = cartPackageMetadata().map(entry => entry.isMembership);
-    // A recurring agreement is its own checkout and owns exactly one vehicle.
-    // Refuse mixed carts in the browser as well as on the enrollment endpoint.
-    if ((draftIsMembership && state.cart.length > 0) || (!draftIsMembership && existingTypes.includes(true))) return false;
+    // Two services own a checkout on their own: a membership (its own contract and
+    // payment) and a full-day paint job (the van's entire day). The shared rule
+    // refuses both here, not only on the server — see quote-ui-rules.cartCombination.
+    const combination = UI_RULES.cartCombination({
+      packages: cartPackageMetadata(),
+      candidate: { isMembership: pkg.isMembership === true, fullDay: pkg.fullDay === true }
+    });
+    if (!combination.canAdd) {
+      showCartRefusal(combination.reasonKey);
+      return false;
+    }
     const append = UI_RULES.appendCartLine(state.cart, {
       lineId: newLineId(),
       categoryId: cat.id,
@@ -2148,6 +2189,7 @@
       vehicle: state.draftVehicle || blankVehicle()
     }, CART_MAX_ITEMS);
     if (!append.added) return false;
+    showCartRefusal('');
     state.cart = append.lines;
     state.draftVehicle = blankVehicle();
     clearServiceSelection();
@@ -2890,7 +2932,10 @@
       .serviceCards({
         category: SERVICES_DATA.categories.find(c => c.id === hostId),
         categories: SERVICES_DATA.categories,
-        packageType: 'onetime'
+        packageType: 'onetime',
+        // With a vehicle already in the cart the paint doorway is not offered: a
+        // full-day service cannot join a visit.
+        cartHasLines: state.cart.length > 0
       })
       .filter(card => card.kind === 'tierGroup')
       .map(card => SERVICES_DATA.categories.find(c => c.id === card.categoryId))
@@ -3077,7 +3122,10 @@
       }
     }
 
-    let pkgs = cat.packages.filter(p => p.type === state.pkgType);
+    // A full-day service is a visit on its own, so it disappears from the grid once
+    // the cart holds a vehicle — including when the customer is standing inside the
+    // paint category itself, which the hidden doorway alone would not cover.
+    let pkgs = cat.packages.filter(p => p.type === state.pkgType && !(state.cart.length > 0 && p.fullDay === true));
 
     // B. Heavy-truck subtype selector
     const groupSel = document.getElementById('heavyGroupSelect');
@@ -3491,7 +3539,15 @@
         body: JSON.stringify({ vehicles, language: LANG })
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.ok) throw new Error(result.error || `Calendar request failed (${response.status})`);
+      if (!response.ok || !result.ok) {
+        const rejected = new Error(result.error || `Calendar request failed (${response.status})`);
+        // 422 means the CART is impossible, not that the calendar is down. Its
+        // message names the actual rule ("paint protection is booked on its own"),
+        // and showing the generic outage copy instead is what left a customer
+        // staring at a calendar that would never fill.
+        rejected.cartRejected = response.status === 422 && Boolean(result.error);
+        throw rejected;
+      }
       if (selectionKey() !== cartKey) return; // cart changed mid-flight
       state.availability = {
         cartKey,
@@ -3512,7 +3568,8 @@
       // Trust the server's answer for the cart it just priced.
       if (Number(result.maxVehicles) > 0) CART_MAX_ITEMS = Number(result.maxVehicles);
     } catch (error) {
-      state.availability = { cartKey, loading: false, error: t('availability.error'), bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, dates: [] };
+      const message = error && error.cartRejected ? error.message : t('availability.error');
+      state.availability = { cartKey, loading: false, error: message, bookingMode: '', durationMinutes: 0, perVehicleDurationMinutes: [], deposit: 0, estimate: null, dates: [] };
     }
     renderAvailability();
     if (cartChangedNotice) {
@@ -3820,9 +3877,18 @@
       // The fourth line can still be committed. Once four are in the cart,
       // editing/removing remains available but adding another is disabled.
       const limit = UI_RULES.cartLimitState(state.cart.length, CART_MAX_ITEMS);
-      addBtn.disabled = !limit.canAdd || cartIsMembership();
+      const fullDay = cartIsFullDay();
+      addBtn.disabled = !limit.canAdd || cartIsMembership() || fullDay;
       const hint = document.getElementById('addLineHint');
-      if (hint) hint.hidden = !limit.atLimit;
+      if (hint) {
+        // A paint cart is not "at the limit" in the fleet sense — it is one job that
+        // owns the day. Saying so is the difference between a rule and a dead end.
+        hint.hidden = !limit.atLimit && !fullDay;
+        // The key moves with the state so a language switch re-translates whichever
+        // sentence is currently showing, rather than reverting it to the limit copy.
+        hint.dataset.i18n = fullDay ? 'cart.fullDayAlone' : 'cart.max';
+        hint.textContent = t(hint.dataset.i18n);
+      }
     }
 
     if (state.currentStep === state.totalSteps) {

@@ -343,6 +343,7 @@ function createMemoryRepository(options = {}) {
     transaction,
     isUniqueViolation: error => Boolean(error) && error.code === '23505',
     isOverlapViolation: error => Boolean(error) && error.code === '23P01',
+    isUndefinedTable: error => Boolean(error) && error.code === '42P01',
     close: async () => {},
 
     // Test-only helpers.

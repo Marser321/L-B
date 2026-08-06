@@ -196,6 +196,26 @@ async function getInvoice(config, invoiceId) {
   return data.invoice || data;
 }
 
+// The invoice whose name is EXACTLY `name`, or null.
+//
+// This is how a payment link stays idempotent when the local ledger is not
+// available: every link this codebase issues carries a deterministic name built
+// from what it is for (`Booking Deposit — hold:<id>`), so the CRM itself can answer
+// "did I already invoice this?". The upstream `search` is a fuzzy contains, so the
+// exact comparison below is the part that decides.
+async function findInvoiceByName(config, name) {
+  const query = new URLSearchParams({
+    altId: config.locationId,
+    altType: 'location',
+    limit: '20',
+    offset: '0',
+    search: name
+  });
+  const data = await ghlRequest(config, `/invoices/?${query}`, { version: 'v3' });
+  const wanted = String(name).trim();
+  return (data.invoices || []).find(invoice => String(invoice.name || '').trim() === wanted) || null;
+}
+
 // Opportunities for one contact in one pipeline.
 async function opportunitiesForContact(config, { contactId, pipelineId }) {
   const query = new URLSearchParams({
@@ -573,6 +593,7 @@ module.exports = {
   getContact,
   splitName,
   getInvoice,
+  findInvoiceByName,
   opportunitiesForContact,
   updateOpportunityFields,
   calendarEventsForCalendar,

@@ -45,7 +45,16 @@ function centsToMajor(cents) {
 // the catalog has not been provisioned yet, which the caller reports as a
 // configuration problem rather than silently charging an unlinked amount.
 async function crmPriceFor(repository, query, livemode) {
-  return repository.findCrmPrice({ ...query, livemode });
+  try {
+    return await repository.findCrmPrice({ ...query, livemode });
+  } catch (error) {
+    // No price map table at all is the same answer as an empty one: the catalog has
+    // not been provisioned, so the invoice carries our own names and amounts and
+    // simply is not broken down by CRM product. An unprovisioned catalog must never
+    // be the reason a customer cannot pay.
+    if (repository.isUndefinedTable && repository.isUndefinedTable(error)) return null;
+    throw error;
+  }
 }
 
 // ── Line building ──────────────────────────────────────────────────────────
@@ -192,20 +201,55 @@ async function issuePaymentLink({
   const repository = getRepository();
   const activeConfig = config || ghl.getConfig();
   const amountCents = totalCents(lines);
+  const name = paymentLinkName({ purpose, holdId, contractId, createdBy });
 
-  const claim = await repository.transaction([`payment-link:${idempotencyKey}`], async tx => tx.insertPaymentLink({
-    id: newId(),
-    idempotencyKey,
-    purpose,
-    origin,
-    holdId,
-    parentBookingId,
-    contractId,
-    contactId: contact.id,
-    lines,
-    amountCents,
-    createdBy
-  }));
+  // The ledger is a convenience, not the thing that takes the money: it gives this
+  // call idempotency and leaves an audit row. When its table is not there, the
+  // customer must still be able to pay — losing the row is a reporting gap, while
+  // losing the link is a booking nobody can complete. That distinction is not
+  // hypothetical: migration 003 shipped without being applied to production, and
+  // every website deposit from that day on failed with 42P01, swallowed by the
+  // caller, leaving the customer on a "payment unavailable" screen.
+  let ledgerAvailable = true;
+  let claim = { inserted: true };
+  try {
+    claim = await repository.transaction([`payment-link:${idempotencyKey}`], async tx => tx.insertPaymentLink({
+      id: newId(),
+      idempotencyKey,
+      purpose,
+      origin,
+      holdId,
+      parentBookingId,
+      contractId,
+      contactId: contact.id,
+      lines,
+      amountCents,
+      createdBy
+    }));
+  } catch (error) {
+    if (!repository.isUndefinedTable || !repository.isUndefinedTable(error)) throw error;
+    ledgerAvailable = false;
+    console.error('[payment-links] ledger table missing; issuing without it', purpose, idempotencyKey);
+  }
+
+  // Without the ledger, the CRM is the record of what was already invoiced. Every
+  // name this module builds is deterministic, so an existing invoice under the same
+  // name IS the earlier attempt — the same answer the claim above would have given,
+  // reached through the only storage that is definitely there.
+  if (!ledgerAvailable) {
+    const existingInvoice = await ghl.findInvoiceByName(activeConfig, name);
+    const existingUrl = existingInvoice && typeof existingInvoice.invoiceUrl === 'string' ? existingInvoice.invoiceUrl : '';
+    if (existingInvoice && existingUrl) {
+      return {
+        url: existingUrl,
+        invoiceId: String(existingInvoice._id || existingInvoice.id || ''),
+        amount: centsToMajor(amountCents),
+        status: 'issued',
+        duplicate: true,
+        degraded: true
+      };
+    }
+  }
 
   if (!claim.inserted) {
     // Someone already asked for this link. Hand back what they got rather than
@@ -231,7 +275,7 @@ async function issuePaymentLink({
         config: activeConfig,
         contact,
         lines,
-        name: paymentLinkName({ purpose, holdId, contractId, createdBy }),
+        name,
         liveMode: Boolean(activeConfig.depositPaymentsLiveMode)
       })
     });
@@ -239,16 +283,20 @@ async function issuePaymentLink({
     const invoiceId = result && result.invoice && result.invoice._id ? String(result.invoice._id) : '';
     if (!url) throw new RequestError('The CRM did not return a payable link', 502, 'PAYMENT_LINK_FAILED');
 
-    await repository.transaction([`payment-link:${idempotencyKey}`], async tx => {
-      await tx.markPaymentLinkIssued(idempotencyKey, { crmInvoiceId: invoiceId, url });
-    });
-    return { url, invoiceId, amount: centsToMajor(amountCents), status: 'issued', duplicate: false };
+    if (ledgerAvailable) {
+      await repository.transaction([`payment-link:${idempotencyKey}`], async tx => {
+        await tx.markPaymentLinkIssued(idempotencyKey, { crmInvoiceId: invoiceId, url });
+      });
+    }
+    return { url, invoiceId, amount: centsToMajor(amountCents), status: 'issued', duplicate: false, ...(ledgerAvailable ? {} : { degraded: true }) };
   } catch (error) {
     // The claim stays, marked failed, so the failure is visible and a retry with
     // the same key does not silently create a second invoice behind it.
-    await repository.transaction([`payment-link:${idempotencyKey}`], async tx => {
-      await tx.markPaymentLinkFailed(idempotencyKey, error.message);
-    });
+    if (ledgerAvailable) {
+      await repository.transaction([`payment-link:${idempotencyKey}`], async tx => {
+        await tx.markPaymentLinkFailed(idempotencyKey, error.message);
+      });
+    }
     throw error instanceof RequestError
       ? error
       : new RequestError('Could not create the payment link', 502, 'PAYMENT_LINK_FAILED');

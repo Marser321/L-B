@@ -81,6 +81,15 @@ function fingerprintRequest({ date, startTime, vehicles }) {
 function visitWindow(vehicles, date, startTime, timezone) {
   const packageIds = vehicles.map(vehicle => vehicle.packageId);
   const fullDay = catalog.bookingModeForPackages(packageIds) === 'full_day';
+  // A full-day service takes the van's whole day, so it cannot share a visit with
+  // another vehicle: chaining two day-long blocks is 20 hours and fits nowhere.
+  // The cart cap (catalog.maxVehiclesForPackages) rejects this earlier and with a
+  // better message; this is the backstop that keeps the failure legible instead of
+  // reappearing as "the selected time does not fit in the working day" — the shape
+  // it had while a paint cart silently reported no availability on every date.
+  if (fullDay && vehicles.length > 1) {
+    throw new RequestError('Paint protection reserves the whole day, so it is booked on its own', 422, 'FULL_DAY_BOOKED_ALONE');
+  }
   const effectiveStart = fullDay ? time.BUSINESS_DAY.start : startTime;
 
   if (!time.START_TIME_PATTERN.test(effectiveStart || '')) throw new RequestError('startTime is invalid');
@@ -621,7 +630,11 @@ async function reserveExternalCalendars({ repository, config, hold, allocations,
           const clock = at.toLocaleTimeString('en-US', { timeZone: hold.timezone, hour: 'numeric', minute: '2-digit' });
           return `${clock} ${vehicle.packageId}`;
         })
-        .join(' · ');
+        // Joined with a comma, NOT the '·' that separates the description's own
+        // fields. The crew panel reads `orden:` up to the next '·', so using it
+        // inside the value truncated the list to the first vehicle: a two-car stop
+        // showed the crew one car.
+        .join(', ');
       const event = await ghl.createHoldAppointment(config, {
         calendarId: allocation.calendarId,
         contactId,

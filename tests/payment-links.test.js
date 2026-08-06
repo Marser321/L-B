@@ -253,3 +253,95 @@ test('a CRM failure marks the link failed instead of leaving a phantom claim', a
   assert.equal(stored.status, 'failed');
   assert.ok(stored.failureReason);
 });
+
+// ── When the ledger table is not there ─────────────────────────────────────
+
+// Simulates production on 2026-08-06: migration 003 had shipped in the code but was
+// never applied, so every query against payment_links / crm_price_map came back
+// 42P01. The deposit link disappeared from every website booking and the customer
+// was shown "payment unavailable" — a booking nobody could pay for.
+function withoutPaymentTables(ctx) {
+  const undefinedTable = () => Object.assign(new Error('relation "payment_links" does not exist'), { code: '42P01' });
+  const realTransaction = ctx.repository.transaction.bind(ctx.repository);
+  ctx.repository.transaction = async (keys, fn) => {
+    if (keys.some(key => String(key).startsWith('payment-link:'))) throw undefinedTable();
+    return realTransaction(keys, fn);
+  };
+  ctx.repository.findCrmPrice = async () => { throw undefinedTable(); };
+}
+
+test('a missing payment ledger costs the audit row, never the customer\'s ability to pay', async t => {
+  const ctx = setupMemberships();
+  t.after(() => ctx.restore());
+  withoutPaymentTables(ctx);
+
+  const lines = await paymentLinks.buildLines({ purpose: 'booking_deposit', deposit: { amount: 30 }, livemode: false });
+  // No price map, so no CRM product ids — but the amount is still the server's.
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].amountCents, 3000);
+  assert.equal(lines[0].crmProductId, null);
+
+  const link = await paymentLinks.issuePaymentLink({
+    idempotencyKey: 'deposit:hold-no-ledger',
+    purpose: 'booking_deposit',
+    origin: 'web',
+    contact: { id: 'contact-1', name: 'Jane Driver', email: 'jane@example.com', phone: '+12395550100' },
+    lines,
+    holdId: 'hold-no-ledger',
+    config: ctx.config
+  });
+
+  assert.match(link.url, /^https:\/\//);
+  assert.equal(link.degraded, true);
+  const invoice = ctx.ghl.created.find(entry => entry.kind === 'invoice');
+  assert.equal(invoice.body.items[0].amount, 30);
+});
+
+test('without the ledger, the CRM itself keeps the link idempotent', async t => {
+  const ctx = setupMemberships();
+  t.after(() => ctx.restore());
+  withoutPaymentTables(ctx);
+
+  const lines = await paymentLinks.buildLines({ purpose: 'booking_deposit', deposit: { amount: 50 }, livemode: false });
+  const request = () => paymentLinks.issuePaymentLink({
+    idempotencyKey: 'deposit:hold-retry',
+    purpose: 'booking_deposit',
+    origin: 'web',
+    contact: { id: 'contact-1', name: 'Jane Driver', email: 'jane@example.com', phone: '+12395550100' },
+    lines,
+    holdId: 'hold-retry',
+    config: ctx.config
+  });
+
+  const first = await request();
+  const second = await request();
+
+  assert.equal(first.duplicate, false);
+  // The name is deterministic ("Booking Deposit — hold:<id>"), so the CRM can answer
+  // "already invoiced" in place of the row we could not write.
+  assert.equal(second.duplicate, true);
+  assert.equal(second.url, first.url);
+  assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'invoice').length, 1);
+});
+
+test('a hold with a different id still gets its own invoice', async t => {
+  const ctx = setupMemberships();
+  t.after(() => ctx.restore());
+  withoutPaymentTables(ctx);
+
+  const lines = await paymentLinks.buildLines({ purpose: 'booking_deposit', deposit: { amount: 30 }, livemode: false });
+  const forHold = holdId => paymentLinks.issuePaymentLink({
+    idempotencyKey: `deposit:${holdId}`,
+    purpose: 'booking_deposit',
+    origin: 'web',
+    contact: { id: 'contact-1', name: 'Jane Driver', email: 'jane@example.com', phone: '+12395550100' },
+    lines,
+    holdId,
+    config: ctx.config
+  });
+
+  await forHold('hold-aaa');
+  const other = await forHold('hold-bbb');
+  assert.equal(other.duplicate, false);
+  assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'invoice').length, 2);
+});

@@ -267,6 +267,7 @@
       "packages": [
         {
           "id": "paint-enhancement",
+          "fullDay": true,
           "name": "Package 1 – Paint Enhancement",
           "description": "Mejora de brillo de un paso y eliminación de defectos leves con sellador protector.",
           "includes": [
@@ -287,6 +288,7 @@
         },
         {
           "id": "paint-correction",
+          "fullDay": true,
           "name": "Package 2 – Paint Correction",
           "description": "Corrección de pintura de dos pasos (compound + polish) para eliminar entre 70-85% de rayones.",
           "includes": [
@@ -304,6 +306,7 @@
         },
         {
           "id": "ceramic-protection",
+          "fullDay": true,
           "name": "Package 3 – Elite Ceramic Protection",
           "description": "Protección cerámica marina/vial de alta resistencia para un acabado de espejo duradero.",
           "includes": [

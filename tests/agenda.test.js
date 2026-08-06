@@ -154,6 +154,11 @@ test('vehicles are washed one after another: the visit is the SUM of the service
   // The running order is written into the appointment so one block still says what
   // happens and when.
   assert.match(created[0].body.description, /orden: .*premium-detail.*boat-basico/);
+  // Comma-separated, never '·': that character delimits the description's own
+  // fields, so the crew panel reads `orden:` only as far as the next one. Writing
+  // the vehicles with it hid every vehicle after the first from the crew.
+  const runningOrder = created[0].body.description.match(/orden:\s*([^·]+)/)[1].trim();
+  assert.ok(runningOrder.includes('premium-detail') && runningOrder.includes('boat-basico'), runningOrder);
 
   // Nothing starts at the same time, and nothing leaves a gap.
   assert.equal(Date.parse(inOrder[0].startsAt), start);
@@ -886,4 +891,50 @@ test('holds are refused outside the working day and off the 30-minute grid', asy
   })();
   const onSunday = await callHandler(holdsHandler, holdRequest([car()], { date: sunday }), withKey('sun-00000001'));
   assert.equal(onSunday.statusCode, 400);
+});
+
+test('a paint cart is refused as a cart, not as an empty calendar', () => {
+  // The failure this replaces: visitWindow chained two day-long blocks (20 hours),
+  // every start time threw, computeAvailability swallowed the throw per slot, and
+  // the customer saw zero dates across the whole 60-day window with no reason given.
+  const vehicles = [
+    { vehicleIndex: 0, packageId: 'paint-correction', label: 'Camry' },
+    { vehicleIndex: 1, packageId: 'basico-premium', label: 'RAV4' }
+  ];
+  assert.throws(
+    () => agenda.visitWindow(vehicles, '2026-09-15', '08:00', 'America/New_York'),
+    error => error.code === 'FULL_DAY_BOOKED_ALONE' && error.statusCode === 422
+  );
+
+  // Alone, it still books the working day.
+  const alone = agenda.visitWindow([vehicles[0]], '2026-09-15', '08:00', 'America/New_York');
+  assert.equal(alone.bookingMode, 'full_day');
+  assert.equal((alone.endMs - alone.startMs) / 60000, 600);
+});
+
+test('availability answers a paint cart with a reason, not an empty 60-day window', async t => {
+  const ctx = setupAgenda();
+  t.after(() => ctx.restore());
+
+  const res = await callHandler(availabilityHandler, {
+    vehicles: [
+      { packageId: 'paint-correction', sizeId: 'suv', addonIds: [] },
+      { packageId: 'basico-premium', sizeId: 'sedan', addonIds: [] }
+    ]
+  });
+
+  // 422, with copy the browser can show as-is. Before this it was a 200 carrying
+  // `dates: []`, which the wizard rendered as "no availability" on every date.
+  assert.equal(res.statusCode, 422);
+  assert.equal(res.body.code, 'FULL_DAY_BOOKED_ALONE');
+  assert.match(res.body.error, /booked on its own/);
+
+  // On its own the same service still has a calendar.
+  const alone = await callHandler(availabilityHandler, {
+    vehicles: [{ packageId: 'paint-correction', sizeId: 'suv', addonIds: [] }]
+  });
+  assert.equal(alone.statusCode, 200);
+  assert.equal(alone.body.bookingMode, 'full_day');
+  assert.equal(alone.body.maxVehicles, 1);
+  assert.ok(alone.body.dates.length > 0);
 });

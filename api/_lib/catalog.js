@@ -203,11 +203,23 @@ const FULL_DAY_PACKAGES = new Set(['paint-enhancement', 'paint-correction', 'cer
 // four would be a nine-hour visit that swallows one van's entire day.
 const MAX_VEHICLES = 4;
 const MAX_VEHICLES_MARINE = 2;
+// A full-day service occupies the van from 8am to 6pm. There is no room left in
+// the visit for a second vehicle, so a cart containing one IS that one job.
+const MAX_VEHICLES_FULL_DAY = 1;
 const MARINE_CATEGORIES = new Set(['boats', 'jetski']);
 
 // The cap that applies to one cart. Mixed carts take the strictest one, since all
 // the vehicles share a single van and a single visit.
+//
+// The full-day case is what makes this cap load-bearing rather than cosmetic. A
+// cart of paint + anything used to pass every check here and then produce ZERO
+// bookable start times: visitWindow chains the vehicles back to back, so two
+// full-day blocks came to 20 hours and no start time fit in the working day. The
+// customer saw "no availability" on every date in the window, with no explanation
+// and nothing wrong with the calendar. Capping the cart is what turns that silence
+// into a sentence the customer can act on.
 function maxVehiclesForPackages(packageIds) {
+  if (packageIds.some(id => bookingModeForPackage(id) === 'full_day')) return MAX_VEHICLES_FULL_DAY;
   const marine = packageIds.some(id => MARINE_CATEGORIES.has(CATEGORY_BY_PACKAGE[id]));
   return marine ? MAX_VEHICLES_MARINE : MAX_VEHICLES;
 }
@@ -329,6 +341,7 @@ module.exports = {
   FULL_DAY_PACKAGES,
   MAX_VEHICLES,
   MAX_VEHICLES_MARINE,
+  MAX_VEHICLES_FULL_DAY,
   MARINE_CATEGORIES,
   MIN_BOOKING_NOTICE_MS,
   MEMBERSHIP_BOOKING_NOTICE_MS,

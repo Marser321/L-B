@@ -180,3 +180,49 @@ test('removing a cart line refreshes the limit control immediately', () => {
   const removeCartLine = source.slice(source.indexOf('function removeCartLine('), source.indexOf('function editCartLine('));
   assert.match(removeCartLine, /renderCartPanel\(\);[\s\S]*?updateStepUI\(\);/);
 });
+
+// ── A full-day service is a visit on its own ───────────────────────────────
+
+test('paint disappears from the cars grid once the cart holds a vehicle', () => {
+  const paintTiers = paintCategory.packages.map(pkg => ({ ...pkg, fullDay: true }));
+  const categories = [carsCategory, { ...paintCategory, packages: paintTiers }, catalogCategories[2]];
+
+  const empty = ui.serviceCards({ category: carsCategory, categories, cartHasLines: false });
+  assert.ok(empty.some(card => card.kind === 'tierGroup' && card.id === 'paint-protection'));
+
+  // With a car already in the cart the doorway is gone: a full-day job cannot join
+  // a visit, and offering it leads to a calendar that comes back empty on every date.
+  const withCart = ui.serviceCards({ category: carsCategory, categories, cartHasLines: true });
+  assert.ok(!withCart.some(card => card.kind === 'tierGroup'));
+  assert.equal(withCart.length, 4);
+
+  // And standing inside the paint category itself, no tier is offered either.
+  const insidePaint = ui.serviceCards({ category: { ...paintCategory, packages: paintTiers }, categories, cartHasLines: true });
+  assert.deepEqual(insidePaint, []);
+});
+
+test('cartCombination refuses the combinations that own a checkout on their own', () => {
+  const car = { isMembership: false, fullDay: false };
+  const paint = { isMembership: false, fullDay: true };
+  const membership = { isMembership: true, fullDay: false };
+
+  // An empty cart takes anything.
+  assert.deepEqual(ui.cartCombination({ packages: [], candidate: paint }), { canAdd: true, reasonKey: '' });
+  assert.deepEqual(ui.cartCombination({ packages: [], candidate: membership }), { canAdd: true, reasonKey: '' });
+
+  // Cars stack, up to the numeric cap that cartLimitState owns.
+  assert.equal(ui.cartCombination({ packages: [car], candidate: car }).canAdd, true);
+
+  // Paint refuses in both directions, and says which rule applied.
+  assert.deepEqual(ui.cartCombination({ packages: [car], candidate: paint }), { canAdd: false, reasonKey: 'cart.fullDayAlone' });
+  assert.deepEqual(ui.cartCombination({ packages: [paint], candidate: car }), { canAdd: false, reasonKey: 'cart.fullDayAlone' });
+  assert.deepEqual(ui.cartCombination({ packages: [car], candidate: membership }), { canAdd: false, reasonKey: 'cart.membershipAlone' });
+  assert.deepEqual(ui.cartCombination({ packages: [membership], candidate: car }), { canAdd: false, reasonKey: 'cart.membershipAlone' });
+});
+
+test('the quote explains, in both languages, why paint is booked alone', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'script.js'), 'utf8');
+  assert.match(source, /'cart\.fullDayAlone'/);
+  assert.match(source, /ocupa a la cuadrilla el día completo/);
+  assert.match(source, /takes the crew the whole day/);
+});

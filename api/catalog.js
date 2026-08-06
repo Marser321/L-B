@@ -95,6 +95,10 @@ function handler(req, res) {
       packages: (category.packages || []).map(pkg => ({
         ...pkg,
         isMembership: catalog.isMembershipPackage(pkg.id),
+        // A full-day service holds the van from 8am to 6pm, so it is booked on its
+        // own. The browser needs to know BEFORE the customer builds a cart it will
+        // then be told is impossible — see quote-ui-rules.cartCombination.
+        fullDay: catalog.bookingModeForPackage(pkg.id) === 'full_day',
         ...packageDisplay(pkg.id, pkg.prices)
       })),
       extras: (category.extras || []).map(extra => ({

@@ -77,3 +77,25 @@ test('all three paint tiers hold the van for the working day', () => {
     assert.equal(catalog.categoryForPackage(packageId), 'paint_correction', packageId);
   }
 });
+
+test('a full-day service caps the cart at one vehicle, so a paint cart never books', () => {
+  // The regression this exists for: a cart of paint + anything passed every check
+  // and then produced ZERO bookable start times on every date in the window, with
+  // no explanation. The cap is what turns that silence into a sentence.
+  assert.equal(catalog.maxVehiclesForPackages(['paint-correction']), 1);
+  assert.equal(catalog.maxVehiclesForPackages(['paint-correction', 'basico-premium']), 1);
+  assert.equal(catalog.maxVehiclesForPackages(['basico-premium', 'ceramic-protection']), 1);
+  // The strictest cap wins, and full-day is stricter than marine.
+  assert.equal(catalog.maxVehiclesForPackages(['boat-premium', 'paint-enhancement']), 1);
+  // Everything else is unchanged.
+  assert.equal(catalog.maxVehiclesForPackages(['basico-premium', 'vip']), 4);
+  assert.equal(catalog.maxVehiclesForPackages(['boat-premium']), 2);
+});
+
+test('the public catalog tells the browser which packages take the whole day', async () => {
+  const res = await callHandler(catalogHandler, undefined, { method: 'GET' });
+  const paint = res.body.categories.find(category => category.id === 'paint_correction');
+  const cars = res.body.categories.find(category => category.id === 'cars');
+  assert.ok(paint.packages.every(pkg => pkg.fullDay === true));
+  assert.ok(cars.packages.every(pkg => pkg.fullDay === false));
+});

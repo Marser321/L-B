@@ -77,6 +77,7 @@ async function withTransaction(lockKeys, fn) {
 // Postgres error codes we translate into domain outcomes.
 const PG_UNIQUE_VIOLATION = '23505';
 const PG_EXCLUSION_VIOLATION = '23P01';
+const PG_UNDEFINED_TABLE = '42P01';
 
 function isUniqueViolation(error) {
   return Boolean(error) && error.code === PG_UNIQUE_VIOLATION;
@@ -87,6 +88,18 @@ function isUniqueViolation(error) {
 // a bug in the caller's input.
 function isOverlapViolation(error) {
   return Boolean(error) && error.code === PG_EXCLUSION_VIOLATION;
+}
+
+// The table this query needs does not exist — the schema is behind the code.
+//
+// It is called out separately because one feature is allowed to survive it. The
+// payment-link ledger is a convenience (idempotency and an audit row), not the
+// thing that takes the money, and treating its absence as a hard failure is what
+// silently removed the deposit link from every website booking after migration 003
+// shipped but was never applied: the customer finished the wizard and was told
+// payment was unavailable. See payment-links.issuePaymentLink.
+function isUndefinedTable(error) {
+  return Boolean(error) && error.code === PG_UNDEFINED_TABLE;
 }
 
 async function close() {
@@ -103,7 +116,9 @@ module.exports = {
   withTransaction,
   isUniqueViolation,
   isOverlapViolation,
+  isUndefinedTable,
   PG_UNIQUE_VIOLATION,
   PG_EXCLUSION_VIOLATION,
+  PG_UNDEFINED_TABLE,
   close
 };

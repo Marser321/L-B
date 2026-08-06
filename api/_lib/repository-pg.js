@@ -465,6 +465,7 @@ function createPgRepository() {
     transaction: (lockKeys, fn) => db.withTransaction(lockKeys, client => fn(transactionApi(client))),
     isUniqueViolation: error => db.isUniqueViolation(error),
     isOverlapViolation: error => db.isOverlapViolation(error),
+    isUndefinedTable: error => db.isUndefinedTable(error),
     close: () => db.close()
   };
 }
