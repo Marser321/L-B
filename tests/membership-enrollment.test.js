@@ -279,6 +279,28 @@ test('the schedule is found again by the same name it was created with', async (
   }), '');
 });
 
+test('the live-mode flag survives a trailing newline, and defaults to test', () => {
+  installEnv({ GHL_PRIVATE_TOKEN: 't', GHL_LOCATION_ID: 'l', GHL_ASSIGNED_USER_ID: 'u' });
+  const read = value => {
+    if (value === null) delete process.env.GHL_MEMBERSHIP_LIVE_MODE;
+    else process.env.GHL_MEMBERSHIP_LIVE_MODE = value;
+    return ghl.getPaymentsConfig().membershipPaymentsLiveMode;
+  };
+
+  // `echo true | vercel env add` stores a trailing newline, and the variable is marked
+  // Sensitive so it can never be read back to notice. An untrimmed comparison would
+  // leave payments in TEST while the dashboard shows the flag set — a failure whose only
+  // symptom is that the money never arrives.
+  assert.equal(read('true'), true);
+  assert.equal(read('true\n'), true);
+  assert.equal(read(' true '), true);
+
+  // Everything else stays in test mode. Real money needs an exact, deliberate `true`.
+  for (const value of ['false', '', 'TRUE', 'yes', '1', null]) {
+    assert.equal(read(value), false, `"${value}" no debe habilitar cobros reales`);
+  }
+});
+
 // ── Turning the membership into a real recurring charge ────────────────────
 
 test('auto-payment is only attempted once a saved card exists, and never breaks the cycle', async () => {

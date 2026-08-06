@@ -365,7 +365,7 @@ Lo que **queda abierto**:
 
 ## 8. Estado de las pruebas
 
-198 pruebas, 188 corren en cualquier máquina y 10 se saltean sin `DATABASE_URL`
+199 pruebas, 189 corren en cualquier máquina y 10 se saltean sin `DATABASE_URL`
 (las de Postgres real). `npm test`.
 
 Nada de lo descrito en §7 bis está desplegado. **Ya no hace falta aprovisionar nada en

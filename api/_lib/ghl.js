@@ -69,6 +69,17 @@ function resources() {
   return configured;
 }
 
+// An environment flag, compared after trimming.
+//
+// Not defensive programming for its own sake: these values are set through tooling that
+// can carry a trailing newline (`echo true | vercel env add`), they are marked Sensitive
+// so they cannot be read back to check, and an untrimmed comparison fails silently — it
+// leaves payments in TEST mode while every dashboard says the flag is on. The failure is
+// invisible until somebody notices the money never arrived.
+function flag(name, expected) {
+  return String(process.env[name] || '').trim() === expected;
+}
+
 function getConfig() {
   const token = process.env.GHL_PRIVATE_TOKEN;
   const locationId = process.env.GHL_LOCATION_ID;
@@ -83,11 +94,13 @@ function getConfig() {
     pipelineStageId: process.env.GHL_PIPELINE_STAGE_ID || '',
     confirmedPipelineStageId: process.env.GHL_CONFIRMED_PIPELINE_STAGE_ID || '',
     // Online deposit collection. Off unless explicitly turned on.
-    depositPaymentsEnabled: process.env.GHL_DEPOSIT_PAYMENTS === 'on',
-    // Stripe is connected in both test and live mode on the sub-account; default
-    // to test mode so turning the flag on can never move real money by accident.
-    depositPaymentsLiveMode: process.env.GHL_DEPOSIT_LIVE_MODE === 'true',
-    membershipPaymentsLiveMode: process.env.GHL_MEMBERSHIP_LIVE_MODE === 'true'
+    depositPaymentsEnabled: flag('GHL_DEPOSIT_PAYMENTS', 'on'),
+    // Stripe is connected in both test AND live mode on the sub-account (verified
+    // 5 ago 2026 in Payments → Integrations), so these two booleans are the only
+    // thing deciding whether money is real. Default to test, so a missing or
+    // malformed value can never move real money by accident.
+    depositPaymentsLiveMode: flag('GHL_DEPOSIT_LIVE_MODE', 'true'),
+    membershipPaymentsLiveMode: flag('GHL_MEMBERSHIP_LIVE_MODE', 'true')
   };
 }
 
@@ -105,7 +118,7 @@ function getPaymentsConfig() {
     // Test is the safe default. This flag is intentionally distinct from the
     // deposit switch so enabling recurring memberships can never alter the
     // established $30/$50 deposit flow.
-    membershipPaymentsLiveMode: process.env.GHL_MEMBERSHIP_LIVE_MODE === 'true'
+    membershipPaymentsLiveMode: flag('GHL_MEMBERSHIP_LIVE_MODE', 'true')
   };
 }
 
