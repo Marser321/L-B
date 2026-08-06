@@ -8,7 +8,7 @@
     }
   ],
   "rewrites": [
-    { "source": "/c/:token", "destination": "/cuadrilla.html?t=:token" },
-    { "source": "/m/:token", "destination": "/mi-membresia.html?t=:token" }
+    { "source": "/c/:token", "destination": "/cuadrilla?t=:token" },
+    { "source": "/m/:token", "destination": "/mi-membresia?t=:token" }
   ]
 }
