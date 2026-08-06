@@ -69,6 +69,71 @@ function resources() {
   return configured;
 }
 
+// Which vans are switched ON right now, according to HighLevel.
+//
+// The four vans are CONFIGURED in the environment and that never changes day to day.
+// Whether a van is WORKING is an operational decision — a driver is sick, the business
+// opens with one van and adds the rest as volume grows — and it has to be the office's
+// to make, in the CRM, without a developer or a redeploy. HighLevel already has that
+// switch: a calendar can be deactivated from its settings, and the listing reports it
+// as `isActive: false`. So that toggle IS the fleet roster; nothing new to maintain.
+//
+// Note that this is availability only. An inactive van's history stays fully readable
+// — membership credits are counted from appointments across every calendar, including
+// vans that were later switched off, and its crew link keeps working.
+const CALENDAR_STATE_TTL_MS = 60000;
+// A failed read is cached too, briefly. Without this, a CRM outage adds the retry
+// backoff to EVERY availability request instead of to one request per quarter minute.
+const CALENDAR_STATE_FAILURE_TTL_MS = 15000;
+let calendarStateCache = null;
+
+function resetCalendarStateCache() {
+  calendarStateCache = null;
+}
+
+async function inactiveCalendarIds(config) {
+  const now = Date.now();
+  if (calendarStateCache && calendarStateCache.locationId === config.locationId && calendarStateCache.expiresAt > now) {
+    return calendarStateCache.inactive;
+  }
+  const data = await ghlRequest(config, `/calendars/?locationId=${encodeURIComponent(config.locationId)}`, { version: CALENDAR_API_VERSION });
+  const listed = Array.isArray(data && data.calendars) ? data.calendars : [];
+  const inactive = new Set(
+    listed.filter(calendar => calendar && calendar.isActive === false).map(calendar => String(calendar.id))
+  );
+  calendarStateCache = { locationId: config.locationId, inactive, expiresAt: now + CALENDAR_STATE_TTL_MS };
+  return inactive;
+}
+
+// The fleet as the booking paths should see it right now: the configured vans, minus
+// the ones deactivated in the CRM.
+//
+// Cached for a minute, because availability is the hottest endpoint we have and this
+// adds a call to it. Turning a van off therefore takes up to a minute to show on the
+// site — the trade is deliberate, and a minute is nothing against "the driver called in
+// sick this morning".
+//
+// **Fails OPEN.** If the calendar listing cannot be read, every configured van stays in
+// play. A transient CRM read error must never quietly shrink the fleet: a site that
+// silently stops selling while every dashboard looks healthy is the failure nobody
+// notices until the day is over.
+async function withActiveResources(config) {
+  let inactive;
+  try {
+    inactive = await inactiveCalendarIds(config);
+  } catch (error) {
+    console.error('[ghl] calendar states unreadable; keeping the whole fleet', error.statusCode || error.name || '');
+    calendarStateCache = {
+      locationId: config.locationId,
+      inactive: new Set(),
+      expiresAt: Date.now() + CALENDAR_STATE_FAILURE_TTL_MS
+    };
+    return config;
+  }
+  if (!inactive.size) return config;
+  return { ...config, resources: config.resources.filter(resource => !inactive.has(resource.calendarId)) };
+}
+
 // An environment flag, compared after trimming.
 //
 // Not defensive programming for its own sake: these values are set through tooling that
@@ -593,6 +658,8 @@ module.exports = {
   RESOURCE_ENV_VARS,
   wait,
   resources,
+  withActiveResources,
+  resetCalendarStateCache,
   getConfig,
   getPaymentsConfig,
   ghlRequest,

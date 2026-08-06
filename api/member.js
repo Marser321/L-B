@@ -406,7 +406,9 @@ async function handler(req, res) {
         noticeHours: catalog.MEMBERSHIP_BOOKING_NOTICE_MS / (60 * 60 * 1000),
         range: bookableRange(contract),
         // Only when a day was asked for.
-        ...(date && eligibility.ok ? { date, slots: await slotsForDate(config, contract, date) } : {})
+        // Offered slots come from the vans that are switched on; the balance above is
+        // counted across the whole fleet, including any van switched off since.
+        ...(date && eligibility.ok ? { date, slots: await slotsForDate(await ghl.withActiveResources(config), contract, date) } : {})
       });
     } catch (error) {
       const statusCode = statusCodeFor(error, 502);
@@ -443,7 +445,7 @@ async function handler(req, res) {
     const requestedTime = text(body && body.startTime, 'startTime', 4, 10);
     let startTime = requestedTime;
     if (requestedTime === 'full_day') {
-      const [earliest] = await slotsForDate(config, contract, date, now);
+      const [earliest] = await slotsForDate(await ghl.withActiveResources(config), contract, date, now);
       if (!earliest) throw new RequestError('No hay camioneta disponible ese día', 409, 'SLOT_UNAVAILABLE');
       startTime = earliest;
     }
@@ -462,7 +464,7 @@ async function handler(req, res) {
     const addons = selectedAddons(contract, body.addonIds || []);
     const addonPayment = body.addonPayment === 'online' ? 'online' : 'cash';
     const addonTotal = addons.reduce((total, addon) => total + addon.amount, 0);
-    const visit = await membershipCrm.bookVisit(config, contract, {
+    const visit = await membershipCrm.bookVisit(await ghl.withActiveResources(config), contract, {
       date, startTime, now, addons, addonTotal, addonPayment
     });
     let addonInvoice = null;

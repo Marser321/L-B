@@ -5,6 +5,7 @@
 
 const { createMemoryRepository } = require('../../api/_lib/repository-memory.js');
 const { setRepositoryForTests } = require('../../api/_lib/repository.js');
+const { resetCalendarStateCache } = require('../../api/_lib/ghl.js');
 
 const CALENDARS = ['cal-van-1', 'cal-van-2', 'cal-van-3', 'cal-van-4'];
 
@@ -72,6 +73,9 @@ function createGhlStub(options = {}) {
     contracts: options.contracts || {},
     contactContracts: options.contactContracts || null,
     invoicesById: options.invoicesById || {},
+    // Calendar ids the office has deactivated in the CRM. The agenda reads this to
+    // decide which vans are working today.
+    inactiveCalendars: options.inactiveCalendars || [],
     invoiceUrl: options.invoiceUrl || 'https://pay.example/invoice-1',
     failures: options.failures || {}
   };
@@ -92,6 +96,17 @@ function createGhlStub(options = {}) {
 
     const failure = state.failures[`${method} ${path.split('?')[0]}`];
     if (failure) return json({ message: 'forced failure' }, failure);
+
+    if (method === 'GET' && path.startsWith('/calendars/?')) {
+      // The fleet roster. Every configured van is on unless the test says otherwise.
+      return json({
+        calendars: CALENDARS.map((id, index) => ({
+          id,
+          name: `Camioneta ${index + 1}`,
+          isActive: !state.inactiveCalendars.includes(id)
+        }))
+      });
+    }
 
     if (method === 'GET' && path.startsWith('/calendars/events')) {
       const params = new URLSearchParams(path.split('?')[1] || '');
@@ -367,12 +382,17 @@ function setupAgenda(options = {}) {
   const ghl = createGhlStub(options);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = ghl.fetchStub;
+  // The fleet roster is cached for a minute in production. Across tests that cache is
+  // pure contamination: one test's "all four vans on" would answer the next test's
+  // "van 2 is off".
+  resetCalendarStateCache();
   return {
     repository,
     ghl: ghl.state,
     restore() {
       globalThis.fetch = originalFetch;
       setRepositoryForTests(null);
+      resetCalendarStateCache();
     }
   };
 }

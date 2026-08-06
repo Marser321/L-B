@@ -209,7 +209,10 @@ function dayBounds(date, timezone) {
 // — which is why a 4-vehicle cart sees far fewer slots than a 1-vehicle cart, and
 // why it never sees a slot that would collapse into a queue behind one van.
 async function computeAvailability({ vehicles, from, to, language = 'en', now = Date.now(), config = null }) {
-  const activeConfig = config || ghl.getConfig();
+  // Only the vans switched on in the CRM. With none on, every slot allocates to
+  // nothing and the customer sees an empty calendar — the honest answer, and the same
+  // one they would get on a fully booked week.
+  const activeConfig = await ghl.withActiveResources(config || ghl.getConfig());
   const repository = getRepository();
   const timezone = time.bookingTimezone();
   const resources = activeConfig.resources;
@@ -394,7 +397,7 @@ function assertBookable(window, vehicles, date, now, timezone) {
 // the time it asks for a hold, so this costs the caller nothing — see the note on
 // ghl.createHoldAppointment.
 async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer = null, now = Date.now(), config = null }) {
-  const activeConfig = config || ghl.getConfig();
+  const activeConfig = await ghl.withActiveResources(config || ghl.getConfig());
   const repository = getRepository();
   const timezone = time.bookingTimezone();
   const resources = activeConfig.resources;
@@ -402,8 +405,9 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer
   if (!resources.length) {
     // The fleet size caps how many ADDRESSES can be served at once, never how many
     // vehicles one customer may bring — a single van works through the whole
-    // driveway. So the only impossible case here is having no van configured at all.
-    throw new SlotUnavailableError('No vans are configured');
+    // driveway. So the only way to get here is with no van working at all: either
+    // none configured, or every one of them switched off in the CRM.
+    throw new SlotUnavailableError('No vans are working at that time');
   }
 
   const window = visitWindow(vehicles, date, startTime, timezone);
