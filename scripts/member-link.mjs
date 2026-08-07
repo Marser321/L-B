@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const signedLink = require('../api/_lib/signed-link.js');
 
 const contractId = process.argv[2];
-const baseUrl = (process.argv[3] || process.env.PUBLIC_APP_URL || 'https://l-b-five.vercel.app').replace(/\/$/, '');
+const baseUrl = (process.argv[3] || process.env.PUBLIC_APP_URL || 'https://l-b-lyart.vercel.app').replace(/\/$/, '');
 
 if (!contractId) {
   console.error('Usage: MEMBER_LINK_SECRET=… node scripts/member-link.mjs <opportunityId> [baseUrl]');

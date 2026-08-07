@@ -96,8 +96,8 @@ async function main() {
 
   // ── 4. Config del propio servidor ────────────────────────────────────────
   const publicUrl = String(process.env.PUBLIC_APP_URL || '').trim();
-  check('PUBLIC_APP_URL es https', /^https:\/\//.test(publicUrl || 'https://l-b-five.vercel.app'),
-    publicUrl || 'sin definir (usa el default https://l-b-five.vercel.app)');
+  check('PUBLIC_APP_URL es https', /^https:\/\//.test(publicUrl || 'https://l-b-lyart.vercel.app'),
+    publicUrl || 'sin definir (usa el default https://l-b-lyart.vercel.app)');
 
   // Deliberately NOT reported as if it were production. These variables are Sensitive in
   // Vercel, so nothing local can read what production actually has — and printing this
@@ -110,7 +110,7 @@ async function main() {
    decirte en qué modo está el sitio desplegado. Preguntáselo al propio sitio:
 
    curl -s -H "Authorization: Bearer \\$OFFICE_API_TOKEN" \\
-     https://l-b-five.vercel.app/api/internal/dependencies | jq .dependencies.payments
+     https://l-b-lyart.vercel.app/api/internal/dependencies | jq .dependencies.payments
 
    Devuelve depositsEnabled, depositLiveMode y membershipLiveMode tal como los
    ve producción.`);

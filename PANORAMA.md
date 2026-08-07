@@ -344,7 +344,7 @@ propio entorno. Hay que preguntárselo al sitio desplegado:
 
 ```bash
 curl -s -H "Authorization: Bearer $OFFICE_API_TOKEN" \
-  https://l-b-five.vercel.app/api/internal/dependencies | jq .dependencies.payments
+  https://l-b-lyart.vercel.app/api/internal/dependencies | jq .dependencies.payments
 ```
 
 Devuelve `depositsEnabled`, `depositLiveMode` y `membershipLiveMode` tal como los ve
