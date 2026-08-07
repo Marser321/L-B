@@ -291,6 +291,25 @@ async function findInvoiceByName(config, name) {
   return (data.invoices || []).find(invoice => String(invoice.name || '').trim() === wanted) || null;
 }
 
+// Every invoice billed to one contact, newest first.
+//
+// The payment webhook needs this because HighLevel's workflow payload is
+// CONTACT-shaped: it carries who paid, and only whatever else the workflow was
+// configured to attach. The contact plus our own deterministic invoice names are
+// enough to find the reservation without depending on that configuration.
+async function invoicesForContact(config, contactId) {
+  const query = new URLSearchParams({
+    altId: config.locationId,
+    altType: 'location',
+    limit: '20',
+    offset: '0',
+    contactId
+  });
+  const data = await ghlRequest(config, `/invoices/?${query}`, { version: 'v3' });
+  const invoices = data.invoices || [];
+  return invoices.slice().sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+}
+
 // Opportunities for one contact in one pipeline.
 async function opportunitiesForContact(config, { contactId, pipelineId }) {
   const query = new URLSearchParams({
@@ -705,6 +724,7 @@ module.exports = {
   splitName,
   getInvoice,
   findInvoiceByName,
+  invoicesForContact,
   opportunitiesForContact,
   updateOpportunityFields,
   calendarEventsForCalendar,

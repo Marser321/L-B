@@ -5,6 +5,7 @@
 // so a test seeds appointments and asserts on appointments.
 
 const { resetCalendarStateCache } = require('../../api/_lib/ghl.js');
+const { resetProductCache } = require('../../api/_lib/payment-links.js');
 
 const CALENDARS = ['cal-van-1', 'cal-van-2', 'cal-van-3', 'cal-van-4'];
 
@@ -76,6 +77,17 @@ function createGhlStub(options = {}) {
     // decide which vans are working today.
     inactiveCalendars: options.inactiveCalendars || [],
     invoiceUrl: options.invoiceUrl || 'https://pay.example/invoice-1',
+    // The CRM catalog, as far as payment links are concerned: the two deposit
+    // products, with the price the server charges. An invoice line carries these ids
+    // so HighLevel's "Payment Received" trigger can filter on the product.
+    products: options.products || [
+      { _id: 'prod-deposit-small', name: 'Booking Deposit (Standard)' },
+      { _id: 'prod-deposit-large', name: 'Booking Deposit (Large Vehicle)' }
+    ],
+    prices: options.prices || {
+      'prod-deposit-small': [{ _id: 'price-deposit-small', amount: 30 }],
+      'prod-deposit-large': [{ _id: 'price-deposit-large', amount: 50 }]
+    },
     failures: options.failures || {}
   };
 
@@ -281,11 +293,31 @@ function createGhlStub(options = {}) {
     // way on purpose: it is what makes an exact-match caller (ghl.findInvoiceByName)
     // meaningful rather than a formality.
     if (method === 'GET' && path.startsWith('/invoices/?')) {
-      const search = new URLSearchParams(path.slice(path.indexOf('?') + 1)).get('search') || '';
+      const query = new URLSearchParams(path.slice(path.indexOf('?') + 1));
+      const search = query.get('search') || '';
+      // `contactId` is the other way upstream narrows the listing, and the payment
+      // webhook depends on it: the workflow payload names who paid, not what for.
+      const contactId = query.get('contactId') || '';
       const invoices = state.created
         .filter(entry => entry.kind === 'invoice' && String(entry.body.name || '').includes(search))
-        .map((entry, index) => ({ _id: `inv-${index + 1}`, name: entry.body.name, invoiceUrl: state.invoiceUrl }));
+        .filter(entry => !contactId || String((entry.body.contactDetails || {}).id || '') === contactId)
+        .map((entry, index) => ({
+          _id: `inv-${index + 1}`,
+          name: entry.body.name,
+          status: entry.body.status || 'sent',
+          invoiceUrl: state.invoiceUrl
+        }));
       return json({ invoices, total: invoices.length });
+    }
+
+    // ── Products ─────────────────────────────────────────────────────────────
+    if (method === 'GET' && path.startsWith('/products/?')) {
+      return json({ products: state.products, total: state.products.length });
+    }
+
+    if (method === 'GET' && /^\/products\/[^/]+\/price/.test(path)) {
+      const productId = decodeURIComponent(path.split('/')[2]);
+      return json({ prices: state.prices[productId] || [], total: (state.prices[productId] || []).length });
     }
 
     if (method === 'GET' && /^\/invoices\/[^/]+/.test(path) && !/record-payment/.test(path)) {
@@ -457,6 +489,8 @@ function setupAgenda(options = {}) {
   // pure contamination: one test's "all four vans on" would answer the next test's
   // "van 2 is off".
   resetCalendarStateCache();
+  // Same reason: the CRM product listing is cached for ten minutes in production.
+  resetProductCache();
   const agenda = require('../../api/_lib/agenda.js');
   const live = () => ghl.state.created
     .filter(entry => entry.kind === 'appointment' && !ghl.state.deleted.includes(entry.id))
@@ -485,6 +519,7 @@ function setupAgenda(options = {}) {
     restore() {
       globalThis.fetch = originalFetch;
       resetCalendarStateCache();
+      resetProductCache();
     }
   };
 }

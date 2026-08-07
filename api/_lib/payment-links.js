@@ -97,7 +97,9 @@ function buildLines({ purpose, vehicles = [], deposit = null, contract = null })
     const productKey = deposit.amount >= catalog.DEPOSIT_LARGE ? 'deposit-large' : 'deposit-small';
     lines.push({
       kind: 'deposit',
-      name: productKey === 'deposit-large' ? 'Booking Deposit (Large Vehicle)' : 'Booking Deposit (Standard)',
+      // The name the CRM product carries, so `attachCrmProducts` can find it. Kept
+      // here rather than looked up now: this function is pure by design.
+      name: DEPOSIT_PRODUCT_NAMES[productKey],
       amountCents: Math.round(deposit.amount * 100),
       quantity: 1
     });
@@ -109,6 +111,84 @@ function buildLines({ purpose, vehicles = [], deposit = null, contract = null })
 
 function totalCents(lines) {
   return lines.reduce((total, line) => total + line.amountCents * (line.quantity || 1), 0);
+}
+
+// ── CRM products ───────────────────────────────────────────────────────────
+
+// The deposit line has to BE the CRM product, not merely be named after it.
+//
+// HighLevel's "Payment Received" trigger filters on the GLOBAL PRODUCT the payment
+// was for, and the workflow that turns a paid deposit into a confirmed booking is
+// built on that filter. An item sent without ids reads back with `productId: null`,
+// so the trigger never matches and the webhook never fires: the customer pays and
+// the hold lapses anyway. Verified against the live sub-account on 2026-08-07 — the
+// same item sent WITH the ids reads them back unchanged.
+//
+// Resolved by name, at issue time, because the stored mapping that used to do this
+// (`crm_price_map`) lived only in Postgres and went with it. The name is also what
+// the office reads in the CRM, so there is nothing to keep in step.
+const DEPOSIT_PRODUCT_NAMES = Object.freeze({
+  'deposit-small': 'Booking Deposit (Standard)',
+  'deposit-large': 'Booking Deposit (Large Vehicle)'
+});
+const PRODUCT_CATALOG_TTL_MS = 10 * 60 * 1000;
+let productCache = null;
+
+function resetProductCache() {
+  productCache = null;
+}
+
+// Every product in the sub-account, by name. One listing serves both deposits and
+// covers a renamed or re-created product within the quarter hour.
+async function productsByName(config) {
+  const now = Date.now();
+  if (productCache && productCache.locationId === config.locationId && productCache.expiresAt > now) {
+    return productCache.byName;
+  }
+  const query = new URLSearchParams({ locationId: config.locationId, limit: '100' });
+  const data = await ghl.ghlRequest(config, `/products/?${query}`, { version: INVOICE_VERSION });
+  const byName = new Map(
+    (data.products || []).map(product => [String(product.name || '').trim(), String(product._id || product.id || '')])
+  );
+  productCache = { locationId: config.locationId, byName, expiresAt: now + PRODUCT_CATALOG_TTL_MS };
+  return byName;
+}
+
+// The price on that product matching what we are charging. Matched on AMOUNT rather
+// than taken first, so a product that later grows a second price cannot silently
+// attach the wrong one to the invoice.
+async function priceIdFor(config, productId, amountCents) {
+  const query = new URLSearchParams({ locationId: config.locationId, limit: '20' });
+  const data = await ghl.ghlRequest(config, `/products/${encodeURIComponent(productId)}/price?${query}`, {
+    version: INVOICE_VERSION
+  });
+  const prices = data.prices || [];
+  const match = prices.find(price => Math.round(Number(price.amount) * 100) === amountCents);
+  return match ? String(match._id || match.id || '') : '';
+}
+
+// Attaches the CRM product and price to the lines that have one.
+//
+// **Fails OPEN.** A lookup that breaks leaves the line exactly as it was — free text,
+// correct amount, payable. Losing the customer their deposit link over a product
+// listing would be a far worse trade than losing the trigger on one booking, and the
+// office can still confirm that booking by hand.
+async function attachCrmProducts(config, lines) {
+  const wanted = lines.filter(line => line.kind === 'deposit');
+  if (!wanted.length) return lines;
+  try {
+    const byName = await productsByName(config);
+    for (const line of wanted) {
+      const productId = byName.get(String(line.name).trim());
+      if (!productId) continue;
+      line.crmProductId = productId;
+      const priceId = await priceIdFor(config, productId, line.amountCents);
+      if (priceId) line.crmPriceId = priceId;
+    }
+  } catch (error) {
+    console.error('[payment-links] CRM products unresolved; invoicing by name', error.name || 'Error', error.statusCode || '');
+  }
+  return lines;
 }
 
 // ── Issuing ────────────────────────────────────────────────────────────────
@@ -199,7 +279,7 @@ async function issuePaymentLink({
       body: invoicePayload({
         config: activeConfig,
         contact,
-        lines,
+        lines: await attachCrmProducts(activeConfig, lines),
         name,
         liveMode: Boolean(activeConfig.depositPaymentsLiveMode)
       })
@@ -235,5 +315,7 @@ module.exports = {
   totalCents,
   invoicePayload,
   paymentLinkName,
-  issuePaymentLink
+  issuePaymentLink,
+  attachCrmProducts,
+  resetProductCache
 };

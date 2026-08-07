@@ -64,6 +64,26 @@ function outcomeFor(eventType) {
   return null;
 }
 
+// Our deposit invoices are named `Booking Deposit — hold:<id>`, so the invoice
+// itself says which reservation it pays for.
+function holdIdFromName(name) {
+  const match = String(name || '').match(/hold:([a-z0-9-]{8,64})/i);
+  return match ? match[1] : '';
+}
+
+// The reservation this contact just paid for.
+//
+// Their deposit invoices, newest first, preferring one HighLevel has already marked
+// paid — that is the invoice the event is about. A repeat customer therefore
+// confirms their latest booking and not a previous one.
+async function holdIdFromContact(config, contactId) {
+  const invoices = await ghl.invoicesForContact(config, contactId);
+  const deposits = invoices.filter(invoice => holdIdFromName(invoice.name || invoice.title));
+  if (!deposits.length) return '';
+  const paid = deposits.find(invoice => String(invoice.status || '').toLowerCase() === 'paid');
+  return holdIdFromName((paid || deposits[0]).name);
+}
+
 function validateRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new RequestError('Invalid request body');
   const payment = body.payment && typeof body.payment === 'object' ? body.payment : {};
@@ -76,7 +96,18 @@ function validateRequest(body) {
   if (!outcome) return { ignored: true, eventType };
 
   const nestedInvoiceId = body.invoiceId || payment.invoiceId || invoice.id || invoice._id || data.invoiceId || '';
-  const externalEventId = text(body.id || body.eventId || payment.id || payment.transactionId || data.id || nestedInvoiceId, 'id', 1, 200);
+  // Who paid. HighLevel's workflow webhook is built around the contact, so this is
+  // the one identifier every payload has, whatever else the workflow attaches.
+  const contactId = body.contactId || body.contact_id || (body.contact && (body.contact.id || body.contact._id)) || data.contactId || '';
+  // Audit only — what makes a repeated webhook safe is the appointment's own status,
+  // not this id — so a payload that carries no event id of its own still gets one
+  // rather than a 400 that HighLevel would retry forever.
+  const externalEventId = text(
+    body.id || body.eventId || payment.id || payment.transactionId || data.id || nestedInvoiceId || (contactId && `contact:${contactId}:${eventType}`),
+    'id',
+    1,
+    200
+  );
 
   // Booking identifiers always win. HighLevel invoice events naturally include an
   // invoiceId as well, so testing invoiceId first would misclassify every paid
@@ -95,6 +126,7 @@ function validateRequest(body) {
       holdId,
       submissionId: submissionId ? text(submissionId, 'submissionId', 8, 100) : '',
       invoiceId: nestedInvoiceId ? text(nestedInvoiceId, 'invoiceId', 2, 100) : '',
+      contactId: contactId ? text(contactId, 'contactId', 8, 64) : '',
       amountCents: Number.isFinite(amount) ? Math.round(amount * 100) : null,
       currency: typeof body.currency === 'string' ? body.currency.slice(0, 8) : 'USD',
       payload: body
@@ -280,8 +312,15 @@ async function handler(req, res) {
     let holdId = event.holdId || (event.submissionId ? await agenda.resolveHoldIdBySubmission(event.submissionId, { config: config || ghl.getConfig() }) : '');
     if (!holdId && event.invoiceId) {
       const invoice = await ghl.getInvoice(config || ghl.getConfig(), event.invoiceId);
-      const match = String(invoice.name || invoice.title || '').match(/hold:([a-z0-9-]{8,64})/i);
-      holdId = match ? match[1] : '';
+      holdId = holdIdFromName(invoice.name || invoice.title);
+    }
+    // Last resort: the payer. HighLevel's workflow payload is contact-shaped, and an
+    // invoice id only reaches us if whoever built the workflow attached one — a
+    // configuration we do not control and cannot read back. The contact is always
+    // there, and our deposit invoices carry the hold in their own name, so the
+    // booking is still findable when nothing else identifies it.
+    if (!holdId && event.contactId) {
+      holdId = await holdIdFromContact(config || ghl.getConfig(), event.contactId);
     }
     if (!holdId) throw new RequestError('No reservation matches this payment', 404);
 

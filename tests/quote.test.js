@@ -544,6 +544,74 @@ test('with deposits on, the invoice charges the server-computed amount', async t
   assert.match(invoice.body.name, new RegExp(`hold:${res.body.holdId}`));
 });
 
+test('the deposit line IS the CRM product, so the paid-deposit trigger can see it', async t => {
+  const ctx = fresh({ env: { GHL_DEPOSIT_PAYMENTS: 'on' } });
+  t.after(() => ctx.restore());
+
+  await callHandler(quoteHandler, payload({ items: [item('semi-truck-wash', 'standard')] }));
+
+  // HighLevel's "Payment Received" trigger filters on the global product. A free-text
+  // line reads back with productId: null, the trigger never matches, and the workflow
+  // that confirms a paid booking never runs — the customer pays and the hold lapses.
+  const invoice = ctx.ghl.created.find(entry => entry.kind === 'invoice');
+  assert.equal(invoice.body.items[0].productId, 'prod-deposit-large');
+  assert.equal(invoice.body.items[0].priceId, 'price-deposit-large');
+});
+
+test('a CRM price that disagrees with what we charge is left off the line', async t => {
+  // The product still identifies the line for the trigger; the price does not, because
+  // attaching one that says something other than $30 would let the CRM restate the
+  // amount. The server's number is the one that stands.
+  const ctx = fresh({
+    env: { GHL_DEPOSIT_PAYMENTS: 'on' },
+    prices: { 'prod-deposit-small': [{ _id: 'price-stale', amount: 25 }] }
+  });
+  t.after(() => ctx.restore());
+
+  await callHandler(quoteHandler, payload());
+
+  const invoice = ctx.ghl.created.find(entry => entry.kind === 'invoice');
+  assert.equal(invoice.body.items[0].amount, 30);
+  assert.equal(invoice.body.items[0].productId, 'prod-deposit-small');
+  assert.equal(invoice.body.items[0].priceId, undefined);
+});
+
+test('an unreadable product catalog still gets the customer a payable link', async t => {
+  const ctx = fresh({ env: { GHL_DEPOSIT_PAYMENTS: 'on' }, failures: { 'GET /products/': 500 } });
+  t.after(() => ctx.restore());
+
+  const res = await callHandler(quoteHandler, payload());
+
+  // Failing open costs the trigger on one booking, which the office can confirm by
+  // hand. Failing closed would cost the customer their way to pay at all.
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.depositUrl, 'https://pay.example/invoice-1');
+  const invoice = ctx.ghl.created.find(entry => entry.kind === 'invoice');
+  assert.equal(invoice.body.items[0].amount, 30);
+  assert.equal(invoice.body.items[0].productId, undefined);
+});
+
+test('a payment webhook that names only the payer still confirms the booking', async t => {
+  const ctx = fresh({ env: { GHL_DEPOSIT_PAYMENTS: 'on', PAYMENT_WEBHOOK_SECRET: 'webhook-secret' } });
+  t.after(() => ctx.restore());
+
+  await callHandler(quoteHandler, payload());
+  const appointmentId = ctx.holds()[0].id;
+
+  // HighLevel's workflow payload is contact-shaped: it carries who paid, and an
+  // invoice id only if whoever built the workflow attached one. The contact plus our
+  // own deterministic invoice names are enough to find the reservation.
+  const webhookHandler = require('../api/payments/webhook.js');
+  const res = await callHandler(
+    webhookHandler,
+    { type: 'InvoicePaid', kind: 'booking', contactId: 'contact-1', amount: 30 },
+    { headers: { authorization: 'Bearer webhook-secret' } }
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(ctx.appointment(appointmentId).appointmentStatus, 'confirmed');
+});
+
 test('GHL_DEPOSIT_LIVE_MODE=true charges through Stripe live mode', async t => {
   const ctx = fresh({ env: { GHL_DEPOSIT_PAYMENTS: 'on', GHL_DEPOSIT_LIVE_MODE: 'true' } });
   t.after(() => ctx.restore());
