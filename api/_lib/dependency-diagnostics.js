@@ -7,7 +7,6 @@
 const crypto = require('node:crypto');
 
 const { RequestError } = require('./errors.js');
-const db = require('./db.js');
 const ghl = require('./ghl.js');
 const time = require('./time.js');
 
@@ -32,27 +31,6 @@ function hasEnv(name) {
 }
 
 
-async function databaseStatus() {
-  if (!db.isConfigured()) {
-    return { configured: false, reachable: false, migrations: { agenda: false, memberships: false } };
-  }
-  try {
-    const result = await db.query(
-      "select to_regclass('public.booking_holds') as agenda, to_regclass('public.membership_contracts') as memberships"
-    );
-    const row = result.rows[0] || {};
-    return {
-      configured: true,
-      reachable: true,
-      migrations: { agenda: Boolean(row.agenda), memberships: Boolean(row.memberships) }
-    };
-  } catch (error) {
-    // A database error code can reveal the class of failure but never the URL,
-    // user, host or driver message.
-    return { configured: true, reachable: false, migrations: { agenda: false, memberships: false }, errorCode: String(error.code || 'DB_UNREACHABLE').slice(0, 40) };
-  }
-}
-
 async function dependencyStatus() {
   const calendarVars = ghl.RESOURCE_ENV_VARS;
   const configuredCalendars = calendarVars.filter(hasEnv);
@@ -61,7 +39,9 @@ async function dependencyStatus() {
   try { timezone.value = time.bookingTimezone(); } catch (error) { timezone.valid = false; }
 
   return {
-    database: await databaseStatus(),
+    // No `database` key any more, and its absence is the answer: the agenda, the
+    // holds and the membership credits all live in HighLevel now. A reader that used
+    // to check `database.reachable` was checking a dependency that no longer exists.
     highLevel: {
       baseUrl: ghl.GHL_BASE_URL,
       credentialsConfigured: hasEnv('GHL_PRIVATE_TOKEN'),
@@ -94,4 +74,4 @@ async function dependencyStatus() {
   };
 }
 
-module.exports = { requireOfficeToken, dependencyStatus, databaseStatus };
+module.exports = { requireOfficeToken, dependencyStatus };

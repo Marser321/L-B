@@ -448,6 +448,38 @@ async function busyIntervalsByResource(config, startMs, endMs) {
   ));
 }
 
+// The RAW events on every van, in resource order.
+//
+// The agenda needs more than the busy windows: the same listing tells it whether a
+// slot is blocked, whether the thing blocking it is one of our own lapsed holds, and
+// whether this exact request was already held (its Idempotency-Key is written into
+// the description). One read answers all three, which is the whole reason the agenda
+// can work without a database of its own.
+async function eventsByResource(config, startMs, endMs) {
+  return Promise.all(config.resources.map(resource =>
+    calendarEventsForCalendar(config, resource.calendarId, startMs, endMs)
+  ));
+}
+
+// One appointment by id, or null when it is gone.
+//
+// Null rather than a throw for 404: a hold whose appointment has been deleted is a
+// hold that no longer exists, which is a normal state the callers already handle —
+// not an integration fault.
+async function getAppointment(config, eventId) {
+  try {
+    const data = await ghlRequest(config, `/calendars/events/appointments/${encodeURIComponent(eventId)}`, {
+      version: CALENDAR_API_VERSION
+    });
+    const appointment = data.appointment || data.event || data;
+    if (!appointment || !appointment.id || appointment.deleted) return null;
+    return appointment;
+  } catch (error) {
+    if (error instanceof HighLevelError && error.upstreamStatus === 404) return null;
+    throw error;
+  }
+}
+
 // Creates a confirmed appointment on a van's calendar. Used by the membership sync,
 // which writes a visit that is already paid for and already allocated, so
 // `ignoreFreeSlotValidation` stays on here: the slot was decided upstream and
@@ -666,6 +698,8 @@ module.exports = {
   isTransientGhlError,
   busyIntervalsForCalendar,
   busyIntervalsByResource,
+  eventsByResource,
+  getAppointment,
   upsertContact,
   getContact,
   splitName,

@@ -13,7 +13,7 @@
 //   * every price, duration, deposit, membership flag and calendar id is looked up
 //     server-side. Fields the browser sends for those are read past and dropped.
 //
-// The slot itself is owned by api/_lib/agenda.js against Postgres. This file is
+// The slot itself is owned by api/_lib/agenda.js against the CRM. This file is
 // the CRM half: contact, opportunity, deposit invoice, notification.
 
 const {
@@ -580,7 +580,7 @@ async function resolveHold(payload, config) {
   };
 
   if (payload.holdId) {
-    const hold = await agenda.getHoldForRequest(payload.holdId);
+    const hold = await agenda.getHoldForRequest(payload.holdId, { config });
     // The hold is the priced, authoritative version of the cart. If the form
     // posts a different cart than the one that was held, the customer would pay a
     // deposit for one thing and receive another.
@@ -593,6 +593,10 @@ async function resolveHold(payload, config) {
   return agenda.acquireHold({
     idempotencyKey: `quote-${payload.submissionId}`,
     ...request,
+    // The hold IS an appointment and an appointment needs a contact, so the customer
+    // travels with the request even on this path. The wizard normally holds the slot
+    // before it gets here; this covers a client that posts straight to /api/quote.
+    customer: payload.customer,
     config
   });
 }
@@ -651,8 +655,9 @@ async function handler(req, res) {
     // Silently accept honeypot submissions without creating CRM records.
     if (payload.website) return sendJson(res, 200, { ok: true, submissionId: payload.submissionId });
 
-    // A browser normally owns a hold before it reaches checkout. Looking up an
-    // existing hold is database-only; it must not initialise HighLevel or Stripe.
+    // A browser normally owns a hold before it reaches checkout. Reading it back is a
+    // CRM call now — the hold is an appointment — so a HighLevel outage here degrades
+    // to the local quote below instead of failing the submission.
     let hold = null;
     if (payload.holdId) {
       try {
@@ -680,6 +685,7 @@ async function handler(req, res) {
       if (!opportunity) opportunity = await createOpportunity(config, metadata, contact, payload, hold);
 
       await agenda.attachCustomer({
+        config,
         holdId: hold.holdId,
         submissionId: payload.submissionId,
         contactId: contact.id,

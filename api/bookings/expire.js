@@ -40,11 +40,9 @@ async function handler(req, res) {
 
   try {
     assertAuthorized(req);
-    // The GHL config is optional here: without it the rows are still released,
-    // they just leave their block slots behind for the next run to clear.
-    let config = null;
-    try { config = ghl.getConfig(); } catch (error) { console.error('[expire] CRM not configured, releasing rows only'); }
-    const result = await agenda.releaseExpiredHolds({ config });
+    // The CRM is not optional any more: the holds ARE appointments, so with no
+    // config there is nothing to sweep and reporting success would be a lie.
+    const result = await agenda.releaseExpiredHolds({ config: ghl.getConfig() });
     return sendJson(res, 200, { ok: true, ...result });
   } catch (error) {
     const statusCode = error instanceof RequestError ? error.statusCode : 502;

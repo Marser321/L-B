@@ -277,7 +277,7 @@ async function handler(req, res) {
     let config = null;
     try { config = ghl.getConfig(); } catch (error) { console.error('[payments] CRM not configured; confirming rows only'); }
 
-    let holdId = event.holdId || (event.submissionId ? await agenda.resolveHoldIdBySubmission(event.submissionId) : '');
+    let holdId = event.holdId || (event.submissionId ? await agenda.resolveHoldIdBySubmission(event.submissionId, { config: config || ghl.getConfig() }) : '');
     if (!holdId && event.invoiceId) {
       const invoice = await ghl.getInvoice(config || ghl.getConfig(), event.invoiceId);
       const match = String(invoice.name || invoice.title || '').match(/hold:([a-z0-9-]{8,64})/i);

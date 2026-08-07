@@ -1,10 +1,26 @@
 # Diseño: la agenda y las membresías sin base de datos
 
-Al 4 de agosto de 2026. Las cinco decisiones de negocio están tomadas (§4); la
-implementación no empezó.
+Diseñado el 4 de agosto de 2026. **Implementado el 7 de agosto de 2026**: la agenda (§1)
+y la eliminación de las tablas (§3) están en el código, además del panel de la cuadrilla
+(§5) y el link del miembro (§2), que ya estaban. Postgres se fue del repositorio entero —
+no queda ni el driver.
 
-Docs relacionados: `AGENDA.md` (cómo funciona hoy, con Postgres), `MEMBERSHIPS.md`
-(cobro recurrente), `PANORAMA.md` (qué se vende y por dónde se cobra).
+Lo que cambió respecto de lo diseñado acá, y por qué:
+
+- **La rotación no se deriva de la fecha** (`día % 4`), sino de **cuántas visitas ya hay
+  en los calendarios de ese día**. Con la fecha sola, todas las reservas del día
+  arrancaban en la misma camioneta y la primera trabajaba sola hasta llenarse. Contar lo
+  ya reservado avanza el cursor igual que lo hacía la fila, y sigue siendo determinista
+  para un reintento.
+- **Perder la carrera no cancela el pedido.** Si HighLevel rechaza la ventana en una
+  camioneta, se marca esa como ocupada y se prueba la siguiente. El diseño original
+  reintentaba una sola vez sobre la misma.
+- **El `crm_price_map` se fue con las tablas.** Vivía solo en Postgres, nunca se aplicó
+  en producción, y las facturas siempre llevaron nuestros nombres y montos. Los productos
+  siguen existiendo en el CRM; lo que ya no existe es la copia del pareo.
+
+Docs relacionados: `AGENDA.md` (cómo funciona ahora), `MEMBERSHIPS.md` (cobro
+recurrente), `PANORAMA.md` (qué se vende y por dónde se cobra).
 
 ---
 
@@ -26,7 +42,7 @@ El segundo punto es el que reemplaza la restricción de exclusión de Postgres.
 
 ---
 
-## 1. La agenda
+## 1. La agenda — **IMPLEMENTADO 7 ago 2026**
 
 ### El estado vive en cuatro objetos que ya existen en el CRM
 
@@ -227,7 +243,7 @@ Ese último es retención pura, y solo es posible porque los créditos son visib
 
 ---
 
-## 3. Qué tablas se van y qué queda
+## 3. Qué tablas se van y qué queda — **HECHO 7 ago 2026**
 
 | Tabla | Destino |
 |---|---|

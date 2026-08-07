@@ -13,18 +13,9 @@ DISENO-SIN-BASE-DE-DATOS.md
 
 # ── Serverless function budget ──────────────────────────────────────────────
 # The Hobby plan deploys at most 12 Serverless Functions, and every file under
-# api/ that is not in api/_lib/ counts as one. These two office-only endpoints
-# take the count to 14, which fails the whole deployment with
-# "No more than 12 Serverless Functions can be added to a Deployment".
+# api/ that is not in api/_lib/ counts as one. There are 9 now, so nothing has to
+# be excluded to fit: removing Postgres also removed the two office-only endpoints
+# that read its price-map table and the membership visits endpoint that read its
+# contracts.
 #
-# They are excluded rather than deleted because they cannot work in production
-# yet either way: both read crm_price_map, the table created by
-# api/_lib/migrations/003_crm_catalog.sql, which has not been applied. Drop these
-# two lines together with running the migration and
-# scripts/provision-crm-catalog.mjs — and free two slots first (retire
-# api/internal/membership-recurring-test.js, or move the project to Pro).
-#
-# NOTE: api/_lib/payment-links.js is a library, not a route. It is NOT excluded —
-# api/quote.js requires it, and libraries do not count against the budget.
-api/payments/links.js
-api/payments/manual.js
+# NOTE: api/_lib/payment-links.js is a library, not a route, and does not count.

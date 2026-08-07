@@ -1,27 +1,42 @@
 'use strict';
 
-// The transactional agenda.
+// The agenda, with the CRM as the only store.
 //
-// One rule explains the whole file: a visit is ONE van at ONE address, working
+// One rule explains the shape of a visit: a visit is ONE van at ONE address, working
 // through the vehicles in the driveway one after another. So the services ADD UP —
-// three cars is three services plus one travel buffer, on a single van, and the
-// vehicles get back-to-back windows on that van's calendar.
+// three cars is three services plus one travel buffer, on a single van, in one
+// contiguous block. The fleet size caps how many separate CUSTOMERS can be served at
+// the same hour, never how many vehicles one customer may bring.
 //
-// The fleet size therefore caps how many separate CUSTOMERS can be served at the
-// same hour, not how many vehicles one customer may bring. Four vans means four
-// driveways at once.
+// A second rule explains where the state lives: the reservation IS an appointment on
+// the van's calendar, and `appointmentStatus` is its whole state machine.
 //
-// Everything that decides who gets a van happens inside one Postgres transaction:
-// read what's busy, read the rotation cursor, pick a free van, write the hold, move
-// the cursor. Two requests racing for the last van serialize on that transaction,
-// so exactly one of them wins and the other gets a 409 with nothing half-created
-// behind it.
+//   new        reserved, waiting for payment   (what used to be a 15-minute hold row)
+//   confirmed  paid
+//   cancelled  released
+//   showed     delivered
 //
-// The external calendars are written AFTER that transaction commits, because a
-// network call inside a transaction holds locks for as long as HighLevel feels
-// like taking. If any of those writes fails, every event created for the hold is
-// deleted again and the hold is marked failed — never a hold that only half
-// blocks the fleet.
+// There is no database. Everything the agenda needs to decide is readable from the
+// four calendars: what is busy, which of our own holds have lapsed, and whether this
+// exact request was already held (its Idempotency-Key is written into the
+// appointment's description). That is why the crew panel and the member portal — both
+// written against the calendar — kept working while this file still needed Postgres.
+//
+// What replaced the transaction: HighLevel validates and serialises appointment
+// creation itself. Verified against the live sub-account on 2026-08-04 — an
+// overlapping appointment is refused with 400 "The slot you have selected is no
+// longer available.", and of four identical concurrent requests exactly one wins,
+// three runs in a row. So the race for the last van is arbitrated upstream, by the
+// same system that owns the calendar.
+//
+// What that costs, honestly: the FORMAL atomicity guarantee. HighLevel's behaviour is
+// server-side validation, not a documented transactional contract. The two probes in
+// scripts/probe-ghl-slot-*.mjs re-check it in ten seconds if it ever changes.
+//
+// Expiry is LAZY, because the Hobby plan allows one cron a day and a 15-minute hold
+// cannot wait for it: a `new` appointment past its own `expira` is treated as free
+// when computing availability, and deleted on sight when it blocks a booking. The
+// daily sweep is a tidy-up, not the mechanism.
 
 const crypto = require('node:crypto');
 
@@ -30,14 +45,16 @@ const catalog = require('./catalog.js');
 const pricing = require('./pricing.js');
 const ghl = require('./ghl.js');
 const time = require('./time.js');
-const { getRepository } = require('./repository.js');
 
-// How long a customer has to finish paying before the vans go back on the market.
+// How long a customer has to finish paying before the van goes back on the market.
 const HOLD_TTL_MS = 15 * 60 * 1000;
 
-function newId() {
-  return crypto.randomUUID();
-}
+// Appointment statuses that mean the van is NOT working that window.
+const FREE_STATUSES = Object.freeze(['cancelled', 'invalid']);
+
+// Appointment statuses that mean the visit was already delivered. They are terminal:
+// a delivered visit is never released, expired or re-confirmed.
+const DELIVERED_STATUSES = Object.freeze(['showed', 'noshow']);
 
 function toCents(amount) {
   return Math.round(Number(amount || 0) * 100);
@@ -59,6 +76,130 @@ function fingerprintRequest({ date, startTime, vehicles }) {
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
 
+// ── The appointment as the record ──────────────────────────────────────────
+
+// The description is a `·`-separated list of `key: value` pairs. It is read by two
+// very different consumers, which is why the format is fixed here and not inlined:
+// this file rebuilds a whole hold out of it, and the crew panel reads `orden:`,
+// `total:` and `deposito:` off the same string to tell a crew what to collect.
+//
+// A '·' can therefore never appear INSIDE a value — the crew panel's parser stops at
+// the next one, and a two-car stop once showed the crew a single car for exactly that
+// reason.
+const FIELD_SEPARATOR = ' · ';
+
+// Where each vehicle sits in the van's chain, as `index:serviceMinutes:offsetMinutes`.
+// This is what makes a row per vehicle unnecessary: "car 2 starts an hour in" is the
+// visit's start plus an offset, and both numbers fit in the appointment that already
+// has to exist.
+function encodeVehicles(vehicles) {
+  return vehicles
+    .map(vehicle => [
+      vehicle.vehicleIndex,
+      Math.round(vehicle.serviceMinutes || 0),
+      Math.round(vehicle.offsetMinutes || 0)
+    ].join(':'))
+    .join(',');
+}
+
+function decodeVehicles(raw) {
+  return String(raw || '')
+    .split(',')
+    .map(entry => entry.trim().split(':').map(Number))
+    .filter(parts => parts.length === 3 && parts.every(Number.isFinite))
+    .map(([vehicleIndex, serviceMinutes, offsetMinutes]) => ({
+      vehicleIndex, serviceMinutes, offsetMinutes
+    }));
+}
+
+function buildDescription(fields) {
+  return [
+    fields.idempotencyKey && `key: ${fields.idempotencyKey}`,
+    fields.requestFingerprint && `fp: ${fields.requestFingerprint}`,
+    fields.submissionId && `sub: ${fields.submissionId}`,
+    fields.opportunityId && `opp: ${fields.opportunityId}`,
+    fields.failureReason && `fallo: ${fields.failureReason}`,
+    fields.expiresAtMs && `expira: ${new Date(fields.expiresAtMs).toISOString()}`,
+    fields.vehicles && fields.vehicles.length && `veh: ${encodeVehicles(fields.vehicles)}`,
+    fields.bookingMode && `modo: ${fields.bookingMode}`,
+    fields.runningOrder && `orden: ${fields.runningOrder}`,
+    fields.estimateLabel && `total: ${fields.estimateLabel}`,
+    fields.depositCents != null && `deposito: $${(fields.depositCents / 100).toFixed(0)}`
+  ].filter(Boolean).join(FIELD_SEPARATOR);
+}
+
+// HighLevel returns the description as `notes` on a listing and as `notes` or
+// `description` on a single appointment, depending on the endpoint. Read both rather
+// than picking one and being wrong on half the calls.
+function descriptionOf(event) {
+  return String((event && (event.notes || event.description)) || '');
+}
+
+function fieldFrom(source, name) {
+  // Anchored to a field boundary so `total:` cannot match the tail of another key
+  // that happens to end in it, and stopping at the next '·' so one value cannot eat
+  // the rest of the list.
+  const match = source.match(new RegExp(`(?:^|·)\\s*${name}:?\\s*([^·]*)`, 'i'));
+  return match ? match[1].trim() : '';
+}
+
+function parseHoldFields(event) {
+  const source = descriptionOf(event);
+  const expira = fieldFrom(source, 'expira');
+  const expiresAtMs = expira ? Date.parse(expira) : NaN;
+  const depositRaw = fieldFrom(source, 'deposito').replace(/[$,]/g, '');
+  const depositAmount = Number(depositRaw);
+  return {
+    idempotencyKey: fieldFrom(source, 'key'),
+    requestFingerprint: fieldFrom(source, 'fp'),
+    submissionId: fieldFrom(source, 'sub'),
+    opportunityId: fieldFrom(source, 'opp'),
+    failureReason: fieldFrom(source, 'fallo'),
+    expiresAtMs: Number.isFinite(expiresAtMs) ? expiresAtMs : null,
+    vehicles: decodeVehicles(fieldFrom(source, 'veh')),
+    bookingMode: fieldFrom(source, 'modo') || 'slot',
+    runningOrder: fieldFrom(source, 'orden'),
+    estimateLabel: fieldFrom(source, 'total'),
+    depositCents: Number.isFinite(depositAmount) && depositRaw ? toCents(depositAmount) : 0
+  };
+}
+
+// Is this appointment one of OURS, taken by the website and still unpaid?
+//
+// The distinction matters because only our own lapsed holds may be deleted to make
+// room. An appointment the office typed in by hand is also `new` and must be treated
+// as untouchable — it has no `key:`/`expira:` fields, so it never looks like a hold.
+function isWebsiteHold(event) {
+  if (String(event.appointmentStatus || '') !== 'new') return false;
+  const fields = parseHoldFields(event);
+  return Boolean(fields.idempotencyKey && fields.expiresAtMs);
+}
+
+function isLapsedHold(event, now) {
+  if (!isWebsiteHold(event)) return false;
+  return parseHoldFields(event).expiresAtMs <= now;
+}
+
+// Whether the van is unavailable for this window.
+//
+// Cancelled and invalid appointments free the slot, and so does one of our own holds
+// whose fifteen minutes ran out — that is the lazy expiry, and it is why an abandoned
+// checkout costs the business a quarter of an hour of capacity instead of the rest of
+// the day.
+function isBlocking(event, now) {
+  if (event.deleted) return false;
+  if (FREE_STATUSES.includes(String(event.appointmentStatus || ''))) return false;
+  if (isLapsedHold(event, now)) return false;
+  return true;
+}
+
+function intervalsFrom(events, now) {
+  return events
+    .filter(event => isBlocking(event, now))
+    .map(event => ({ id: event.id, start: Date.parse(event.startTime), end: Date.parse(event.endTime) }))
+    .filter(interval => Number.isFinite(interval.start) && Number.isFinite(interval.end));
+}
+
 // ── Windows ────────────────────────────────────────────────────────────────
 
 // Where each vehicle sits in time.
@@ -66,18 +207,7 @@ function fingerprintRequest({ date, startTime, vehicles }) {
 // ONE van goes to ONE address and works through the vehicles in the driveway one
 // after another, so the vehicles are laid out BACK TO BACK in cart order: vehicle
 // k starts exactly where vehicle k-1 finished. The visit lasts the sum of the
-// services plus one trailing buffer.
-//
-// This is the inverse of what this function used to do (all vehicles sharing one
-// start time, the visit ending with the longest one). That model quoted 1h30 for
-// three cars that really take 3h30, and blocked three separate vans for a single
-// driveway.
-//
-// The trailing buffer rides on the LAST vehicle's window rather than living in a
-// row of its own: the assignment rows on one van must not overlap (the
-// `no_overlapping_assignments` exclusion constraint), and a separate visit-wide row
-// would overlap every vehicle in it. Sequential `[)` ranges are adjacent, not
-// overlapping, so back-to-back vehicles on one van are legal by construction.
+// services plus one trailing buffer, which rides on the last vehicle's window.
 function visitWindow(vehicles, date, startTime, timezone) {
   const packageIds = vehicles.map(vehicle => vehicle.packageId);
   const fullDay = catalog.bookingModeForPackages(packageIds) === 'full_day';
@@ -146,16 +276,38 @@ function visitWindow(vehicles, date, startTime, timezone) {
 
 // ── Allocation ─────────────────────────────────────────────────────────────
 
+// Which van the rotation starts from.
+//
+// This used to be a row (`resource_rotation`) read and written under a lock, for one
+// job: spread consecutive bookings across the fleet instead of hammering van 1. The
+// same answer is DERIVABLE from the day we have already read — how many visits are on
+// the fleet's calendars today — so the counter is not state anybody has to keep.
+//
+// Deriving it from a count rather than from the date matters: a date alone gives every
+// booking of the day the same starting van, and van 1 would work the whole day while
+// three sat idle until it was busy. Counting what is already booked advances the
+// cursor exactly the way the row did.
+//
+// It is also retry-safe. A create that failed left nothing on the calendar, so the
+// retry counts the same appointments and picks the same van: the second attempt is the
+// same attempt, not a second reservation somewhere else.
+function rotationCursor(dayEvents, count) {
+  if (!count) return 0;
+  const booked = dayEvents.reduce((total, events) => total + events.filter(event => {
+    if (event.deleted) return false;
+    if (FREE_STATUSES.includes(String(event.appointmentStatus || ''))) return false;
+    return Boolean(parseHoldFields(event).idempotencyKey);
+  }).length, 0);
+  return booked % count;
+}
+
 // Picks the ONE van that serves the whole visit, starting at the rotation cursor.
 //
-// One address, one van: the crew drives to the customer once and works through
-// every vehicle in the driveway. So this looks for a single van free across the
-// entire visit — first vehicle's start to last vehicle's end, buffer included —
-// rather than one free van per vehicle.
-//
-// Returns null when no van is free for the whole span. A van free for the first two
-// cars but busy for the third is not a usable allocation: the crew cannot hand the
-// driveway over to a different van halfway through.
+// One address, one van: the crew drives to the customer once and works through every
+// vehicle in the driveway. So this looks for a single van free across the ENTIRE
+// visit — first vehicle's start to last vehicle's end, buffer included. A van free
+// for the first two cars but busy for the third is not a usable allocation: the crew
+// cannot hand the driveway over to a different van halfway through.
 function allocateResources({ resources, busyByResource, perVehicle, cursor }) {
   const count = resources.length;
   if (!count || !perVehicle.length) return null;
@@ -163,8 +315,6 @@ function allocateResources({ resources, busyByResource, perVehicle, cursor }) {
   const visitStartMs = perVehicle[0].startMs;
   const visitEndMs = perVehicle[perVehicle.length - 1].endMs;
 
-  // Rotation order for this attempt: cursor first, wrapping around, so consecutive
-  // bookings spread across the fleet instead of hammering van 1.
   const rotationOffset = Array.from({ length: count }, (unused, offset) => offset).find(offset => {
     const busy = busyByResource[(cursor + offset) % count] || [];
     return time.isFreeAcross(busy, visitStartMs, visitEndMs);
@@ -172,27 +322,7 @@ function allocateResources({ resources, busyByResource, perVehicle, cursor }) {
   if (rotationOffset === undefined) return null;
 
   const resource = resources[(cursor + rotationOffset) % count];
-
-  return {
-    nextCursor: (cursor + rotationOffset + 1) % count,
-    resource,
-    // Every vehicle in the cart lands on the SAME van, in cart order, each with its
-    // own back-to-back window.
-    assignments: perVehicle
-      .slice()
-      .sort((a, b) => a.vehicleIndex - b.vehicleIndex)
-      .map(vehicle => ({ vehicle, resource }))
-  };
-}
-
-// DB reservations and the vans' own calendars, merged into one busy list per van.
-// Postgres knows what the website sold; the calendar knows what the office booked
-// by hand. A slot is only free when both say so.
-function mergeBusy(resources, dbBusy, externalBusy) {
-  return resources.map((resource, index) => [
-    ...(externalBusy[index] || []).map(interval => ({ start: interval.start, end: interval.end })),
-    ...dbBusy.filter(row => row.resourceKey === resource.key).map(row => ({ start: row.start, end: row.end }))
-  ]);
+  return { resource, resourceIndex: (cursor + rotationOffset) % count };
 }
 
 function dayBounds(date, timezone) {
@@ -204,16 +334,14 @@ function dayBounds(date, timezone) {
 
 // ── Availability ───────────────────────────────────────────────────────────
 
-// Start times where ALL N vehicles can be served at once. A slot is offered only
-// when N distinct vans are free, each for the length of the vehicle it would take
-// — which is why a 4-vehicle cart sees far fewer slots than a 1-vehicle cart, and
-// why it never sees a slot that would collapse into a queue behind one van.
+// Start times where the whole visit fits on one van. A slot is offered only when a
+// van is free for the entire chain — which is why a 4-vehicle cart sees far fewer
+// slots than a 1-vehicle cart, and never one that would collapse into a queue.
 async function computeAvailability({ vehicles, from, to, language = 'en', now = Date.now(), config = null }) {
   // Only the vans switched on in the CRM. With none on, every slot allocates to
   // nothing and the customer sees an empty calendar — the honest answer, and the same
   // one they would get on a fully booked week.
   const activeConfig = await ghl.withActiveResources(config || ghl.getConfig());
-  const repository = getRepository();
   const timezone = time.bookingTimezone();
   const resources = activeConfig.resources;
 
@@ -229,14 +357,9 @@ async function computeAvailability({ vehicles, from, to, language = 'en', now = 
   const rangeFrom = time.zonedDateTimeToMs(from, '00:00', timezone);
   const rangeTo = time.zonedDateTimeToMs(time.addDays(to, 1), '00:00', timezone);
 
-  const [externalBusy, dbBusy] = await Promise.all([
-    ghl.busyIntervalsByResource(activeConfig, rangeFrom, rangeTo),
-    repository.busyAssignments({ fromMs: rangeFrom, toMs: rangeTo })
-  ]);
-  const busyByResource = mergeBusy(resources, dbBusy, externalBusy);
+  const events = await ghl.eventsByResource(activeConfig, rangeFrom, rangeTo);
+  const busyByResource = events.map(list => intervalsFrom(list, now));
 
-  // The cursor only decides WHICH free van gets used, never WHETHER one is free,
-  // so availability can read it as 0 without touching the rotation.
   const dates = [];
   for (const date of time.datesBetween(from, to)) {
     if (time.isSunday(date)) continue;
@@ -249,13 +372,9 @@ async function computeAvailability({ vehicles, from, to, language = 'en', now = 
         continue;
       }
       if (window.startMs < now + noticeMs) continue;
-      const allocation = allocateResources({
-        resources,
-        busyByResource,
-        perVehicle: window.perVehicle,
-        cursor: 0
-      });
-      if (!allocation) continue;
+      // The cursor only decides WHICH free van gets used, never WHETHER one is free,
+      // so availability reads it as 0 without touching the rotation.
+      if (!allocateResources({ resources, busyByResource, perVehicle: window.perVehicle, cursor: 0 })) continue;
       slots.push({
         start: window.startTime,
         startsAt: new Date(window.startMs).toISOString(),
@@ -293,52 +412,71 @@ async function computeAvailability({ vehicles, from, to, language = 'en', now = 
   };
 }
 
+// ── Reading a hold back off the calendar ───────────────────────────────────
+
+// The public status of a hold, derived from the appointment's own status and its
+// deadline. Nothing here is stored: a `new` appointment past `expira` IS expired,
+// whether or not any sweep has run.
 function publicHoldStatus(hold, now = Date.now()) {
-  // A cron sweep may not have run at the exact millisecond a client asks. Treat
-  // an open-but-past-TTL row as expired for the public status contract.
-  if (['active', 'converted'].includes(hold.status) && hold.expiresAtMs <= now) {
-    return { status: 'expired', reason: 'HOLD_EXPIRED' };
+  if (hold.status === 'confirmed' || hold.status === 'delivered') return { status: 'confirmed', reason: '' };
+  if (hold.status === 'released') {
+    // A cancelled hold that says WHY. The checkout screen has to tell "your card was
+    // declined" apart from "you changed your mind", and the appointment is the only
+    // place left to write that down.
+    return hold.failureReason === 'payment_failed'
+      ? { status: 'payment_failed', reason: 'PAYMENT_FAILED' }
+      : { status: 'released', reason: 'HOLD_RELEASED' };
   }
-  if (hold.status === 'active') return { status: 'active', reason: '' };
-  if (hold.status === 'converted') return { status: 'pending_payment', reason: '' };
-  if (hold.status === 'confirmed') return { status: 'confirmed', reason: '' };
-  if (hold.status === 'expired') return { status: 'expired', reason: 'HOLD_EXPIRED' };
-  if (hold.status === 'released' && hold.failureReason === 'payment_failed') {
-    return { status: 'payment_failed', reason: 'PAYMENT_FAILED' };
-  }
-  if (hold.status === 'released') return { status: 'released', reason: 'HOLD_RELEASED' };
-  return { status: 'failed', reason: 'HOLD_FAILED' };
+  if (hold.expiresAtMs && hold.expiresAtMs <= now) return { status: 'expired', reason: 'HOLD_EXPIRED' };
+  // A hold that has been through /api/quote is waiting for money; one that has not is
+  // still just a held slot. `sub:` is written when the customer is attached.
+  if (hold.submissionId) return { status: 'pending_payment', reason: '' };
+  return { status: 'active', reason: '' };
 }
 
-// Public, PII-free status for the checkout countdown/poller. Expired rows are
-// actively released here as well as by the cron sweep so a browser never sees a
-// slot as reserved after its TTL simply because the next cron minute is pending.
-async function describeHoldStatus(holdId, { now = Date.now(), config = null } = {}) {
-  const repository = getRepository();
-  let hold = await repository.getHold(holdId);
-  if (!hold) throw new RequestError('Hold not found', 404, 'HOLD_NOT_FOUND');
-  if (['active', 'converted'].includes(hold.status) && hold.expiresAtMs <= now) {
-    await releaseHold({ holdId, reason: 'hold_expired', config });
-    hold = await repository.getHold(holdId);
-  }
-  const assignments = await repository.assignmentsForParent(hold.parentBookingId);
+// One appointment, read as a hold. `null` for an appointment that is not ours.
+function holdFromEvent(event, resource, timezone) {
+  const fields = parseHoldFields(event);
+  const startMs = Date.parse(event.startTime);
+  const endMs = Date.parse(event.endTime);
+  const appointmentStatus = String(event.appointmentStatus || 'new');
+  const status = DELIVERED_STATUSES.includes(appointmentStatus) ? 'delivered'
+    : appointmentStatus === 'confirmed' ? 'confirmed'
+    : FREE_STATUSES.includes(appointmentStatus) ? 'released'
+    : 'active';
+
   return {
-    ...describeHold(hold, assignments),
-    ...publicHoldStatus(hold, now)
+    id: event.id,
+    // Same value, kept under the old name: the /api/quote and webhook responses
+    // report it and the office reads it off HighLevel.
+    parentBookingId: event.id,
+    appointmentStatus,
+    status,
+    calendarId: String(event.calendarId || (resource && resource.calendarId) || ''),
+    resourceKey: resource ? resource.key : '',
+    contactId: String(event.contactId || ''),
+    title: String(event.title || ''),
+    slotStartMs: startMs,
+    slotEndMs: endMs,
+    slotDate: time.todayInZone(startMs, timezone),
+    timezone,
+    bookingMode: fields.bookingMode,
+    vehicleCount: fields.vehicles.length || 1,
+    depositCents: fields.depositCents,
+    expiresAtMs: fields.expiresAtMs,
+    idempotencyKey: fields.idempotencyKey,
+    failureReason: fields.failureReason,
+    requestFingerprint: fields.requestFingerprint,
+    submissionId: fields.submissionId,
+    opportunityId: fields.opportunityId,
+    quote: { vehicles: fields.vehicles },
+    fields
   };
 }
 
-// ── Holds ──────────────────────────────────────────────────────────────────
-
-// One van serves the whole address, so there is exactly ONE assignment row per
-// visit and the response says so once. The per-vehicle schedule is DERIVED from the
-// visit's start plus each vehicle's offset in the chain, which is stored on the
-// quote — the database does not need a row per vehicle to express "car 2 starts an
-// hour in", and writing one is what used to collide with
-// booking_assignments_resource_unique.
-function describeHold(hold, assignments) {
-  const van = assignments[0] || null;
-  const quoted = (hold.quote && hold.quote.vehicles) || [];
+// The shape every caller has always received. One van, named once, plus the running
+// order derived from the visit's start and each vehicle's offset.
+function describeHold(hold) {
   const startMs = hold.slotStartMs;
   return {
     holdId: hold.id,
@@ -347,27 +485,89 @@ function describeHold(hold, assignments) {
     bookingMode: hold.bookingMode,
     slotStart: new Date(startMs).toISOString(),
     slotEnd: new Date(hold.slotEndMs).toISOString(),
-    expiresAt: new Date(hold.expiresAtMs).toISOString(),
+    expiresAt: hold.expiresAtMs ? new Date(hold.expiresAtMs).toISOString() : '',
     deposit: hold.depositCents / 100,
     vehicleCount: hold.vehicleCount,
-    // The one van, named once.
-    resource: van ? van.resourceKey : null,
-    visitDurationMinutes: van ? van.durationMinutes : null,
-    // Kept as an array so existing clients keep working, but it is now the running
-    // order of one van's day at this address, not a list of parallel vans.
-    assignments: quoted.map(vehicle => {
-      const offsetMs = (vehicle.offsetMinutes || 0) * 60000;
-      const serviceMs = (vehicle.serviceMinutes || vehicle.durationMinutes || 0) * 60000;
-      return {
-        vehicleIndex: vehicle.vehicleIndex,
-        resource: van ? van.resourceKey : null,
-        startsAt: new Date(startMs + offsetMs).toISOString(),
-        endsAt: new Date(startMs + offsetMs + serviceMs).toISOString(),
-        durationMinutes: Math.round(serviceMs / 60000)
-      };
-    })
+    resource: hold.resourceKey || null,
+    visitDurationMinutes: Math.round((hold.slotEndMs - startMs) / 60000),
+    // Kept as an array so existing clients keep working, but it is the running order
+    // of one van's day at this address, not a list of parallel vans.
+    assignments: hold.quote.vehicles.map(vehicle => ({
+      vehicleIndex: vehicle.vehicleIndex,
+      resource: hold.resourceKey || null,
+      startsAt: new Date(startMs + vehicle.offsetMinutes * 60000).toISOString(),
+      endsAt: new Date(startMs + (vehicle.offsetMinutes + vehicle.serviceMinutes) * 60000).toISOString(),
+      durationMinutes: vehicle.serviceMinutes
+    }))
   };
 }
+
+// Finds the van a hold lives on. The appointment reports its own calendar; the
+// resource list turns that into the key the rest of the system speaks in.
+function resourceForEvent(config, event) {
+  const calendarId = String((event && event.calendarId) || '');
+  return config.resources.find(resource => resource.calendarId === calendarId) || null;
+}
+
+async function loadHold(holdId, { config = null } = {}) {
+  const activeConfig = config || ghl.getConfig();
+  const event = await ghl.getAppointment(activeConfig, holdId);
+  if (!event) return null;
+  return holdFromEvent(event, resourceForEvent(activeConfig, event), time.bookingTimezone());
+}
+
+// Public, PII-free status for the checkout countdown/poller.
+async function describeHoldStatus(holdId, { now = Date.now(), config = null } = {}) {
+  const hold = await loadHold(holdId, { config });
+  if (!hold) throw new RequestError('Hold not found', 404, 'HOLD_NOT_FOUND');
+  return { ...describeHold(hold), ...publicHoldStatus(hold, now) };
+}
+
+// Loads a hold the browser claims to own and refuses it unless it is still live.
+// An expired or released hold is a 409, not a 404: the slot existed, it just isn't
+// the customer's any more.
+async function getHoldForRequest(holdId, { now = Date.now(), config = null } = {}) {
+  const hold = await loadHold(holdId, { config });
+  if (!hold) throw new RequestError('Hold not found', 404, 'HOLD_NOT_FOUND');
+  // An already-confirmed booking is returned as-is so a resubmitted form is a no-op
+  // rather than an error.
+  if (hold.status === 'confirmed' || hold.status === 'delivered') return hold;
+  if (hold.status !== 'active') throw new SlotUnavailableError('This hold is no longer valid');
+  if (hold.expiresAtMs && hold.expiresAtMs <= now) throw new RequestError('This hold has expired', 409, 'HOLD_EXPIRED');
+  return hold;
+}
+
+async function describeExistingHold(hold) {
+  return { ...describeHold(hold), requestFingerprint: hold.requestFingerprint };
+}
+
+// Every appointment on the fleet's calendars over the booking window.
+//
+// Used by the two lookups that do not know a date: "which hold belongs to this
+// submission id" and the daily sweep. It is four calls — one per van — regardless of
+// how wide the window is, because the listing endpoint takes a range.
+async function scanFleet(config, { now = Date.now(), backDays = 1, forwardDays = catalog.BOOKING_WINDOW_DAYS + 1 } = {}) {
+  const timezone = time.bookingTimezone();
+  const today = time.todayInZone(now, timezone);
+  const fromMs = time.zonedDateTimeToMs(time.addDays(today, -backDays), '00:00', timezone);
+  const toMs = time.zonedDateTimeToMs(time.addDays(today, forwardDays), '00:00', timezone);
+  const perResource = await ghl.eventsByResource(config, fromMs, toMs);
+  return perResource.flatMap((events, index) => events.map(event => ({
+    event,
+    resource: config.resources[index]
+  })));
+}
+
+// The payment webhook may only know the submission id (HighLevel workflows are
+// easier to configure with one). Map it back to the appointment waiting to be paid.
+async function resolveHoldIdBySubmission(submissionId, { config = null, now = Date.now() } = {}) {
+  const activeConfig = config || ghl.getConfig();
+  const found = (await scanFleet(activeConfig, { now }))
+    .find(entry => parseHoldFields(entry.event).submissionId === String(submissionId));
+  return found ? found.event.id : null;
+}
+
+// ── Holds ──────────────────────────────────────────────────────────────────
 
 function assertBookable(window, vehicles, date, now, timezone) {
   const packageIds = vehicles.map(vehicle => vehicle.packageId);
@@ -386,27 +586,39 @@ function assertBookable(window, vehicles, date, now, timezone) {
   }
 }
 
+// The running order the crew works through at this address, so one block on the
+// calendar still says what happens and when.
+function runningOrderFor(window, timezone) {
+  return window.perVehicle
+    .map(vehicle => {
+      const at = new Date(vehicle.startMs);
+      const clock = at.toLocaleTimeString('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' });
+      return `${clock} ${vehicle.packageId}`;
+    })
+    // Joined with a comma, NOT the '·' that separates the description's own fields:
+    // the crew panel reads `orden:` up to the next '·', so using it inside the value
+    // truncated the list to the first vehicle — a two-car stop showed one car.
+    .join(', ');
+}
+
 // Creates a 15-minute hold on ONE van, or fails without leaving a trace.
 //
-// Returns { replayed: true, ... } when the same Idempotency-Key already produced a
-// hold for the same request, so a browser that retries a dropped response gets its
-// original hold back instead of a second van.
+// Returns { replayed: true, ... } when the same Idempotency-Key already holds this
+// exact request, so a browser that retries a dropped response gets its original hold
+// back instead of a second van.
 //
-// `customer` is required now: the hold's footprint in HighLevel is an appointment,
-// and appointments need a contact. The wizard already has the customer validated by
-// the time it asks for a hold, so this costs the caller nothing — see the note on
-// ghl.createHoldAppointment.
-async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer = null, now = Date.now(), config = null }) {
+// `customer` is required: the hold IS an appointment, and appointments need a
+// contact. The wizard already has the customer validated by the time it picks a time,
+// so this costs the caller nothing.
+async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer = null, contactId = '', now = Date.now(), config = null }) {
   const activeConfig = await ghl.withActiveResources(config || ghl.getConfig());
-  const repository = getRepository();
   const timezone = time.bookingTimezone();
   const resources = activeConfig.resources;
 
   if (!resources.length) {
     // The fleet size caps how many ADDRESSES can be served at once, never how many
-    // vehicles one customer may bring — a single van works through the whole
-    // driveway. So the only way to get here is with no van working at all: either
-    // none configured, or every one of them switched off in the CRM.
+    // vehicles one customer may bring. So the only way to get here is with no van
+    // working at all: either none configured, or every one switched off in the CRM.
     throw new SlotUnavailableError('No vans are working at that time');
   }
 
@@ -421,26 +633,67 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer
   })));
 
   const { fromMs, toMs } = dayBounds(date, timezone);
-  // Read the vans' calendars BEFORE opening the transaction: a HighLevel call can
-  // take seconds, and holding a row lock for that long would serialize the whole
-  // day's bookings behind one slow request.
-  const externalBusy = await ghl.busyIntervalsByResource(activeConfig, fromMs, toMs);
+  const dayEvents = await ghl.eventsByResource(activeConfig, fromMs, toMs);
 
-  const outcome = await repository.transaction([`day:${date}`], async tx => {
-    const existing = await tx.findHoldByIdempotencyKey(idempotencyKey);
-    if (existing) {
-      if (existing.requestFingerprint !== fingerprint) throw new IdempotencyConflictError();
-      const allocations = await tx.assignmentsForParent(existing.parentBookingId);
-      return { replayed: true, hold: existing, assignments: allocations };
-    }
+  // Idempotency without a table: the key is written into the appointment, so finding
+  // the retry is finding the appointment. Scoped to the requested DAY, which is the
+  // same read the allocation needs — one call, not two.
+  //
+  // A caller that reuses a key for a DIFFERENT day gets a second hold rather than a
+  // 409. That is a deliberate limit of doing this without an index: the fingerprint
+  // covers the date, so a genuine retry always looks in the right day.
+  for (const [index, events] of dayEvents.entries()) {
+    const match = events.find(event => {
+      const fields = parseHoldFields(event);
+      return fields.idempotencyKey && fields.idempotencyKey === idempotencyKey &&
+        !FREE_STATUSES.includes(String(event.appointmentStatus || ''));
+    });
+    if (!match) continue;
+    const existing = holdFromEvent(match, resources[index], timezone);
+    if (existing.requestFingerprint !== fingerprint) throw new IdempotencyConflictError();
+    return { ...describeHold(existing), replayed: true };
+  }
 
-    const dbBusy = await tx.busyAssignments({ fromMs, toMs });
-    const busyByResource = mergeBusy(resources, dbBusy, externalBusy);
-    // Locked for the rest of the transaction, so the van we pick as "next" cannot
-    // be handed out as "next" to a concurrent request as well.
-    const cursor = await tx.rotationCursorForUpdate();
+  const description = buildDescription({
+    idempotencyKey,
+    requestFingerprint: fingerprint,
+    expiresAtMs: now + HOLD_TTL_MS,
+    vehicles: window.perVehicle,
+    bookingMode: window.bookingMode,
+    runningOrder: runningOrderFor(window, timezone),
+    // What the crew has to collect on site, written here because the crew panel reads
+    // the CALENDAR — that is what lets it work with no database behind it.
+    estimateLabel: estimate.label,
+    depositCents
+  });
+  const title = `RESERVA (sin pagar) — ${window.perVehicle.map(vehicle => vehicle.label).join(' + ')}`;
 
-    const allocation = allocateResources({ resources, busyByResource, perVehicle: window.perVehicle, cursor });
+  // The contact has to exist before the appointment that references it.
+  const holderContactId = contactId || (customer ? (await ghl.upsertContact(activeConfig, customer)).id : '');
+  if (!holderContactId) throw new RequestError('customer is required to hold a slot', 422, 'HOLD_CUSTOMER_REQUIRED');
+
+  // The cursor is fixed BEFORE the loop. It is derived from how many visits are
+  // already on the day, and the loop below deletes some of them, so recomputing it
+  // between attempts would walk the rotation forward for the wrong reason.
+  const cursor = rotationCursor(dayEvents, resources.length);
+  // Vans this request has already been refused by. HighLevel arbitrates the race, and
+  // losing it on one van is not a reason to give up on a driveway the others could
+  // serve — the old code answered 409 there.
+  const refused = new Set();
+
+  for (let attempt = 0; attempt <= resources.length; attempt += 1) {
+    const busyByResource = dayEvents.map((events, index) =>
+      refused.has(index)
+        // Treated as busy for the rest of this request: the window is not ours.
+        ? [{ start: window.startMs, end: window.endMs }]
+        : intervalsFrom(events, now)
+    );
+    const allocation = allocateResources({
+      resources,
+      busyByResource,
+      perVehicle: window.perVehicle,
+      cursor
+    });
     if (!allocation) {
       throw new SlotUnavailableError(
         vehicles.length > 1
@@ -449,539 +702,189 @@ async function acquireHold({ idempotencyKey, date, startTime, vehicles, customer
       );
     }
 
-    const holdId = newId();
-    const parentId = newId();
-    const quote = {
-      vehicles: window.perVehicle.map(vehicle => ({
-        vehicleIndex: vehicle.vehicleIndex,
-        categoryId: vehicle.categoryId,
-        packageId: vehicle.packageId,
-        sizeId: vehicle.sizeId,
-        addonIds: vehicle.addonIds,
-        durationMinutes: vehicle.durationMinutes,
-        // Where this vehicle sits in the van's chain, so the running order can be
-        // rebuilt from the visit's start without a row per vehicle.
-        serviceMinutes: vehicle.serviceMinutes,
-        offsetMinutes: vehicle.offsetMinutes,
-        isMembership: vehicle.isMembership,
-        estimate: vehicle.estimate || null,
-        descriptor: vehicle.descriptor || null
-      })),
-      estimate: { min: estimate.min, max: estimate.max, label: estimate.label }
-    };
-
-    const hold = {
-      id: holdId,
-      idempotencyKey,
-      requestFingerprint: fingerprint,
-      status: 'active',
-      slotDate: date,
-      slotStartMs: window.startMs,
-      slotEndMs: window.endMs,
-      timezone,
-      bookingMode: window.bookingMode,
-      vehicleCount: vehicles.length,
-      quote,
-      depositCents,
-      expiresAtMs: now + HOLD_TTL_MS
-    };
-
-    const parent = {
-      id: parentId,
-      idempotencyKey: `hold:${idempotencyKey}`,
-      status: 'held',
-      slotStartMs: window.startMs,
-      slotEndMs: window.endMs,
-      timezone,
-      vehicleCount: vehicles.length,
-      depositCents,
-      estimateMinCents: toCents(estimate.min),
-      estimateMaxCents: toCents(estimate.max),
-      quote
-    };
-
-    // ONE child booking per vehicle — they carry the per-vehicle price and label —
-    // but ONE assignment and ONE resource reservation for the WHOLE visit, riding on
-    // the first child. A van serving one address is busy for one contiguous block;
-    // that is what the assignment row means, and one row per vehicle both
-    // misdescribed it and collided with booking_assignments_resource_unique (the
-    // constraint migration 004 was written to drop — no longer needed).
-    const resource = allocation.resource;
-    const vehicleLabels = window.perVehicle.map(vehicle => vehicle.label).join(' + ');
-    const children = window.perVehicle.map((vehicle, index) => ({
-      child: {
-        id: newId(),
-        status: 'held',
-        vehicleIndex: vehicle.vehicleIndex,
-        vehicleLabel: vehicle.label,
-        packageId: vehicle.packageId,
-        slotStartMs: vehicle.startMs,
-        slotEndMs: vehicle.endMs,
-        timezone,
-        estimateMinCents: toCents(vehicle.estimate ? vehicle.estimate.min : 0),
-        estimateMaxCents: toCents(vehicle.estimate ? vehicle.estimate.max : 0),
-        quote: quote.vehicles[vehicle.vehicleIndex]
-      },
-      ...(index === 0 ? {
-        assignment: {
-          id: newId(),
-          resourceKey: resource.key,
-          vehicleIndex: 0,
-          vehicleLabel: vehicleLabels.slice(0, 160),
-          packageId: vehicle.packageId,
-          durationMinutes: Math.round((window.endMs - window.startMs) / 60000),
-          startsAtMs: window.startMs,
-          endsAtMs: window.endMs,
-          calendarId: resource.calendarId,
-          status: 'held'
-        },
-        allocation: {
-          id: newId(),
-          resourceKey: resource.key,
-          vehicleIndex: 0,
-          calendarId: resource.calendarId,
-          startsAtMs: window.startMs,
-          endsAtMs: window.endMs,
-          status: 'pending'
-        }
-      } : {})
-    }));
-
     try {
-      await tx.createHoldBundle({ hold, parent, children });
-    } catch (error) {
-      // The exclusion constraint fired: another transaction took one of these vans
-      // for an overlapping window. Same answer as finding it busy, just found later.
-      if (repository.isOverlapViolation(error)) throw new SlotUnavailableError();
-      // Only the idempotency key may answer "this key was already used". Every other
-      // unique violation is a schema problem wearing that error's clothes, and saying
-      // "Idempotency-Key already used" sends whoever debugs it somewhere else
-      // entirely. This exact trap cost real time on 2026-08-04: production ran the
-      // one-van-per-address model while `booking_assignments_resource_unique` — the
-      // constraint migration 004 drops — was still in the database, so every
-      // multi-vehicle booking failed with a 409 about idempotency.
-      if (repository.isUniqueViolation(error)) {
-        if (!error.constraint || /idempotency/i.test(error.constraint)) throw new IdempotencyConflictError();
-        console.error('[agenda] unexpected unique violation', error.constraint);
-        throw new RequestError(
-          `Booking storage rejected this reservation (${error.constraint}) — the database schema is behind the code`,
-          500,
-          'SCHEMA_CONFLICT'
-        );
-      }
-      throw error;
-    }
-    await tx.setRotationCursor(allocation.nextCursor);
-
-    return {
-      replayed: false,
-      hold: { ...hold, parentBookingId: parentId },
-      // Only the first child carries them — one van, one contiguous block — so filter
-      // rather than map: children 2..N have no assignment of their own.
-      assignments: children
-        .filter(entry => entry.assignment)
-        .map(entry => ({ ...entry.assignment, bookingId: entry.child.id, parentBookingId: parentId })),
-      allocations: children
-        .filter(entry => entry.allocation)
-        .map(entry => ({ ...entry.allocation, holdId, assignmentId: entry.assignment.id }))
-    };
-  });
-
-  if (outcome.replayed) {
-    return { ...describeHold(outcome.hold, outcome.assignments), replayed: true };
-  }
-
-  // Committed. Now block the vans' own calendars so the office cannot book over a
-  // slot the website has promised.
-  // The contact has to exist before the appointment that references it. Done after
-  // the transaction commits, like every other network call in this file.
-  const contact = customer ? await ghl.upsertContact(activeConfig, customer) : null;
-
-  await reserveExternalCalendars({
-    contactId: contact ? contact.id : null,
-    address: customer ? customer.address : '',
-    repository,
-    config: activeConfig,
-    hold: outcome.hold,
-    allocations: outcome.allocations,
-    assignments: outcome.assignments
-  });
-
-  return { ...describeHold(outcome.hold, outcome.assignments), replayed: false };
-}
-
-// Writes one `new` appointment per vehicle on the van's calendar and records its
-// id. If ANY of them fails, every appointment created for this hold is deleted
-// again and the hold is marked failed, so the fleet is never left partially
-// reserved by a booking that does not exist.
-//
-// These used to be block slots, which HighLevel rejects outright on the vans'
-// Personal calendars — see the note on ghl.createHoldAppointment. Appointments also
-// bring their own conflict validation, so HighLevel refusing one is meaningful: the
-// van went to someone else between our read and our write. That is a 409 for the
-// customer ("that slot just went, pick another"), not a 503 ("we are broken").
-async function reserveExternalCalendars({ repository, config, hold, allocations, assignments, contactId, address }) {
-  const created = [];
-  try {
-    for (const allocation of allocations) {
-      const assignment = assignments.find(entry => entry.vehicleIndex === allocation.vehicleIndex);
-      // The running order the crew works through at this address, so one block on the
-      // calendar still says what happens and when.
-      const estimateLabel = (hold.quote && hold.quote.estimate && hold.quote.estimate.label) || '';
-      const runningOrder = ((hold.quote && hold.quote.vehicles) || [])
-        .map(vehicle => {
-          const at = new Date(hold.slotStartMs + (vehicle.offsetMinutes || 0) * 60000);
-          const clock = at.toLocaleTimeString('en-US', { timeZone: hold.timezone, hour: 'numeric', minute: '2-digit' });
-          return `${clock} ${vehicle.packageId}`;
-        })
-        // Joined with a comma, NOT the '·' that separates the description's own
-        // fields. The crew panel reads `orden:` up to the next '·', so using it
-        // inside the value truncated the list to the first vehicle: a two-car stop
-        // showed the crew one car.
-        .join(', ');
-      const event = await ghl.createHoldAppointment(config, {
-        calendarId: allocation.calendarId,
-        contactId,
-        address,
-        title: `RESERVA (sin pagar) — ${assignment ? assignment.vehicleLabel : 'website booking'}`,
-        description: [
-          `Hold ${hold.id}`,
-          `expira ${new Date(hold.expiresAtMs).toISOString()}`,
-          runningOrder && `orden: ${runningOrder}`,
-          // What the crew has to collect on site. Written here rather than looked up
-          // later because the crew panel reads the CALENDAR, not the database — that
-          // is what lets it survive the database going away.
-          estimateLabel && `total: ${estimateLabel}`,
-          `deposito: $${(hold.depositCents / 100).toFixed(0)}`
-        ].filter(Boolean).join(' · '),
-        startTime: new Date(allocation.startsAtMs).toISOString(),
-        endTime: new Date(allocation.endsAtMs).toISOString()
+      const event = await ghl.createHoldAppointment(activeConfig, {
+        calendarId: allocation.resource.calendarId,
+        contactId: holderContactId,
+        address: customer ? customer.address : '',
+        title,
+        description,
+        startTime: new Date(window.startMs).toISOString(),
+        endTime: new Date(window.endMs).toISOString()
       });
-      created.push({ allocation, assignment, eventId: event.id });
+      const hold = holdFromEvent(
+        {
+          id: event.id,
+          calendarId: allocation.resource.calendarId,
+          contactId: holderContactId,
+          title,
+          notes: description,
+          appointmentStatus: 'new',
+          startTime: event.startTime,
+          endTime: event.endTime
+        },
+        allocation.resource,
+        timezone
+      );
+      return { ...describeHold(hold), replayed: false };
+    } catch (error) {
+      if (!ghl.isSlotTakenError(error)) throw error;
+
+      // HighLevel refused the window on this van. Two things can be in the way, and
+      // they get opposite treatment:
+      //
+      //   · one of OUR lapsed holds — availability already reads it as free, so the
+      //     create has to clear the corpse and try the same van again;
+      //   · anything else (a real booking, or a concurrent request that won the race)
+      //     — the van is genuinely taken, so move on to the next one.
+      const events = await ghl.calendarEventsForCalendar(
+        activeConfig, allocation.resource.calendarId, fromMs, toMs
+      );
+      const stale = events.filter(candidate =>
+        isLapsedHold(candidate, now) &&
+        Date.parse(candidate.startTime) < window.endMs &&
+        window.startMs < Date.parse(candidate.endTime)
+      );
+      if (stale.length) {
+        await ghl.deleteCalendarEventsQuietly(activeConfig, stale.map(candidate => candidate.id));
+        const deleted = new Set(stale.map(candidate => candidate.id));
+        dayEvents[allocation.resourceIndex] = events.filter(candidate => !deleted.has(candidate.id));
+        console.log('[agenda] cleared lapsed holds', stale.length, allocation.resource.key);
+      } else {
+        dayEvents[allocation.resourceIndex] = events;
+        refused.add(allocation.resourceIndex);
+      }
     }
-  } catch (error) {
-    const taken = ghl.isSlotTakenError(error);
-    console.error('[agenda] external hold failed', hold.id, error.name || 'Error', taken ? 'slot-taken' : (error.statusCode || 502));
-    await compensateHold({
-      repository, config, hold,
-      createdEvents: created.map(entry => entry.eventId),
-      reason: taken ? 'slot_taken_upstream' : 'external_calendar_failed'
-    });
-    if (taken) throw new SlotUnavailableError();
-    throw new RequestError('Could not reserve the crew calendars — please try again', 503);
   }
 
-  await repository.transaction([`day:${hold.slotDate}`], async tx => {
-    for (const entry of created) {
-      await tx.setAllocationExternalEvent(entry.allocation.id, entry.eventId, 'active');
-      if (entry.assignment) await tx.setAssignmentExternalEvent(entry.assignment.id, entry.eventId, entry.allocation.calendarId);
-    }
-  });
-}
-
-// Undo everything a failed hold created: delete the external events we managed to
-// write, then release the rows. Runs in its own transaction because the one that
-// created them has already committed.
-async function compensateHold({ repository, config, hold, createdEvents = [], reason = 'external_calendar_failed' }) {
-  const undeleted = await ghl.deleteCalendarEventsQuietly(config, createdEvents);
-  await repository.transaction([`day:${hold.slotDate}`], async tx => {
-    await tx.markHoldStatus(hold.id, 'failed', { failureReason: reason });
-    await tx.markAllocationsStatus(hold.id, 'failed');
-    if (hold.parentBookingId) {
-      // 'released' frees the van: the exclusion constraint only counts held and
-      // confirmed rows, so the slot is immediately bookable again.
-      await tx.markAssignmentsStatus(hold.parentBookingId, 'released');
-      await tx.setBookingTreeStatus(hold.parentBookingId, 'failed', { cancelReason: reason });
-    }
-  });
-  if (undeleted.length) {
-    // The rows are released either way; these events survive in HighLevel and are
-    // logged so they can be cleared by hand.
-    console.error('[agenda] orphan hold events', hold.id, undeleted.join(','));
-  }
-}
-
-// Loads a hold the browser claims to own and refuses it unless it is still live.
-// An expired or released hold is a 409, not a 404: the slot existed, it just isn't
-// the customer's any more.
-async function getHoldForRequest(holdId, { now = Date.now() } = {}) {
-  const repository = getRepository();
-  const hold = await repository.getHold(holdId);
-  if (!hold) throw new RequestError('Hold not found', 404, 'HOLD_NOT_FOUND');
-  // An already-confirmed hold is returned as-is so a resubmitted form is a no-op
-  // rather than an error.
-  if (hold.status === 'confirmed') return hold;
-  if (!['active', 'converted'].includes(hold.status)) throw new SlotUnavailableError('This hold is no longer valid');
-  if (hold.expiresAtMs <= now) throw new RequestError('This hold has expired', 409, 'HOLD_EXPIRED');
-  return hold;
-}
-
-async function describeExistingHold(hold) {
-  const repository = getRepository();
-  const assignments = await repository.assignmentsForParent(hold.parentBookingId);
-  return { ...describeHold(hold, assignments), requestFingerprint: hold.requestFingerprint };
-}
-
-// The payment webhook may only know the submission id (HighLevel workflows are
-// easier to configure with one). Map it back to the hold that is waiting to be paid.
-async function resolveHoldIdBySubmission(submissionId) {
-  const repository = getRepository();
-  const parent = await repository.findParentBookingBySubmission(submissionId);
-  return parent ? parent.holdId : null;
+  throw new SlotUnavailableError();
 }
 
 // ── Attaching the customer ─────────────────────────────────────────────────
 
-// /api/quote calls this once it has upserted the contact. The booking stays
-// unconfirmed: only a verified payment moves it to confirmed.
-async function attachCustomer({ holdId, submissionId, contactId, opportunityId, customer, now = Date.now() }) {
-  const repository = getRepository();
-  const hold = await repository.getHold(holdId);
+// /api/quote calls this once it has upserted the contact and the opportunity. The
+// booking stays unconfirmed: only a verified payment moves it to confirmed. What it
+// writes is the pair of ids the payment webhook needs to find this appointment again.
+async function attachCustomer({ holdId, submissionId, contactId, opportunityId, customer, now = Date.now(), config = null }) {
+  const activeConfig = config || ghl.getConfig();
+  const hold = await loadHold(holdId, { config: activeConfig });
   if (!hold) throw new RequestError('Hold not found', 404);
-  if (hold.status === 'confirmed') return { hold, alreadyConfirmed: true };
-  if (!['active', 'converted'].includes(hold.status)) throw new SlotUnavailableError('This hold is no longer valid');
-  if (hold.expiresAtMs <= now) throw new SlotUnavailableError('This hold has expired');
+  if (hold.status === 'confirmed' || hold.status === 'delivered') return { hold, alreadyConfirmed: true };
+  if (hold.status !== 'active') throw new SlotUnavailableError('This hold is no longer valid');
+  if (hold.expiresAtMs && hold.expiresAtMs <= now) throw new SlotUnavailableError('This hold has expired');
 
-  await repository.transaction([`day:${hold.slotDate}`], async tx => {
-    await tx.attachCustomer(hold.parentBookingId, {
-      submissionId,
-      contactId,
-      opportunityId,
-      customer,
-      status: 'pending_payment'
-    });
-    await tx.markHoldStatus(hold.id, 'converted');
+  await ghl.updateCalendarEvent(activeConfig, holdId, {
+    title: `RESERVA (sin pagar) — ${(customer && customer.name) || 'Website booking'}`,
+    description: buildDescription({ ...hold.fields, submissionId, opportunityId })
   });
   return { hold, alreadyConfirmed: false };
 }
 
 // ── Confirmation ───────────────────────────────────────────────────────────
 
-// The ONLY path to a confirmed booking: a payment event we have verified.
+// The ONLY path to a confirmed booking: a payment we have verified.
 //
-// Idempotent by (provider, externalEventId): a webhook that fires five times
-// confirms once and credits the membership once. A 'failed' outcome releases
-// everything, which is the same code path expiry uses.
-async function confirmPayment({ provider, externalEventId, eventType, outcome, holdId, amountCents, currency, payload, now = Date.now(), config = null }) {
-  const repository = getRepository();
-  const hold = await repository.getHold(holdId);
+// Idempotent without a ledger, and that is the point of the redesign: the question
+// "was this already applied?" is answered by the appointment's own status, so a
+// webhook that fires five times confirms once. There is nothing to deduplicate
+// against, so there is nothing to get out of step.
+async function confirmPayment({ externalEventId, outcome, holdId, amountCents, now = Date.now(), config = null }) {
+  const activeConfig = config || ghl.getConfig();
+  const hold = await loadHold(holdId, { config: activeConfig });
   if (!hold) throw new RequestError('Hold not found', 404);
 
-  const result = await repository.transaction([`day:${hold.slotDate}`], async tx => {
-    const inserted = await tx.insertPaymentEvent({
-      id: newId(),
-      provider,
-      externalEventId,
-      eventType,
-      outcome,
-      holdId: hold.id,
-      parentBookingId: hold.parentBookingId,
-      submissionId: null,
-      amountCents,
-      currency: currency || 'USD',
-      payload
+  if (outcome !== 'paid') {
+    // Payment failed: the van goes back on the market immediately rather than waiting
+    // out the rest of the fifteen minutes.
+    if (hold.status === 'confirmed' || hold.status === 'delivered') {
+      return { conflict: true, status: hold.status, reason: 'paid_booking_not_released' };
+    }
+    if (hold.status === 'released') return { alreadyProcessed: true, status: 'cancelled' };
+    await ghl.updateCalendarEvent(activeConfig, holdId, {
+      status: 'cancelled',
+      // Cancelled rather than deleted, and labelled: the customer is still sitting on
+      // the checkout screen and its poller has to be able to say why.
+      description: buildDescription({ ...hold.fields, failureReason: 'payment_failed', expiresAtMs: null })
     });
-    if (!inserted.inserted) return { alreadyProcessed: true, status: hold.status };
+    console.log('[agenda] released after failed payment', holdId, externalEventId || '');
+    return { released: true, status: 'cancelled' };
+  }
 
-    const current = await tx.getHold(hold.id, { forUpdate: true });
-    if (outcome !== 'paid') {
-      // Payment failed: the vans go back on the market immediately rather than
-      // waiting out the rest of the 15 minutes.
-      await releaseWithin(tx, current, 'payment_failed', 'cancelled');
-      return { released: true, status: 'cancelled' };
-    }
-    if (current.status === 'confirmed') return { alreadyProcessed: true, status: 'confirmed' };
-    if (!['active', 'converted'].includes(current.status)) {
-      // Paid after the hold was already released. The money is real, the slot is
-      // not: surface a conflict so the office can refund or rebook by hand.
-      return { conflict: true, status: current.status };
-    }
-    if (current.expiresAtMs <= now) {
-      await releaseWithin(tx, current, 'expired_before_payment', 'expired');
-      return { conflict: true, status: 'expired' };
-    }
-    // The deposit owed is the one the server computed when the hold was created,
-    // never a number from the payload. A short payment does not confirm; it is
-    // recorded and left for the office, which is the only party that can decide
-    // whether to accept it.
-    if (amountCents != null && amountCents < current.depositCents) {
-      return { conflict: true, status: current.status, reason: 'underpaid', expectedCents: current.depositCents };
-    }
+  if (hold.status === 'confirmed' || hold.status === 'delivered') {
+    return { alreadyProcessed: true, status: 'confirmed', parentBookingId: hold.id };
+  }
+  if (hold.status !== 'active') {
+    // Paid after the hold was already released. The money is real, the slot is not:
+    // surface a conflict so the office can refund or rebook by hand.
+    return { conflict: true, status: hold.status };
+  }
+  if (hold.expiresAtMs && hold.expiresAtMs <= now) {
+    return { conflict: true, status: 'expired' };
+  }
+  // The deposit owed is the one the server computed when the hold was created, never
+  // a number from the payload. A short payment does not confirm; it is left for the
+  // office, which is the only party that can decide whether to accept it.
+  if (amountCents != null && hold.depositCents && amountCents < hold.depositCents) {
+    return { conflict: true, status: hold.status, reason: 'underpaid', expectedCents: hold.depositCents };
+  }
 
-    await tx.markHoldStatus(current.id, 'confirmed');
-    await tx.markAllocationsStatus(current.id, 'active');
-    await tx.markAssignmentsStatus(current.parentBookingId, 'confirmed');
-    await tx.setBookingTreeStatus(current.parentBookingId, 'confirmed', { confirmedAtMs: now });
-
-    // Membership credits are NOT granted here. This is the one-off deposit path:
-    // paying a deposit buys one visit, not a monthly allowance. Credits are
-    // granted by a paid Stripe invoice and spent when a wash is delivered — see
-    // memberships.js. (Before the membership module existed this path granted
-    // them, which credited a customer for merely booking.)
-    const parent = await tx.getBooking(current.parentBookingId);
-    const contactId = parent && parent.contactId;
-
-    const assignments = await tx.assignmentsForParent(current.parentBookingId);
-    return { confirmed: true, status: 'confirmed', parentBookingId: current.parentBookingId, assignments, contactId };
+  // Promoting the hold is a status change on an object that already exists: no
+  // create, no delete, and no window in which the van looks free to someone else.
+  // It also cannot fail on a slot conflict, because the slot is already ours.
+  await ghl.updateCalendarEvent(activeConfig, holdId, {
+    status: 'confirmed',
+    // Drops the "sin pagar" label the hold carried, so the crew's calendar shows what
+    // the crew needs to see. The rest of the description — the running order, the
+    // total, the deposit — is what the crew panel reads, so it is rewritten intact.
+    title: hold.title.replace(/^RESERVA \(sin pagar\) — /, '').slice(0, 160) || 'Reserva confirmada',
+    description: buildDescription({ ...hold.fields, expiresAtMs: null })
   });
-
-  if (result.confirmed && config) {
-    await confirmExternalAppointments({ repository, config, hold, result });
-  }
-  return result;
-}
-
-// Promotes the hold's appointments to `confirmed` once a payment is verified.
-//
-// This used to CREATE a real appointment and then delete the block slot it
-// replaced. Now the hold already IS the appointment, so confirming is a status
-// change on an object that exists — no create, no delete, and no window in which
-// the van looks free to someone else. It also cannot fail on a slot conflict,
-// because the slot is already ours.
-async function confirmExternalAppointments({ repository, config, hold, result }) {
-  const parent = await repository.getBooking(result.parentBookingId);
-  const customer = (parent && parent.customer) || {};
-
-  for (const assignment of result.assignments) {
-    if (!assignment.externalEventId) continue;
-    try {
-      await ghl.updateCalendarEvent(config, assignment.externalEventId, {
-        status: 'confirmed',
-        // Drops the "sin pagar" label the hold carried, so the crew's calendar
-        // shows what the crew needs to see.
-        title: `${assignment.vehicleLabel} — ${customer.name || 'Website booking'}`,
-        description: `[Booking ${result.parentBookingId}] vehículo ${assignment.vehicleIndex + 1} de ${result.assignments.length}${customer.address ? ` · ${customer.address}` : ''}`
-      });
-    } catch (error) {
-      // The booking is paid and confirmed in Postgres, and the appointment is still
-      // on the van's calendar holding the slot — only its status and label are
-      // stale. That is a CRM cosmetic the office can fix, never a lost van.
-      console.error('[agenda] appointment confirmation failed', result.parentBookingId, assignment.id, error.name || 'Error');
-    }
-  }
-}
-
-// Confirms a hold that a MEMBERSHIP pays for.
-//
-// Same rule as the deposit path — a hold becomes a confirmed booking only on the
-// strength of a verified Stripe webhook — but the proof is different. There is no
-// per-visit payment: the proof is the contract's paid cycle, which invoice.paid
-// wrote and nothing else can. memberships.confirmVisit checks that before calling
-// here and passes what it verified as `reason`, so the audit row says which
-// invoice paid for this visit.
-async function confirmHoldForMembership({ holdId, reason, now = Date.now(), config = null }) {
-  const repository = getRepository();
-  const hold = await repository.getHold(holdId);
-  if (!hold) throw new RequestError('Hold not found', 404);
-  if (hold.status === 'confirmed') {
-    const assignments = await repository.assignmentsForParent(hold.parentBookingId);
-    return { parentBookingId: hold.parentBookingId, assignments, alreadyConfirmed: true };
-  }
-  if (!['active', 'converted'].includes(hold.status)) throw new SlotUnavailableError('This hold is no longer valid');
-  if (hold.expiresAtMs <= now) throw new SlotUnavailableError('This hold has expired');
-
-  const result = await repository.transaction([`day:${hold.slotDate}`], async tx => {
-    const current = await tx.getHold(hold.id, { forUpdate: true });
-    if (!current || !['active', 'converted'].includes(current.status)) {
-      throw new SlotUnavailableError('This hold is no longer valid');
-    }
-    await tx.markHoldStatus(current.id, 'confirmed');
-    await tx.markAllocationsStatus(current.id, 'active');
-    await tx.markAssignmentsStatus(current.parentBookingId, 'confirmed');
-    await tx.setBookingTreeStatus(current.parentBookingId, 'confirmed', { confirmedAtMs: now });
-    // Recorded in the same ledger the deposit flow uses, so "what authorised this
-    // confirmation?" has one answer for both kinds of booking.
-    await tx.insertPaymentEvent({
-      id: newId(),
-      provider: 'membership',
-      externalEventId: reason,
-      eventType: 'membership_cycle_paid',
-      outcome: 'paid',
-      holdId: current.id,
-      parentBookingId: current.parentBookingId,
-      submissionId: null,
-      amountCents: 0,
-      currency: 'USD',
-      payload: { reason }
-    });
-
-    const children = await tx.childBookings(current.parentBookingId);
-    const assignments = await tx.assignmentsForParent(current.parentBookingId);
-    return {
-      parentBookingId: current.parentBookingId,
-      childBookingId: children.length ? children[0].id : null,
-      assignments,
-      contactId: (await tx.getBooking(current.parentBookingId) || {}).contactId
-    };
-  });
-
-  if (config && result.contactId) {
-    await confirmExternalAppointments({ repository, config, hold, result });
-  }
-  return result;
+  console.log('[agenda] confirmed', holdId, externalEventId || '');
+  return { confirmed: true, status: 'confirmed', parentBookingId: hold.id, contactId: hold.contactId };
 }
 
 // ── Release and expiry ─────────────────────────────────────────────────────
 
-async function releaseWithin(tx, hold, reason, bookingStatus) {
-  await tx.markHoldStatus(hold.id, bookingStatus === 'expired' ? 'expired' : 'released', { failureReason: reason });
-  await tx.markAllocationsStatus(hold.id, 'released');
-  if (hold.parentBookingId) {
-    await tx.markAssignmentsStatus(hold.parentBookingId, 'released');
-    await tx.setBookingTreeStatus(hold.parentBookingId, bookingStatus, { cancelledAtMs: Date.now(), cancelReason: reason });
-  }
-}
-
-// Abandonment, an explicit cancel, or a failed payment: same outcome as expiry,
-// just triggered sooner.
-async function releaseHold({ holdId, reason = 'released', config = null }) {
-  const repository = getRepository();
-  const hold = await repository.getHold(holdId);
-  if (!hold) throw new RequestError('Hold not found', 404);
-  if (hold.status === 'confirmed') throw new RequestError('A confirmed booking cannot be released here', 409);
-
-  const eventIds = (await repository.allocationsForHold(holdId))
-    .map(allocation => allocation.externalEventId)
-    .filter(Boolean);
-
-  await repository.transaction([`day:${hold.slotDate}`], async tx => {
-    await releaseWithin(tx, hold, reason, reason === 'hold_expired' ? 'expired' : 'cancelled');
-  });
-  if (config && eventIds.length) await ghl.deleteCalendarEventsQuietly(config, eventIds);
-  return { released: true, holdId, freedEvents: eventIds.length };
-}
-
-// Sweeps holds whose 15 minutes ran out.
+// Abandonment, an explicit cancel, or a failed payment.
 //
-// Safe to run on a schedule and on demand at the same time. The listing pass uses
-// `for update skip locked` so two sweepers rarely pick the same hold, but the real
-// guarantee is the re-read below: each hold is locked again with `for update` and
-// released only if it is still unpaid and still expired. A second sweeper that
-// picked the same hold therefore finds it already expired and does nothing.
-async function releaseExpiredHolds({ now = Date.now(), limit = 25, config = null } = {}) {
-  const repository = getRepository();
-  const expired = await repository.transaction(['sweep'], async tx => tx.claimExpiredHolds(now, limit));
-  const released = [];
-
-  for (const hold of expired) {
-    const allocations = await repository.allocationsForHold(hold.id);
-    const eventIds = allocations.map(allocation => allocation.externalEventId).filter(Boolean);
-    const didRelease = await repository.transaction([`day:${hold.slotDate}`], async tx => {
-      const current = await tx.getHold(hold.id, { forUpdate: true });
-      // Someone may have paid between the listing and now; never release a booking
-      // that has since been confirmed.
-      if (!current || !['active', 'converted'].includes(current.status)) return false;
-      if (current.expiresAtMs > now) return false;
-      await releaseWithin(tx, current, 'hold_expired', 'expired');
-      return true;
-    });
-    // Only count and clean up what this run actually released, so a rolled-back
-    // transaction is never reported as a release.
-    if (!didRelease) continue;
-    released.push(hold.id);
-    if (config && eventIds.length) await ghl.deleteCalendarEventsQuietly(config, eventIds);
+// The appointment is DELETED rather than cancelled: an unpaid hold that nobody
+// completed is not a record of anything, and leaving it on the van's calendar as
+// `cancelled` would put noise in front of the crew every morning. A confirmed booking
+// is never deleted here — cancelling one of those is the office's or the crew's call,
+// and both do it by moving its status.
+async function releaseHold({ holdId, reason = 'released', config = null }) {
+  const activeConfig = config || ghl.getConfig();
+  const hold = await loadHold(holdId, { config: activeConfig });
+  if (!hold) throw new RequestError('Hold not found', 404);
+  if (hold.status === 'confirmed' || hold.status === 'delivered') {
+    throw new RequestError('A confirmed booking cannot be released here', 409);
   }
+  const failures = await ghl.deleteCalendarEventsQuietly(activeConfig, [holdId]);
+  if (failures.length) throw new RequestError('Could not release the reservation — please try again', 503);
+  console.log('[agenda] released', holdId, reason);
+  return { released: true, holdId, freedEvents: 1 };
+}
 
+// Sweeps holds whose fifteen minutes ran out.
+//
+// This is a TIDY-UP, not the mechanism: availability already ignores a lapsed hold and
+// a booking already deletes one that is in its way, so a slot is never lost waiting
+// for this to run. What it buys is a calendar the office can read — one cron a day is
+// all the Hobby plan allows, and it is all this needs to be worth having.
+//
+// Safe to run on a schedule and by hand at the same time: deleting an appointment
+// twice is a 404 the second time, which deleteCalendarEventsQuietly swallows.
+async function releaseExpiredHolds({ now = Date.now(), limit = 25, config = null } = {}) {
+  const activeConfig = config || ghl.getConfig();
+  const lapsed = (await scanFleet(activeConfig, { now }))
+    .filter(entry => isLapsedHold(entry.event, now))
+    .slice(0, limit);
+
+  const released = [];
+  for (const entry of lapsed) {
+    const failures = await ghl.deleteCalendarEventsQuietly(activeConfig, [entry.event.id]);
+    if (!failures.length) released.push(entry.event.id);
+  }
   return { released: released.length, holdIds: released };
 }
 
@@ -990,7 +893,7 @@ module.exports = {
   fingerprintRequest,
   visitWindow,
   allocateResources,
-  mergeBusy,
+  rotationCursor,
   dayBounds,
   computeAvailability,
   acquireHold,
@@ -1001,9 +904,15 @@ module.exports = {
   resolveHoldIdBySubmission,
   attachCustomer,
   confirmPayment,
-  confirmHoldForMembership,
   releaseHold,
   releaseExpiredHolds,
-  compensateHold,
-  describeHold
+  describeHold,
+  // Exported for the crew panel's sibling tests and for the sweeper's own checks:
+  // the description codec is a contract between this file and anything that reads an
+  // appointment written by it.
+  buildDescription,
+  parseHoldFields,
+  isWebsiteHold,
+  isLapsedHold,
+  holdFromEvent
 };

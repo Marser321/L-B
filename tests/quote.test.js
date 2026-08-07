@@ -149,7 +149,7 @@ test('a fifth vehicle is rejected with 422 even when the frontend is tampered wi
   assert.equal(res.statusCode, 422);
   assert.equal(res.body.code, 'MAX_VEHICLES_EXCEEDED');
   // Rejected before anything was written or blocked.
-  assert.equal(ctx.repository.__store().holds.length, 0);
+  assert.equal(ctx.holds().length, 0);
   assert.equal(ctx.ghl.created.length, 0);
   assert.equal(ctx.ghl.calls.length, 0);
 
@@ -307,27 +307,25 @@ test('a booking holds the vans, records the CRM, and stays pending until payment
   assert.equal(res.body.crew.length, 2);
   assert.equal(new Set(res.body.crew.map(entry => entry.resource)).size, 1, 'one van per address');
 
-  // The reservation exists in Postgres as parent + children + assignments.
-  const store = ctx.repository.__store();
-  assert.equal(store.holds.length, 1);
-  assert.equal(store.holds[0].status, 'converted');
-  // One assignment for the visit; the per-vehicle detail lives on the child bookings.
-  assert.equal(store.assignments.length, 1);
-  assert.equal(store.bookings.filter(booking => booking.parentBookingId).length, 2);
-  store.bookings.forEach(booking => {
-    assert.equal(booking.status, 'pending_payment');
-    assert.equal(booking.contactId, 'contact-1');
-    assert.equal(booking.submissionId, '123e4567-e89b-12d3-a456-426614174000');
-  });
+  // The reservation exists as ONE appointment on ONE van, still unpaid, carrying the
+  // ids that tie it back to the submission and the contact — which is all the payment
+  // webhook needs to find it again.
+  const held = ctx.holds();
+  assert.equal(held.length, 1);
+  assert.equal(held[0].appointmentStatus, 'new');
+  assert.equal(held[0].contactId, 'contact-1');
+  const fields = ctx.fieldsFor(held[0].id);
+  assert.equal(fields.submissionId, '123e4567-e89b-12d3-a456-426614174000');
+  assert.equal(fields.opportunityId, 'opp-1');
+  // The per-vehicle detail needs no rows: it is carried as offsets in the description.
+  assert.equal(fields.vehicles.length, 2);
 
   // The CRM got a contact, an opportunity in the PENDING stage, and the one van
   // blocked for both vehicles.
   const blocks = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
   assert.equal(blocks.length, 1, 'ONE appointment for the visit — the crew arrives once');
   assert.ok(CALENDARS.includes(blocks[0].calendarId));
-  // One assignment row, which is what keeps booking_assignments_resource_unique
-  // satisfied without migration 004.
-  assert.equal(ctx.repository.__store().assignments.length, 1);
+  assert.equal(ctx.appointments().length, 1);
   const opportunity = ctx.ghl.created.find(entry => entry.kind === 'opportunity');
   assert.equal(opportunity.body.pipelineStageId, 'stage-pending');
   // The van is blocked on its own calendar, not on a round-robin calendar.
@@ -371,7 +369,7 @@ test('a booking adopts a hold the browser already owns, and refuses a mismatched
   assert.equal(adopted.statusCode, 200);
   assert.equal(adopted.body.holdId, held.body.holdId);
   // Adopting must not take a second set of vans.
-  assert.equal(ctx.repository.__store().assignments.length, 1);
+  assert.equal(ctx.appointments().length, 1);
 
   // Holding a cheap wash and then submitting an expensive one is refused.
   const swapped = await callHandler(quoteHandler, payload({
@@ -392,8 +390,8 @@ test('a resubmitted form reuses the first hold instead of taking more vans', asy
   const second = await callHandler(quoteHandler, payload());
 
   assert.equal(first.body.holdId, second.body.holdId);
-  assert.equal(ctx.repository.__store().holds.length, 1);
-  assert.equal(ctx.repository.__store().assignments.length, 1);
+  assert.equal(ctx.holds().length, 1);
+  assert.equal(ctx.appointments().length, 1);
 });
 
 test('a booking is refused when the fleet is already full at that hour', async t => {
@@ -408,7 +406,7 @@ test('a booking is refused when the fleet is already full at that hour', async t
 
   const res = await callHandler(quoteHandler, payload());
   assert.equal(res.statusCode, 409);
-  assert.equal(ctx.repository.__store().holds.length, 0);
+  assert.equal(ctx.holds().length, 0);
 });
 
 test('the honeypot short-circuits before any CRM or database write', async t => {
@@ -420,7 +418,7 @@ test('the honeypot short-circuits before any CRM or database write', async t => 
   assert.equal(res.body.ok, true);
   assert.equal(res.body.holdId, undefined);
   assert.equal(ctx.ghl.calls.length, 0);
-  assert.equal(ctx.repository.__store().holds.length, 0);
+  assert.equal(ctx.holds().length, 0);
 });
 
 test('cross-origin and wrong methods fail, while CRM configuration cannot block a local quote', async t => {
@@ -442,7 +440,7 @@ test('cross-origin and wrong methods fail, while CRM configuration cannot block 
   assert.equal(unconfigured.statusCode, 200);
   assert.equal(unconfigured.body.syncPending, true);
   assert.equal(unconfigured.body.estimate.label, 'From $215');
-  assert.equal(ctx.repository.__store().holds.length, 0);
+  assert.equal(ctx.holds().length, 0);
 });
 
 test('a duplicate crew calendar cannot block a local quote response', async t => {
@@ -452,7 +450,7 @@ test('a duplicate crew calendar cannot block a local quote response', async t =>
   const res = await callHandler(quoteHandler, payload());
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.syncPending, true);
-  assert.equal(ctx.repository.__store().holds.length, 0);
+  assert.equal(ctx.holds().length, 0);
 });
 
 test('upstream HighLevel failures leave a safe local quote available', async t => {
@@ -515,8 +513,14 @@ test('a timed-out calendar read is retried, but a failed write never is', async 
   assert.equal(failed.statusCode, 200);
   assert.equal(failed.body.syncPending, true);
   assert.equal(blockPosts, 1, 'a failed write must not be auto-retried');
-  // And the reservation was compensated rather than left half-created.
-  assert.equal(ctx2.repository.__store().holds[0].status, 'failed');
+  // Nothing was reserved, and nothing has to be compensated: the reservation IS the
+  // appointment, so a create that failed leaves no trace to clean up. The old model
+  // wrote its rows first and then had to undo them here.
+  assert.equal(ctx2.holds().length, 0);
+  assert.equal(ctx2.appointments().length, 0);
+  // The customer still gets a priced quote — that is what syncPending means — and the
+  // slot is still free for the retry.
+  assert.equal(failed.body.holdId, '');
 });
 
 // ── Deposits ───────────────────────────────────────────────────────────────
@@ -573,8 +577,8 @@ test('a failed deposit invoice never destroys the reservation', async t => {
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.depositUrl, undefined);
   assert.equal(res.body.appointmentStatus, 'pending_payment');
-  // The vans are still held; the office can invoice by hand.
-  assert.equal(ctx.repository.__store().assignments[0].status, 'held');
+  // The van is still held; the office can invoice by hand.
+  assert.equal(ctx.holds().length, 1);
 });
 
 test('a location missing the deposit fields fails closed once deposits are on', async t => {
@@ -593,7 +597,7 @@ test('a location missing the deposit fields fails closed once deposits are on', 
   const res = await callHandler(quoteHandler, payload());
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.syncPending, true);
-  assert.equal(on.repository.__store().holds.length, 0, 'no van is held when the CRM is not ready');
+  assert.equal(on.holds().length, 0, 'no van is held when the CRM is not ready');
 });
 
 test('a valid canonical quote is local when HighLevel is unavailable', async t => {
@@ -627,7 +631,7 @@ test('empty and invalid carts return 422 before CRM or calendar initialization',
   }));
   assert.equal(invalidPackage.statusCode, 422);
   assert.equal(ctx.ghl.calls.length, 0);
-  assert.equal(ctx.repository.__store().holds.length, 0);
+  assert.equal(ctx.holds().length, 0);
 });
 
 // ── Confirmation ───────────────────────────────────────────────────────────
@@ -643,14 +647,14 @@ test('the payment webhook is the only door to a confirmed booking', async t => {
     type: 'InvoicePaid', id: 'evt-1', holdId: booked.body.holdId
   });
   assert.equal(unauthorized.statusCode, 401);
-  assert.equal(ctx.repository.__store().holds[0].status, 'converted');
+  assert.equal(ctx.holds()[0].appointmentStatus, 'new');
 
   const authorized = await callHandler(webhookHandler, {
     type: 'InvoicePaid', id: 'evt-1', holdId: booked.body.holdId, amount: 30
   }, { headers: { authorization: 'Bearer webhook-secret' } });
   assert.equal(authorized.statusCode, 200);
   assert.equal(authorized.body.confirmed, true);
-  assert.equal(ctx.repository.__store().holds[0].status, 'confirmed');
+  assert.equal(ctx.appointments()[0].appointmentStatus, 'confirmed');
 
   // An event type we do not act on is acknowledged, not retried forever.
   const ignored = await callHandler(webhookHandler, {
@@ -673,7 +677,7 @@ test('the payment webhook can find the reservation by submission id', async t =>
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.confirmed, true);
-  assert.equal(ctx.repository.__store().holds[0].status, 'confirmed');
+  assert.equal(ctx.appointments()[0].appointmentStatus, 'confirmed');
 });
 
 test('opportunityValues emits nothing for a booking that has no hold yet', t => {

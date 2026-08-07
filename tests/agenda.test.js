@@ -96,11 +96,11 @@ test('one to four vehicles all ride on ONE van, and a fifth is rejected with 422
       const blocked = ctx.ghl.created.filter(entry => entry.kind === 'appointment');
       assert.equal(blocked.length, 1, `expected 1 appointment for ${count} vehicles`);
       assert.ok(CALENDARS.includes(blocked[0].calendarId));
-      // And ONE assignment row, satisfying booking_assignments_resource_unique — the
-      // constraint that is still in production and that migration 004 would have had
-      // to drop if a visit wrote one row per vehicle.
-      assert.equal(ctx.repository.__store().assignments.length, 1);
-      assert.equal(ctx.repository.__store().allocations.length, 1);
+      // And that appointment covers the WHOLE chain, which is what "one van at one
+      // address" means: the block starts with the first vehicle and ends with the
+      // last one's buffer.
+      assert.equal(Date.parse(blocked[0].body.startTime), Date.parse(windows[0].startsAt));
+      assert.equal(agenda.parseHoldFields({ notes: blocked[0].body.description }).vehicles.length, count);
     } finally {
       ctx.restore();
     }
@@ -115,7 +115,7 @@ test('one to four vehicles all ride on ONE van, and a fifth is rejected with 422
   assert.match(res.body.error, /at most 4 vehicles/);
   // Rejected before anything was written or blocked.
   assert.equal(ctx.ghl.created.length, 0);
-  assert.equal(ctx.repository.__store().holds.length, 0);
+  assert.equal(ctx.holds().length, 0);
 });
 
 test('vehicles are washed one after another: the visit is the SUM of the services plus one buffer', async t => {
@@ -182,15 +182,14 @@ test('four addresses fill the fleet; the fifth customer at that hour gets 409', 
     assert.equal(res.body.assignments.length, 1);
   }
 
-  // Every van is on a different address, so all four are distinct.
-  const store = ctx.repository.__store();
-  assert.equal(new Set(store.assignments.map(assignment => assignment.resourceKey)).size, 4);
+  // Every van is on a different address, so all four calendars are distinct.
+  assert.equal(new Set(ctx.appointments().map(event => event.calendarId)).size, 4);
 
   const fifth = await callHandler(holdsHandler, holdRequest([car(4)]), withKey('addr-4-000001'));
   assert.equal(fifth.statusCode, 409, 'no van is left for a fifth address at that hour');
   // The refusal wrote nothing.
-  assert.equal(store.holds.length, 4);
-  assert.equal(store.assignments.length, 4);
+  assert.equal(ctx.holds().length, 4);
+  assert.equal(ctx.appointments().length, 4);
 });
 
 test('two requests racing for the last van: one wins, the other gets 409 and leaves nothing behind', async t => {
@@ -219,15 +218,12 @@ test('two requests racing for the last van: one wins, the other gets 409 and lea
   assert.equal(winner.body.assignments.length, 1);
   assert.match(loser.body.error, /no van is free|no longer available/i);
 
-  const store = ctx.repository.__store();
-  // Three pre-existing holds plus the winner. The loser rolled back completely.
-  assert.equal(store.holds.length, 4);
-  assert.equal(store.assignments.length, 4);
-  assert.equal(store.allocations.length, 4);
-  assert.equal(store.bookings.filter(booking => !booking.parentBookingId).length, 4);
-  assert.equal(store.bookings.filter(booking => booking.parentBookingId).length, 4);
-  // And it blocked no extra calendars.
-  assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'appointment').length, 4);
+  // Three pre-existing holds plus the winner, and nothing behind the loser: the
+  // refusal came from HighLevel's own slot validation, so there was never a half
+  // reservation to roll back. That is the guarantee the transaction used to give.
+  assert.equal(ctx.holds().length, 4);
+  assert.equal(ctx.appointments().length, 4);
+  assert.equal(new Set(ctx.appointments().map(event => event.calendarId)).size, 4);
 });
 
 test('a parent reservation with one child booking per vehicle, all on one van', async t => {
@@ -236,37 +232,30 @@ test('a parent reservation with one child booking per vehicle, all on one van', 
 
   await callHandler(holdsHandler, holdRequest([car(0), hauler()]), withKey('shape-00000001'));
 
-  const store = ctx.repository.__store();
-  const parents = store.bookings.filter(booking => !booking.parentBookingId);
-  const children = store.bookings.filter(booking => booking.parentBookingId);
+  // ONE appointment for the whole visit, not one per vehicle: a van at one address is
+  // busy for one contiguous block, and that is what the appointment means.
+  const appointments = ctx.appointments();
+  assert.equal(appointments.length, 1);
+  const [visit] = appointments;
+  assert.ok(CALENDARS.includes(visit.calendarId));
+  assert.equal(visit.appointmentStatus, 'new');
 
-  assert.equal(parents.length, 1);
-  assert.equal(children.length, 2);
-  assert.equal(parents[0].vehicleCount, 2);
-  children.forEach(child => assert.equal(child.parentBookingId, parents[0].id));
+  // It spans the whole chain: 60 of car + 90 of hauler + a 30-minute buffer = 180,
+  // not the longest single vehicle.
+  const spanMinutes = (Date.parse(visit.endTime) - Date.parse(visit.startTime)) / 60000;
+  assert.equal(spanMinutes, 180);
 
-  // Car 60, then hauler 90 + the 30-minute trailing buffer. The parent spans the
-  // whole chain: 60 + 120 = 180, not the longest single vehicle.
-  const childWindows = children.map(child => (child.slotEndMs - child.slotStartMs) / 60000).sort((a, b) => a - b);
-  assert.deepEqual(childWindows, [60, 120]);
-  assert.equal((parents[0].slotEndMs - parents[0].slotStartMs) / 60000, 180);
+  // The per-vehicle detail needs no row of its own: it is the visit's start plus each
+  // vehicle's offset, and both live in the appointment's own description.
+  const fields = agenda.parseHoldFields(visit);
+  assert.deepEqual(fields.vehicles.map(vehicle => vehicle.serviceMinutes), [60, 90]);
+  assert.deepEqual(fields.vehicles.map(vehicle => vehicle.offsetMinutes), [0, 60]);
 
-  // ONE assignment for the whole visit, not one per vehicle: a van at one address is
-  // busy for one contiguous block, and that is what the row means.
-  assert.equal(store.assignments.length, 1);
-  const [assignment] = store.assignments;
-  assert.ok(children.some(child => child.id === assignment.bookingId));
-  assert.ok(CALENDARS.includes(assignment.calendarId));
-  assert.equal(assignment.status, 'held');
-  // It spans the whole chain: 60 of car + 90 of hauler + a 30-minute buffer.
-  assert.equal(assignment.durationMinutes, 180);
-  assert.equal(assignment.startsAtMs, parents[0].slotStartMs);
-  assert.equal(assignment.endsAtMs, parents[0].slotEndMs);
   // And it names every vehicle it covers, so the crew's calendar reads correctly.
-  assert.match(assignment.vehicleLabel, /Camry/);
+  assert.match(visit.title, /Camry/);
 });
 
-test('the rotation cursor persists across bookings and starts at the next van each time', async t => {
+test('the rotation advances across bookings and starts at the next van each time', async t => {
   const ctx = setupAgenda();
   t.after(() => ctx.restore());
 
@@ -284,8 +273,9 @@ test('the rotation cursor persists across bookings and starts at the next van ea
   }
 
   assert.deepEqual(picked, ['camioneta_1', 'camioneta_2', 'camioneta_3', 'camioneta_4']);
-  // Back to the start on the fifth.
-  assert.equal(ctx.repository.__store().rotation.vans, 0);
+  // Nothing stores that cursor. It is the count of visits already on the day's
+  // calendars, so it advanced four times and wrapped back to van 1 by construction.
+  assert.equal(agenda.rotationCursor([ctx.appointments()], 4), 0);
 });
 
 test('rotation skips vans that are busy and only ever picks free ones', async t => {
@@ -326,11 +316,11 @@ test('a hold reserves the van in HighLevel so the office cannot book over it', a
   assert.equal(new Set(held.map(entry => entry.calendarId)).size, 1);
   assert.match(held[0].body.title, / \+ /, 'the single block names every vehicle it covers');
 
-  // The appointment id is recorded on both the allocation and the assignment, which
-  // is what lets expiry and compensation clean them up later.
-  const store = ctx.repository.__store();
-  store.allocations.forEach(allocation => assert.match(allocation.externalEventId, /^appt-/));
-  store.assignments.forEach(assignment => assert.match(assignment.externalEventId, /^appt-/));
+  // There is nothing to record the appointment id ON: the appointment IS the hold, so
+  // the id the browser was handed is the id of the block on the van's calendar. That is
+  // what expiry and release act on later.
+  assert.match(res.body.holdId, /^appt-/);
+  assert.ok(ctx.appointment(res.body.holdId), 'the hold id names a real appointment');
 });
 
 test('block slots are never used: the vans reject them outright', async t => {
@@ -349,7 +339,7 @@ test('block slots are never used: the vans reject them outright', async t => {
   );
 });
 
-test('a failed calendar write compensates every appointment already created and frees the slot', async t => {
+test('a failed calendar write leaves no reservation behind, and the slot stays bookable', async t => {
   // The visit's single appointment fails outright.
   const ctx = setupAgenda({ appointmentFailsAt: 0 });
   t.after(() => ctx.restore());
@@ -360,26 +350,24 @@ test('a failed calendar write compensates every appointment already created and 
     withKey('compensate-0001')
   );
 
-  assert.equal(res.statusCode, 503);
-  assert.match(res.body.error, /Could not reserve the crew calendars/);
+  assert.ok(res.statusCode >= 500, `expected an upstream failure, got ${res.statusCode}`);
 
-  // Both blocks that did get created were deleted again — no van is left blocked
-  // by a reservation that does not exist.
-  // Nothing was created, so there is nothing to undo — and crucially nothing is left
-  // behind either.
+  // There is no compensation to run and no half-written state to undo, which is the
+  // point of the reservation BEING the appointment: if the create failed, nothing
+  // exists. The old model wrote rows first and then had to delete calendar events it
+  // had already created when one of them failed.
   assert.deepEqual(ctx.ghl.deleted, []);
-  assert.equal(ctx.ghl.created.filter(entry => entry.kind === 'appointment').length, 0);
+  assert.equal(ctx.appointments().length, 0);
+  assert.equal(ctx.holds().length, 0);
 
-  const store = ctx.repository.__store();
-  assert.equal(store.holds[0].status, 'failed');
-  assert.equal(store.holds[0].failureReason, 'external_calendar_failed');
-  store.allocations.forEach(allocation => assert.equal(allocation.status, 'failed'));
-  store.assignments.forEach(assignment => assert.equal(assignment.status, 'released'));
-  store.bookings.forEach(booking => assert.equal(booking.status, 'failed'));
-
-  // Released assignments do not occupy a van, so the slot is immediately bookable.
-  const busy = await ctx.repository.busyAssignments({ fromMs: 0, toMs: Date.now() + 1e11 });
-  assert.equal(busy.length, 0);
+  // And the slot is immediately bookable, because nothing ever occupied it.
+  const free = setupAgenda();
+  try {
+    const retry = await callHandler(holdsHandler, holdRequest([car(0)]), withKey('compensate-0002'));
+    assert.equal(retry.statusCode, 201);
+  } finally {
+    free.restore();
+  }
 });
 
 test('a hold expires after 15 minutes: the van comes back and its appointments are removed', async t => {
@@ -394,21 +382,19 @@ test('a hold expires after 15 minutes: the van comes back and its appointments a
   // One minute before expiry nothing is released.
   let swept = await agenda.releaseExpiredHolds({ now: expiresAt - 60_000, config: require('../api/_lib/ghl.js').getConfig() });
   assert.equal(swept.released, 0);
-  assert.equal(ctx.repository.__store().assignments[0].status, 'held');
+  assert.equal(ctx.holds().length, 1, 'still held one minute before it lapses');
 
   // One second after, the hold lapses.
   swept = await agenda.releaseExpiredHolds({ now: expiresAt + 1000, config: require('../api/_lib/ghl.js').getConfig() });
   assert.equal(swept.released, 1);
 
-  const store = ctx.repository.__store();
-  assert.equal(store.holds[0].status, 'expired');
-  store.assignments.forEach(assignment => assert.equal(assignment.status, 'released'));
-  store.bookings.forEach(booking => assert.equal(booking.status, 'expired'));
-  assert.deepEqual(ctx.ghl.deleted, ['appt-1'], 'the visit had one appointment');
+  assert.deepEqual(ctx.ghl.deleted, [held.body.holdId], 'the visit had one appointment');
+  assert.equal(ctx.appointments().length, 0, 'the block is off the van calendar');
 
-  // The slot is free again for the next customer.
-  const busy = await ctx.repository.busyAssignments({ fromMs: 0, toMs: Date.now() + 1e11 });
-  assert.equal(busy.length, 0);
+  // The slot is free again for the next customer — and it was free BEFORE the sweep
+  // ran, which is what lazy expiry means: the sweep is tidy-up, not the mechanism.
+  const next = await callHandler(holdsHandler, holdRequest([car(3)]), withKey('expire-00000002'));
+  assert.equal(next.statusCode, 201);
 });
 
 test('hold status is PII-free and distinguishes active, expired, and payment-failed checkout states', async t => {
@@ -447,7 +433,10 @@ test('hold status is PII-free and distinguishes active, expired, and payment-fai
   const released = await callHandler(holdsHandler, { holdId: releasable.body.holdId }, { method: 'DELETE' });
   assert.equal(released.statusCode, 200);
   assert.equal(released.body.status, 'released');
-  assert.equal(ctx.repository.__store().holds.find(hold => hold.id === releasable.body.holdId).status, 'released');
+  // Releasing DELETES the block: an unpaid hold nobody completed is not a record of
+  // anything, and leaving it as cancelled would put noise in front of the crew.
+  assert.equal(ctx.appointment(releasable.body.holdId), null);
+  assert.ok(ctx.ghl.deleted.includes(releasable.body.holdId));
 });
 
 test('the expiry sweeper is authenticated and never releases a confirmed booking', async t => {
@@ -467,7 +456,7 @@ test('the expiry sweeper is authenticated and never releases a confirmed booking
   // Long past the 15 minutes, but paid: the sweeper must leave it alone.
   const swept = await agenda.releaseExpiredHolds({ now: Date.now() + 3600_000 });
   assert.equal(swept.released, 0);
-  assert.equal(ctx.repository.__store().holds[0].status, 'confirmed');
+  assert.equal(ctx.appointment(holdId).appointmentStatus, 'confirmed');
 
   const authorized = await callHandler(expireHandler, {}, { headers: { authorization: 'Bearer cron-secret' } });
   assert.equal(authorized.statusCode, 200);
@@ -487,7 +476,7 @@ test('an Idempotency-Key replays the same hold, and a different body with the sa
   assert.equal(replay.body.replayed, true);
   assert.equal(replay.body.holdId, first.body.holdId);
   // A retry must not take a second van.
-  assert.equal(ctx.repository.__store().assignments.length, 1);
+  assert.equal(ctx.appointments().length, 1);
 
   const different = await callHandler(holdsHandler, holdRequest([hauler()]), withKey('idem-00000001'));
   assert.equal(different.statusCode, 409);
@@ -687,15 +676,17 @@ test('a booking is confirmed only by a verified payment, and confirming is idemp
   const held = await callHandler(holdsHandler, holdRequest([membership(), car()]), withKey('pay-000000001'));
   const holdId = held.body.holdId;
 
-  // Held is not confirmed.
-  assert.equal(ctx.repository.__store().holds[0].status, 'active');
-  ctx.repository.__store().bookings.forEach(booking => assert.equal(booking.status, 'held'));
+  // Held is not confirmed: the appointment is `new`, and `new` means unpaid.
+  assert.equal(ctx.appointment(holdId).appointmentStatus, 'new');
+  assert.equal(ctx.holds().length, 1);
 
   await agenda.attachCustomer({
     holdId, submissionId: 'sub-000002', contactId: 'contact-9', customer: { name: 'Jane', address: '1 Palm Ave' }
   });
-  assert.equal(ctx.repository.__store().holds[0].status, 'converted');
-  ctx.repository.__store().bookings.forEach(booking => assert.equal(booking.status, 'pending_payment'));
+  // Attaching the customer writes the ids the payment webhook needs to find this
+  // appointment again, and leaves the status alone: still `new`, still unpaid.
+  assert.equal(ctx.appointment(holdId).appointmentStatus, 'new');
+  assert.equal(ctx.fieldsFor(holdId).submissionId, 'sub-000002');
 
   const config = require('../api/_lib/ghl.js').getConfig();
   const paid = await agenda.confirmPayment({
@@ -704,26 +695,26 @@ test('a booking is confirmed only by a verified payment, and confirming is idemp
   });
   assert.equal(paid.confirmed, true);
 
-  const store = ctx.repository.__store();
-  assert.equal(store.holds[0].status, 'confirmed');
-  store.bookings.forEach(booking => assert.equal(booking.status, 'confirmed'));
-  store.assignments.forEach(assignment => assert.equal(assignment.status, 'confirmed'));
+  assert.equal(ctx.appointment(holdId).appointmentStatus, 'confirmed');
 
-  // Paying a DEPOSIT buys this one visit and nothing else. It must not top up a
-  // membership balance: credits are granted by a paid Stripe invoice and spent
-  // when a wash is delivered (see tests/memberships.test.js). Booking a membership
-  // package through the deposit flow used to grant credits here, which paid the
-  // customer for merely booking.
-  assert.equal(await ctx.repository.membershipCreditBalance('contact-9'), 0);
-  assert.equal(ctx.repository.__store().ledger.length, 0);
+  // Paying a DEPOSIT buys this one visit and nothing else. It must not credit a
+  // membership: a credit is granted by a paid membership invoice and spent when a wash
+  // is delivered, which is the crew marking the appointment `showed`. Booking a
+  // membership package through the deposit flow used to grant credits here, which paid
+  // the customer for merely booking.
+  assert.equal(
+    ctx.ghl.calls.some(call => call.method === 'PUT' && call.path.startsWith('/opportunities/')),
+    false,
+    'confirming a deposit must not touch a membership contract'
+  );
 
-  // The same webhook firing again changes nothing.
+  // The same webhook firing again changes nothing. There is no ledger to deduplicate
+  // against: the appointment's own status answers "was this already applied?".
   const replay = await agenda.confirmPayment({
     provider: 'highlevel', externalEventId: 'evt-100', eventType: 'InvoicePaid',
     outcome: 'paid', holdId, amountCents: 5000, config
   });
   assert.equal(replay.alreadyProcessed, true);
-  assert.equal(ctx.repository.__store().ledger.length, 0);
 
   // Confirmation is a STATUS CHANGE on the appointments the hold already created —
   // nothing new is created and nothing is deleted. That is the point: there is no
@@ -732,9 +723,10 @@ test('a booking is confirmed only by a verified payment, and confirming is idemp
   assert.equal(appointments.length, 1, 'the visit had one appointment, and no more');
   assert.deepEqual(ctx.ghl.deleted, [], 'confirming deletes nothing');
 
-  // Each one was promoted to confirmed and relabelled away from "sin pagar".
+  // It was promoted to confirmed and relabelled away from "sin pagar".
   const updates = ctx.ghl.calls.filter(call =>
-    call.method === 'PUT' && call.path.startsWith('/calendars/events/appointments/')
+    call.method === 'PUT' && call.path.startsWith('/calendars/events/appointments/') &&
+    call.body && call.body.appointmentStatus === 'confirmed'
   );
   assert.equal(updates.length, 1);
   updates.forEach(update => {
@@ -755,12 +747,14 @@ test('a failed payment releases every van immediately', async t => {
   });
   assert.equal(result.released, true);
 
-  const store = ctx.repository.__store();
-  assert.equal(store.holds[0].status, 'released');
-  store.assignments.forEach(assignment => assert.equal(assignment.status, 'released'));
-  store.bookings.forEach(booking => assert.equal(booking.status, 'cancelled'));
-  const busy = await ctx.repository.busyAssignments({ fromMs: 0, toMs: Date.now() + 1e11 });
-  assert.equal(busy.length, 0);
+  // Cancelled, not deleted: the customer is still on the checkout screen and its poller
+  // has to be able to read WHY the slot went away.
+  assert.equal(ctx.appointment(holdId).appointmentStatus, 'cancelled');
+  assert.equal(ctx.fieldsFor(holdId).failureReason, 'payment_failed');
+
+  // And a cancelled appointment does not hold the van: the slot is bookable again.
+  const next = await callHandler(holdsHandler, holdRequest([car(2)]), withKey('failpay-000002'));
+  assert.equal(next.statusCode, 201);
 });
 
 test('paying after the hold lapsed is a conflict, not a confirmation', async t => {
@@ -776,7 +770,9 @@ test('paying after the hold lapsed is a conflict, not a confirmation', async t =
   });
   assert.equal(result.conflict, true);
   assert.equal(result.status, 'expired');
-  assert.equal(ctx.repository.__store().holds[0].status, 'expired');
+  // Not confirmed, and left exactly as it was: the money is real and the slot is not,
+  // so the office has to decide between a refund and a rebooking.
+  assert.equal(ctx.appointment(holdId).appointmentStatus, 'new');
 });
 
 test('an underpaid deposit does not confirm the booking', async t => {
@@ -793,7 +789,7 @@ test('an underpaid deposit does not confirm the booking', async t => {
   assert.equal(result.conflict, true);
   assert.equal(result.reason, 'underpaid');
   assert.equal(result.expectedCents, 5000);
-  assert.notEqual(ctx.repository.__store().holds[0].status, 'confirmed');
+  assert.notEqual(ctx.appointment(held.body.holdId).appointmentStatus, 'confirmed');
 });
 
 test('slots are computed in the location timezone, whatever the server or browser thinks', async t => {
@@ -839,9 +835,11 @@ test('a released hold frees its vans for the next customer', async t => {
 
 test('every paint tier is bookable, including the one that used to compute to zero minutes', async t => {
   // Regression: paint-enhancement was missing from FULL_DAY_PACKAGES while its
-  // category duration was {service: 0, buffer: 0}, so it produced an assignment
-  // whose start equalled its end. Postgres rejects that on two constraints, so the
-  // $299 tier answered 502 for every customer who tried to buy it.
+  // category duration was {service: 0, buffer: 0}, so it produced a window whose start
+  // equalled its end. Postgres used to reject that on two constraints and the $299 tier
+  // answered 502 for everyone; HighLevel refuses a zero-length appointment just the
+  // same, so the condition still has to hold — it is checked on the block that landed
+  // on the van's calendar.
   for (const packageId of ['paint-enhancement', 'paint-correction', 'ceramic-protection']) {
     const ctx = setupAgenda();
     try {
@@ -860,10 +858,13 @@ test('every paint tier is bookable, including the one that used to compute to ze
         `${packageId} must end after it starts`
       );
 
-      // The same two conditions Postgres enforces, checked on the stored row.
-      const stored = ctx.repository.__store().assignments[0];
-      assert.ok(stored.durationMinutes > 0, packageId);
-      assert.ok(stored.endsAtMs > stored.startsAtMs, packageId);
+      const [block] = ctx.appointments();
+      assert.ok(Date.parse(block.endTime) > Date.parse(block.startTime), packageId);
+      assert.equal(
+        (Date.parse(block.endTime) - Date.parse(block.startTime)) / 60000,
+        assignment.durationMinutes,
+        packageId
+      );
     } finally {
       ctx.restore();
     }
@@ -937,4 +938,135 @@ test('availability answers a paint cart with a reason, not an empty 60-day windo
   assert.equal(alone.body.bookingMode, 'full_day');
   assert.equal(alone.body.maxVehicles, 1);
   assert.ok(alone.body.dates.length > 0);
+});
+
+// ── What replaced the transaction and the sweeper ───────────────────────────
+
+test('a lapsed hold does not block the slot, and the next booking clears it', async t => {
+  const ctx = setupAgenda();
+  t.after(() => ctx.restore());
+
+  // Fill the fleet at one hour, then let all four holds lapse.
+  let lastExpiresAt = '';
+  for (const index of [0, 1, 2, 3]) {
+    const res = await callHandler(holdsHandler, holdRequest([car(index)]), withKey(`lapse-${index}-000001`));
+    assert.equal(res.statusCode, 201);
+    lastExpiresAt = res.body.expiresAt;
+  }
+  const lapsedAt = Date.parse(lastExpiresAt) + 1000;
+
+  // Availability at that hour is offered again WITHOUT any sweep having run: a `new`
+  // appointment past its own deadline is read as free. That is the mechanism; the daily
+  // cron is only tidy-up.
+  const availability = await callHandler(availabilityHandler, {
+    vehicles: [car(9)], from: DATE, to: DATE, now: lapsedAt
+  });
+  assert.equal(availability.statusCode, 200);
+
+  // And booking it works, because the create deletes the corpse that is in the way.
+  const reused = await agenda.acquireHold({
+    idempotencyKey: 'lapse-reuse-0001',
+    date: DATE,
+    startTime: '09:00',
+    vehicles: [{ packageId: 'premium-detail', sizeId: 'sedan', addonIds: [], vehicle: { make: 'Toyota', model: 'Camry9', year: 2024 } }],
+    customer: { name: 'Jane Driver', phone: '+12395550100', email: 'jane@example.com', address: '1234 Palm Ave', city: 'Fort Myers', zip: '33901' },
+    now: lapsedAt,
+    config: require('../api/_lib/ghl.js').getConfig()
+  });
+  assert.equal(reused.replayed, false);
+  assert.ok(ctx.ghl.deleted.length >= 1, 'the lapsed hold in the way was deleted');
+});
+
+test('an appointment the office typed in by hand is never treated as a lapsed hold', async t => {
+  const ctx = setupAgenda();
+  t.after(() => ctx.restore());
+
+  // Same shape as a hold — status `new`, on a van's calendar — but with none of our
+  // fields in its description. It is somebody's real booking, and the difference
+  // between "ours, lapsed" and "theirs" is the only thing standing between the sweeper
+  // and deleting the office's work.
+  const startMs = Date.parse(`${DATE}T13:00:00.000Z`);
+  ctx.ghl.calendarEvents[CALENDARS[0]] = [{
+    id: 'office-booked-1', start: startMs, end: startMs + 2 * 3600_000,
+    status: 'new', title: 'Llamó por teléfono', notes: 'sin datos'
+  }];
+
+  assert.equal(agenda.isWebsiteHold({ appointmentStatus: 'new', notes: 'sin datos' }), false);
+  assert.equal(agenda.isLapsedHold({ appointmentStatus: 'new', notes: 'sin datos' }, Date.now() + 1e9), false);
+
+  const swept = await agenda.releaseExpiredHolds({
+    now: Date.now() + 1e9, config: require('../api/_lib/ghl.js').getConfig()
+  });
+  assert.equal(swept.released, 0);
+  assert.deepEqual(ctx.ghl.deleted, [], "the office's appointment is untouchable");
+});
+
+test('the payment webhook can find a reservation by submission id alone', async t => {
+  const ctx = setupAgenda();
+  t.after(() => ctx.restore());
+
+  const held = await callHandler(holdsHandler, holdRequest([car()]), withKey('bysub-00000001'));
+  const config = require('../api/_lib/ghl.js').getConfig();
+  await agenda.attachCustomer({
+    holdId: held.body.holdId, submissionId: 'sub-abc-000001',
+    contactId: 'contact-1', opportunityId: 'opp-1', customer: { name: 'Jane' }, config
+  });
+
+  // Written into the appointment, so it is findable without an index of our own.
+  const found = await agenda.resolveHoldIdBySubmission('sub-abc-000001', { config });
+  assert.equal(found, held.body.holdId);
+  assert.equal(await agenda.resolveHoldIdBySubmission('sub-does-not-exist', { config }), null);
+});
+
+test('the description is a contract with the crew panel', async t => {
+  const ctx = setupAgenda();
+  t.after(() => ctx.restore());
+
+  const res = await callHandler(holdsHandler, holdRequest([car(0), car(1)]), withKey('crewdesc-00001'));
+  assert.equal(res.statusCode, 201);
+  const description = ctx.appointments()[0].notes;
+
+  // The crew panel parses these three off the SAME string, stopping at the next '·'.
+  const crew = require('../api/crew.js')._test;
+  const money = crew.moneyFromDescription(description);
+  assert.equal(money.deposit, 30);
+  assert.ok(money.total > 0);
+  assert.equal(money.balance, money.total - money.deposit);
+  // Both vehicles survive in the running order: joining it with '·' truncated a two-car
+  // stop to one car once, and the crew drove out with half the work.
+  const order = crew.orderFromDescription(description);
+  assert.equal(order.split(',').length, 2);
+});
+
+test('losing the race on one van does not cost the booking when another is free', async t => {
+  const ctx = setupAgenda();
+  t.after(() => ctx.restore());
+
+  // The van the rotation points at refuses the window — somebody won the race on it
+  // between our read and our write. HighLevel answers with the slot-taken 400, exactly
+  // as the live sub-account does.
+  const realFetch = globalThis.fetch;
+  let refusals = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    const isCreate = String(url).endsWith('/calendars/events/appointments') &&
+      (options.method || 'GET').toUpperCase() === 'POST';
+    if (isCreate && refusals === 0) {
+      refusals += 1;
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({ message: 'The slot you have selected is no longer available.', statusCode: 400 })
+      };
+    }
+    return realFetch(url, options);
+  };
+
+  const res = await callHandler(holdsHandler, holdRequest([car()]), withKey('raceover-00001'));
+
+  // Served, on a different van. The old code answered 409 here and sent a customer away
+  // from three empty vans.
+  assert.equal(res.statusCode, 201);
+  assert.equal(refusals, 1);
+  assert.equal(ctx.appointments().length, 1);
+  assert.notEqual(res.body.assignments[0].resource, 'camioneta_1');
 });

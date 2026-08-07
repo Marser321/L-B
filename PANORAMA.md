@@ -103,7 +103,7 @@ base de datos, no sólo por código:
 - **Máximo 4 vehículos por reserva** (HTTP 422), o **2 si el carrito lleva náutica**, ya que
   cada bote o jet ski son dos horas de servicio.
 - **Una camioneta no puede tener dos trabajos superpuestos**: constraint de exclusión en
-  Postgres, no un `if`.
+  el calendario de HighLevel, no un `if`.
 - **Sólo un webhook de pago verificado confirma una reserva.**
 - **48 h de antelación sólo para membresías**; el resto conserva 1 h.
 - **Los créditos de membresía no se acumulan** y se descuentan al completar el servicio,
@@ -173,7 +173,6 @@ hoy se resuelve conversando y devolviendo por fuera del sistema, sin registro.
 
 ```bash
 npm install
-DATABASE_URL=… npm run migrate                       # agrega 003_crm_catalog.sql
 node scripts/provision-crm-catalog.mjs               # dry run: 88 productos / 142 precios
 node scripts/provision-crm-catalog.mjs --apply       # escribe en el CRM y en el price map
 ```
@@ -360,13 +359,14 @@ Lo que **queda abierto**:
 - La detección de membresía en el cotizador exige matrícula, y el campo es **opcional**.
 - ~~`PUT /opportunities/{id}` fusiona o reemplaza~~ → **verificado: fusiona.** Ver el
   sondeo de escritura más abajo.
-- `dependencies.js` (POST) descarta el `mapping`, así que `crm_price_map` sigue vacío.
-- `api/memberships/visits.js` (Postgres + Stripe) sigue desplegado.
+- El `crm_price_map` ya no existe: se fue con Postgres el 7 ago 2026, y las facturas
+  llevan los nombres y montos del catálogo propio (que es lo que producción siempre hizo).
+- `api/memberships/visits.js` se borró junto con el módulo de membresías sobre Postgres.
 
 ## 8. Estado de las pruebas
 
-199 pruebas, 189 corren en cualquier máquina y 10 se saltean sin `DATABASE_URL`
-(las de Postgres real). `npm test`.
+186 pruebas, todas corren en cualquier máquina: no hay base de datos que preparar.
+`npm test`.
 
 Nada de lo descrito en §7 bis está desplegado. **Ya no hace falta aprovisionar nada en
 el CRM antes**: el sondeo confirmó que el pipeline, las etapas y los siete campos

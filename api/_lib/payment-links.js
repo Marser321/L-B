@@ -14,11 +14,16 @@
 // the same module the quote endpoint uses — and then attaches the CRM product and
 // price that the provisioner created for it.
 //
-// Idempotency is a claimed row in `payment_links`, keyed by what the link is FOR.
-// Two clicks on "send payment link", or a retry after a timeout, return the first
-// link instead of issuing a second invoice.
-
-const crypto = require('node:crypto');
+// Idempotency is the INVOICE ITSELF. Every name this module builds is deterministic
+// (`Booking Deposit — hold:<id>`), so an existing invoice under the same name is the
+// earlier attempt: two clicks on "send payment link", or a retry after a timeout,
+// find it and return it instead of billing the customer twice.
+//
+// That used to be a claimed row in a `payment_links` table, with the CRM lookup as a
+// fallback for when the table was missing. The fallback was the only path production
+// ever took — migration 003 shipped unapplied — and it is now the only path there is.
+// Asking the system that holds the money whether it already took it beats keeping a
+// second ledger that can disagree with it.
 
 const { RequestError } = require('./errors.js');
 const catalog = require('./catalog.js');
@@ -26,78 +31,51 @@ const pricing = require('./pricing.js');
 const membershipCatalog = require('./membership-catalog.js');
 const crmCatalog = require('./crm-catalog.js');
 const ghl = require('./ghl.js');
-const { getRepository } = require('./repository.js');
 
 const PURPOSES = Object.freeze(['booking_deposit', 'service', 'membership', 'manual']);
 const ORIGINS = Object.freeze(['web', 'office']);
 const INVOICE_VERSION = '2021-07-28';
 const LINK_TIMEOUT_MS = 8 * 1000;
 
-function newId() {
-  return crypto.randomUUID();
-}
-
 function centsToMajor(cents) {
   return Math.round(cents) / 100;
 }
 
-// Looks up the CRM product/price backing a catalog identifier. Returns null when
-// the catalog has not been provisioned yet, which the caller reports as a
-// configuration problem rather than silently charging an unlinked amount.
-async function crmPriceFor(repository, query, livemode) {
-  try {
-    return await repository.findCrmPrice({ ...query, livemode });
-  } catch (error) {
-    // No price map table at all is the same answer as an empty one: the catalog has
-    // not been provisioned, so the invoice carries our own names and amounts and
-    // simply is not broken down by CRM product. An unprovisioned catalog must never
-    // be the reason a customer cannot pay.
-    if (repository.isUndefinedTable && repository.isUndefinedTable(error)) return null;
-    throw error;
-  }
-}
-
 // ── Line building ──────────────────────────────────────────────────────────
 
-// One line per vehicle service, one per add-on. Amounts come from pricing.js; the
-// CRM ids are attached when the catalog has been provisioned, so the invoice is
-// composed of real products and can be reported on by product.
-async function buildLines({ purpose, vehicles = [], deposit = null, contract = null, livemode, repository = getRepository() }) {
+// One line per vehicle service, one per add-on, with amounts from pricing.js.
+//
+// The lines used to carry the CRM product and price backing each catalog id, read
+// from a `crm_price_map` table. That mapping lived only in Postgres and was never
+// applied to production, so every invoice this module has ever issued has carried our
+// own names and amounts — which is what it does now, by construction. The products
+// still exist in the CRM; what is gone is the second copy of the pairing.
+function buildLines({ purpose, vehicles = [], deposit = null, contract = null }) {
   const lines = [];
 
   if (purpose === 'membership') {
     if (!contract) throw new RequestError('A membership contract is required', 400, 'PAYMENT_LINK_INVALID');
     const price = membershipCatalog.priceFor(contract.packageId, contract.sizeId);
-    const crmPrice = await crmPriceFor(repository, {
-      kind: 'membership', packageId: contract.packageId, sizeId: contract.sizeId
-    }, livemode);
     lines.push({
       kind: 'membership',
       name: price.label,
       amountCents: price.monthlyCents,
       quantity: 1,
       packageId: contract.packageId,
-      sizeId: contract.sizeId,
-      crmProductId: crmPrice ? crmPrice.crmProductId : null,
-      crmPriceId: crmPrice ? crmPrice.crmPriceId : null
+      sizeId: contract.sizeId
     });
     return lines;
   }
 
   for (const vehicle of vehicles) {
     const bounds = pricing.packagePriceBounds(vehicle.packageId, vehicle.sizeId);
-    const crmPrice = await crmPriceFor(repository, {
-      kind: 'service', packageId: vehicle.packageId, sizeId: vehicle.sizeId
-    }, livemode);
     lines.push({
       kind: 'service',
       name: `${crmCatalog.packageName(vehicle.packageId)} · ${crmCatalog.sizeName(vehicle.sizeId)}`,
       amountCents: Math.round(bounds.min * 100),
       quantity: 1,
       packageId: vehicle.packageId,
-      sizeId: vehicle.sizeId,
-      crmProductId: crmPrice ? crmPrice.crmProductId : null,
-      crmPriceId: crmPrice ? crmPrice.crmPriceId : null
+      sizeId: vehicle.sizeId
     });
 
     for (const addonId of vehicle.addonIds || []) {
@@ -105,29 +83,23 @@ async function buildLines({ purpose, vehicles = [], deposit = null, contract = n
       // A custom-quote add-on has no amount and no product; it is recorded on the
       // line list so the office sees it, but it is never charged automatically.
       if (addonBounds.custom || !(addonBounds.min > 0)) continue;
-      const crmAddon = await crmPriceFor(repository, { kind: 'addon', addonId }, livemode);
       lines.push({
         kind: 'addon',
         name: crmCatalog.addonName(addonId),
         amountCents: Math.round(addonBounds.min * 100),
         quantity: 1,
-        addonId,
-        crmProductId: crmAddon ? crmAddon.crmProductId : null,
-        crmPriceId: crmAddon ? crmAddon.crmPriceId : null
+        addonId
       });
     }
   }
 
   if (deposit) {
     const productKey = deposit.amount >= catalog.DEPOSIT_LARGE ? 'deposit-large' : 'deposit-small';
-    const crmDeposit = await crmPriceFor(repository, { kind: 'deposit', productKey }, livemode);
     lines.push({
       kind: 'deposit',
       name: productKey === 'deposit-large' ? 'Booking Deposit (Large Vehicle)' : 'Booking Deposit (Standard)',
       amountCents: Math.round(deposit.amount * 100),
-      quantity: 1,
-      crmProductId: crmDeposit ? crmDeposit.crmProductId : null,
-      crmPriceId: crmDeposit ? crmDeposit.crmPriceId : null
+      quantity: 1
     });
   }
 
@@ -191,75 +163,28 @@ async function issuePaymentLink({
   parentBookingId = null,
   contractId = null,
   createdBy = null,
-  config = null,
-  now = Date.now()
+  config = null
 }) {
   if (!PURPOSES.includes(purpose)) throw new RequestError('purpose is invalid', 400, 'PAYMENT_LINK_INVALID');
   if (!ORIGINS.includes(origin)) throw new RequestError('origin is invalid', 400, 'PAYMENT_LINK_INVALID');
   if (!contact || !contact.id) throw new RequestError('A CRM contact is required', 400, 'PAYMENT_LINK_INVALID');
 
-  const repository = getRepository();
   const activeConfig = config || ghl.getConfig();
   const amountCents = totalCents(lines);
   const name = paymentLinkName({ purpose, holdId, contractId, createdBy });
 
-  // The ledger is a convenience, not the thing that takes the money: it gives this
-  // call idempotency and leaves an audit row. When its table is not there, the
-  // customer must still be able to pay — losing the row is a reporting gap, while
-  // losing the link is a booking nobody can complete. That distinction is not
-  // hypothetical: migration 003 shipped without being applied to production, and
-  // every website deposit from that day on failed with 42P01, swallowed by the
-  // caller, leaving the customer on a "payment unavailable" screen.
-  let ledgerAvailable = true;
-  let claim = { inserted: true };
-  try {
-    claim = await repository.transaction([`payment-link:${idempotencyKey}`], async tx => tx.insertPaymentLink({
-      id: newId(),
-      idempotencyKey,
-      purpose,
-      origin,
-      holdId,
-      parentBookingId,
-      contractId,
-      contactId: contact.id,
-      lines,
-      amountCents,
-      createdBy
-    }));
-  } catch (error) {
-    if (!repository.isUndefinedTable || !repository.isUndefinedTable(error)) throw error;
-    ledgerAvailable = false;
-    console.error('[payment-links] ledger table missing; issuing without it', purpose, idempotencyKey);
-  }
-
-  // Without the ledger, the CRM is the record of what was already invoiced. Every
-  // name this module builds is deterministic, so an existing invoice under the same
-  // name IS the earlier attempt — the same answer the claim above would have given,
-  // reached through the only storage that is definitely there.
-  if (!ledgerAvailable) {
-    const existingInvoice = await ghl.findInvoiceByName(activeConfig, name);
-    const existingUrl = existingInvoice && typeof existingInvoice.invoiceUrl === 'string' ? existingInvoice.invoiceUrl : '';
-    if (existingInvoice && existingUrl) {
-      return {
-        url: existingUrl,
-        invoiceId: String(existingInvoice._id || existingInvoice.id || ''),
-        amount: centsToMajor(amountCents),
-        status: 'issued',
-        duplicate: true,
-        degraded: true
-      };
-    }
-  }
-
-  if (!claim.inserted) {
-    // Someone already asked for this link. Hand back what they got rather than
-    // billing the customer twice for the same thing.
-    const existing = await repository.getPaymentLinkByKey(idempotencyKey);
+  // Has this already been invoiced? The name is deterministic, so an invoice under it
+  // IS an earlier attempt at this same link. Asked before creating, which is what
+  // makes a retry after a timeout safe: the customer gets the first invoice back
+  // rather than a second one for the same job.
+  const existingInvoice = await ghl.findInvoiceByName(activeConfig, name);
+  const existingUrl = existingInvoice && typeof existingInvoice.invoiceUrl === 'string' ? existingInvoice.invoiceUrl : '';
+  if (existingInvoice && existingUrl) {
     return {
-      url: existing ? existing.url : null,
-      invoiceId: existing ? existing.crmInvoiceId : null,
-      amount: existing ? centsToMajor(existing.amountCents) : centsToMajor(amountCents),
-      status: existing ? existing.status : 'pending',
+      url: existingUrl,
+      invoiceId: String(existingInvoice._id || existingInvoice.id || ''),
+      amount: centsToMajor(amountCents),
+      status: 'issued',
       duplicate: true
     };
   }
@@ -282,21 +207,10 @@ async function issuePaymentLink({
     const url = result && typeof result.invoiceUrl === 'string' ? result.invoiceUrl : '';
     const invoiceId = result && result.invoice && result.invoice._id ? String(result.invoice._id) : '';
     if (!url) throw new RequestError('The CRM did not return a payable link', 502, 'PAYMENT_LINK_FAILED');
-
-    if (ledgerAvailable) {
-      await repository.transaction([`payment-link:${idempotencyKey}`], async tx => {
-        await tx.markPaymentLinkIssued(idempotencyKey, { crmInvoiceId: invoiceId, url });
-      });
-    }
-    return { url, invoiceId, amount: centsToMajor(amountCents), status: 'issued', duplicate: false, ...(ledgerAvailable ? {} : { degraded: true }) };
+    return { url, invoiceId, amount: centsToMajor(amountCents), status: 'issued', duplicate: false };
   } catch (error) {
-    // The claim stays, marked failed, so the failure is visible and a retry with
-    // the same key does not silently create a second invoice behind it.
-    if (ledgerAvailable) {
-      await repository.transaction([`payment-link:${idempotencyKey}`], async tx => {
-        await tx.markPaymentLinkFailed(idempotencyKey, error.message);
-      });
-    }
+    // Nothing to mark failed: an invoice that was never created leaves no trace, and
+    // one that WAS created is found by the lookup above on the next attempt.
     throw error instanceof RequestError
       ? error
       : new RequestError('Could not create the payment link', 502, 'PAYMENT_LINK_FAILED');

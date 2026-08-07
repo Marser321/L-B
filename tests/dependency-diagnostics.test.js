@@ -17,7 +17,9 @@ test('dependency diagnostics require an office token and never return secret val
     method: 'GET', headers: { authorization: 'Bearer diagnostic-token' }
   });
   assert.equal(accepted.statusCode, 200);
-  assert.equal(accepted.body.dependencies.database.configured, false);
+  // There is no `database` key any more: the agenda, the holds and the credits live in
+  // HighLevel. Its absence is the assertion.
+  assert.equal(accepted.body.dependencies.database, undefined);
   assert.equal(accepted.body.dependencies.highLevel.crewCalendars.configured, 4);
   // No payment-provider key of our own since Stripe was removed; what the runbook
   // reports is whether deposit collection is on and in which mode.

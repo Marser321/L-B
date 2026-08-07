@@ -156,7 +156,7 @@ was already applied.
 
 See `.env.example` for the annotated list. In short: `STRIPE_SECRET_KEY` (its
 prefix decides live vs test), `STRIPE_WEBHOOK_SECRET`, the checkout return URLs,
-`DATABASE_URL`, the HighLevel credentials and four `GHL_CALENDAR_CAMIONETA_*`
+The HighLevel credentials and four `GHL_CALENDAR_CAMIONETA_*`
 calendar ids, the four `GHL_WORKFLOW_*_URL` endpoints, and `OFFICE_API_TOKEN` for
 the actions that change what a customer owes.
 
@@ -164,7 +164,6 @@ the actions that change what a customer owes.
 
 ```bash
 npm install
-DATABASE_URL=… npm run migrate                     # adds 002_memberships.sql
 node scripts/provision-stripe.mjs                  # look first
 node scripts/provision-stripe.mjs --apply          # test mode
 ```

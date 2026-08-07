@@ -1,10 +1,9 @@
 'use strict';
 
 // Shared test scaffolding: a configured environment, a fake HighLevel, and a
-// fresh in-memory agenda repository per test.
+// fake HighLevel per test. There is no database to reset: the CALENDAR is the store,
+// so a test seeds appointments and asserts on appointments.
 
-const { createMemoryRepository } = require('../../api/_lib/repository-memory.js');
-const { setRepositoryForTests } = require('../../api/_lib/repository.js');
 const { resetCalendarStateCache } = require('../../api/_lib/ghl.js');
 
 const CALENDARS = ['cal-van-1', 'cal-van-2', 'cal-van-3', 'cal-van-4'];
@@ -80,6 +79,23 @@ function createGhlStub(options = {}) {
     failures: options.failures || {}
   };
 
+  // A created appointment as HighLevel reports it back. `notes` is the field a
+  // listing returns the description in, which is what the crew panel and the agenda
+  // both parse — so the fake must answer with it, not with `description`.
+  function appointmentView(entry) {
+    return {
+      id: entry.id,
+      calendarId: entry.calendarId,
+      startTime: entry.body.startTime,
+      endTime: entry.body.endTime,
+      appointmentStatus: entry.body.appointmentStatus || 'confirmed',
+      title: entry.body.title || '',
+      address: entry.body.address || '',
+      notes: entry.body.description || entry.body.notes || '',
+      contactId: entry.body.contactId || ''
+    };
+  }
+
   function json(body, status = 200) {
     return {
       ok: status >= 200 && status < 300,
@@ -108,29 +124,75 @@ function createGhlStub(options = {}) {
       });
     }
 
-    if (method === 'GET' && path.startsWith('/calendars/events')) {
+    // A listing returns BOTH the appointments a test seeded and the ones the code
+    // under test created. Keeping created appointments out of it — which this fake used
+    // to do — made the calendar look empty to anything that reads its own writes back,
+    // and the agenda now reads its own writes back for every decision it makes: what is
+    // busy, which holds have lapsed, whether this request was already held.
+    if (method === 'GET' && path.startsWith('/calendars/events') &&
+        !path.startsWith('/calendars/events/appointments/')) {
       const params = new URLSearchParams(path.split('?')[1] || '');
       const calendarId = params.get('calendarId');
       // HighLevel honours the requested window; so must the fake, or a test that
       // asserts "yesterday is invisible" passes for the wrong reason.
       const fromMs = Number(params.get('startTime'));
       const toMs = Number(params.get('endTime'));
-      const events = (state.calendarEvents[calendarId] || [])
-        .filter(event => !Number.isFinite(fromMs) || !Number.isFinite(toMs) || (event.start < toMs && event.end > fromMs))
-        .map((event, index) => ({
-          id: event.id || `manual-${calendarId}-${index}`,
-          startTime: new Date(event.start).toISOString(),
-          endTime: new Date(event.end).toISOString(),
-          appointmentStatus: event.status || 'confirmed',
-          // Passed through because the crew panel reads them. Dropping them here made
-          // the fake narrower than the real API, which is how a screen that works in
-          // tests renders blank in a driveway.
-          ...(event.title ? { title: event.title } : {}),
-          ...(event.address ? { address: event.address } : {}),
-          ...(event.notes ? { notes: event.notes } : {}),
-          ...(event.contactId ? { contactId: event.contactId } : {})
-        }));
+      const inWindow = (start, end) =>
+        !Number.isFinite(fromMs) || !Number.isFinite(toMs) || (start < toMs && end > fromMs);
+      const events = [
+        ...(state.calendarEvents[calendarId] || [])
+          .map((event, index) => ({ ...event, id: event.id || `manual-${calendarId}-${index}` }))
+          .filter(event => !state.deleted.includes(event.id) && inWindow(event.start, event.end))
+          .map(event => ({
+            id: event.id,
+            calendarId,
+            startTime: new Date(event.start).toISOString(),
+            endTime: new Date(event.end).toISOString(),
+            appointmentStatus: event.status || 'confirmed',
+            // Passed through because the crew panel reads them. Dropping them here made
+            // the fake narrower than the real API, which is how a screen that works in
+            // tests renders blank in a driveway.
+            ...(event.title ? { title: event.title } : {}),
+            ...(event.address ? { address: event.address } : {}),
+            ...(event.notes ? { notes: event.notes } : {}),
+            ...(event.contactId ? { contactId: event.contactId } : {})
+          })),
+        ...state.created
+          .filter(entry => entry.kind === 'appointment' &&
+            entry.calendarId === calendarId &&
+            !state.deleted.includes(entry.id) &&
+            inWindow(Date.parse(entry.body.startTime), Date.parse(entry.body.endTime)))
+          .map(entry => appointmentView(entry))
+      ];
       return json({ events });
+    }
+
+    // One appointment by id. The agenda reads a hold back through this to answer "is
+    // this reservation still mine?" without a table of its own.
+    if (method === 'GET' && path.startsWith('/calendars/events/appointments/')) {
+      const id = decodeURIComponent(path.split('/').pop().split('?')[0]);
+      if (state.deleted.includes(id)) return json({ message: 'Appointment not found' }, 404);
+      const created = state.created.find(entry => entry.kind === 'appointment' && entry.id === id);
+      if (created) return json({ appointment: appointmentView(created) });
+      for (const [calendarId, events] of Object.entries(state.calendarEvents)) {
+        const seeded = events.find(event => event.id === id);
+        if (seeded) {
+          return json({
+            appointment: {
+              id,
+              calendarId,
+              startTime: new Date(seeded.start).toISOString(),
+              endTime: new Date(seeded.end).toISOString(),
+              appointmentStatus: seeded.status || 'confirmed',
+              title: seeded.title || '',
+              address: seeded.address || '',
+              notes: seeded.notes || '',
+              contactId: seeded.contactId || ''
+            }
+          });
+        }
+      }
+      return json({ message: 'Appointment not found' }, 404);
     }
 
     // Block slots are gone from the agenda: the real sub-account answers 400 "The
@@ -165,17 +227,26 @@ function createGhlStub(options = {}) {
         const clash = state.created.some(entry =>
           entry.kind === 'appointment' &&
           !state.deleted.includes(entry.id) &&
+          // A cancelled appointment does not hold the slot — upstream lets a new one be
+          // booked over it, and a fake that refuses is a fake that invents a 409 the
+          // customer would never get.
+          String(entry.body.appointmentStatus || '') !== 'cancelled' &&
           entry.calendarId === body.calendarId &&
           Date.parse(entry.body.startTime) < end &&
           start < Date.parse(entry.body.endTime)
-        ) || (state.calendarEvents[body.calendarId] || []).some(event =>
+        ) || (state.calendarEvents[body.calendarId] || []).some((event, index) =>
+          !state.deleted.includes(event.id || `manual-${body.calendarId}-${index}`) &&
+          String(event.status || '') !== 'cancelled' &&
           event.start < end && start < event.end
         );
         if (clash) {
           return json({ message: 'The slot you have selected is no longer available.', statusCode: 400 }, 400);
         }
       }
-      const id = `appt-${index + 1}`;
+      // Long enough to look like a real HighLevel id: the hold id IS this id now, and
+      // the endpoints that take one require at least 8 characters. A fake that hands
+      // out `appt-1` makes every status poll a 400 that production would never see.
+      const id = `appt-${String(index + 1).padStart(8, '0')}`;
       state.created.push({ kind: 'appointment', id, calendarId: body.calendarId, body });
       return json({ id, ...body });
     }
@@ -198,6 +269,7 @@ function createGhlStub(options = {}) {
         if (seeded) {
           if (body.appointmentStatus) seeded.status = body.appointmentStatus;
           if (body.title) seeded.title = body.title;
+          if (body.description) seeded.notes = body.description;
           return json({ id, ...body });
         }
       }
@@ -374,11 +446,10 @@ function createGhlStub(options = {}) {
   return { state, fetchStub };
 }
 
-// Fresh repository + fake HighLevel for one test.
+// Fake HighLevel for one test, plus the helpers that read the calendar back — which
+// is the whole state of the agenda now.
 function setupAgenda(options = {}) {
   installEnv(options.env || {});
-  const repository = createMemoryRepository();
-  setRepositoryForTests(repository);
   const ghl = createGhlStub(options);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = ghl.fetchStub;
@@ -386,12 +457,33 @@ function setupAgenda(options = {}) {
   // pure contamination: one test's "all four vans on" would answer the next test's
   // "van 2 is off".
   resetCalendarStateCache();
+  const agenda = require('../../api/_lib/agenda.js');
+  const live = () => ghl.state.created
+    .filter(entry => entry.kind === 'appointment' && !ghl.state.deleted.includes(entry.id))
+    .map(entry => ({
+      id: entry.id,
+      calendarId: entry.calendarId,
+      title: entry.body.title || '',
+      notes: entry.body.description || '',
+      appointmentStatus: entry.body.appointmentStatus || 'confirmed',
+      startTime: entry.body.startTime,
+      endTime: entry.body.endTime,
+      contactId: entry.body.contactId || ''
+    }));
   return {
-    repository,
     ghl: ghl.state,
+    // Every appointment the code under test created and has not deleted.
+    appointments: live,
+    // The subset that is one of OUR unpaid holds — what used to be a row in `holds`.
+    holds: () => live().filter(event => agenda.isWebsiteHold(event)),
+    appointment: id => live().find(event => event.id === id) || null,
+    // The hold fields the appointment carries in its description.
+    fieldsFor: id => {
+      const found = live().find(event => event.id === id);
+      return found ? agenda.parseHoldFields(found) : null;
+    },
     restore() {
       globalThis.fetch = originalFetch;
-      setRepositoryForTests(null);
       resetCalendarStateCache();
     }
   };
@@ -449,60 +541,9 @@ function setupMemberships(options = {}) {
     return ghlFetch(url, init);
   };
 
-  const DAY_MS = 24 * 60 * 60 * 1000;
-
-  // An active contract with a paid cycle and its credits granted, written straight to
-  // the store. `credits` defaults to the plan's allowance.
-  async function activateContract({
-    packageId = 'membresia-2x',
-    sizeId = 'sedan',
-    contactId = 'contact-1',
-    vehicleLabel = '2024 Toyota Camry',
-    credits = null,
-    status = 'active',
-    now = Date.now(),
-    periodStartMs = null,
-    periodEndMs = null,
-    cancelAtPeriodEnd = false
-  } = {}) {
-    const membershipCatalog = require('../../api/_lib/membership-catalog.js');
-    const allowance = credits == null ? membershipCatalog.creditsForPackage(packageId) : credits;
-    const contractId = `contract-${Math.random().toString(36).slice(2, 10)}`;
-    await ctx.repository.transaction(['seed'], async tx => {
-      await tx.insertContract({
-        id: contractId,
-        contactId,
-        packageId,
-        sizeId,
-        vehicleLabel,
-        status,
-        creditsPerCycle: membershipCatalog.creditsForPackage(packageId),
-        creditsRemaining: allowance,
-        currentPeriodStartMs: periodStartMs == null ? now - DAY_MS : periodStartMs,
-        currentPeriodEndMs: periodEndMs == null ? now + 29 * DAY_MS : periodEndMs,
-        cancelAtPeriodEnd,
-        // The dedupe key still carries a Stripe name in the schema. Renaming a column
-        // needs a migration and the tables are on their way out, so it is left alone
-        // and simply given a unique value here.
-        stripeSubscriptionItemId: `seed-item-${contractId}`,
-        lineIndex: 0,
-        // Stands in for the paid-cycle proof a payment provider used to write. The
-        // HighLevel implementation will put its paid invoice id here.
-        activatedByEventId: `seed-${contractId}`
-      });
-    });
-    return contractId;
-  }
-
   return {
     ...ctx,
     workflowPosts,
-    activateContract,
-    // Every notification row, whether or not it reached a workflow.
-    notifications: () => ctx.repository.__store().membership.notifications,
-    contracts: () => ctx.repository.__store().membership.contracts,
-    visits: () => ctx.repository.__store().membership.visits,
-    ledger: () => ctx.repository.__store().ledger,
     restore() {
       globalThis.fetch = ghlFetch;
       ctx.restore();
